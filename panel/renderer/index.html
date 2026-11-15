@@ -196,6 +196,7 @@
                 <div class="btnrow">
                   <button class="btn ghost" id="btnNewChat">Start a new chat</button>
                   <button class="btn ghost" id="btnOutDir">Open output folder</button>
+                  <button class="btn ghost" id="btnSetup">Setup…</button>
                 </div>
               </section>
 
@@ -301,6 +302,25 @@
         <button class="mini primary" id="eggOk">Generate</button>
       </div>
     </div>
+
+    <div class="modal-scrim" id="setupScrim" aria-hidden="true"></div>
+    <section class="setup" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle" aria-hidden="true">
+      <header class="setup-head">
+        <div>
+          <b id="setupTitle">EggLab setup</b>
+          <p class="setup-sub" id="setupSub">EggLab runs on local pieces. This list shows what is ready and what still needs attention.</p>
+        </div>
+        <button class="icon" id="setupClose" title="Close setup">
+          <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        </button>
+      </header>
+      <div class="setup-body" id="setupBody"></div>
+      <footer class="setup-foot">
+        <button class="mini" id="setupRescan">Re-scan</button>
+        <span class="grow"></span>
+        <button class="mini primary" id="setupDone">Start using EggLab</button>
+      </footer>
+    </section>
 
     <div class="toasts" id="toasts"></div>
     <div class="drop" id="drop">Drop images to use as references</div>

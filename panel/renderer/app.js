@@ -37,6 +37,7 @@ const S = {
   outDir: '',
   nodeIndex: new Map(),
   modelDl: new Map(),
+  setup: null,
   providers: null,
   providersLoaded: false,
   ocSearch: '',
@@ -313,6 +314,8 @@ async function boot() {
   renderAspects();
   renderPc();
   setBusy(false);
+  initSetup();
+  loadSetup();
   if (shell.expanded) $('#input').focus();
 }
 
@@ -358,11 +361,16 @@ function handleEvent(ev) {
       if (ev.download) {
         S.modelDl.set(ev.id, ev.download);
         updateModelRow(ev.id, ev.download);
+        renderSetup();
       }
       break;
     case 'models':
       S.models = ev.status;
       renderModels();
+      renderSetup();
+      break;
+    case 'setup':
+      handleSetupEvent(ev);
       break;
     case 'settings':
       // Settings changed outside this window (an MCP tool or the HTTP API).
@@ -2426,6 +2434,250 @@ function clampNum(value, min, max) {
 function snap(value) {
   // Generator size envelope: 256 floor, 2048 ceiling, multiples of 32.
   return Math.min(2048, Math.max(256, Math.round(Number(value || 1024) / 32) * 32));
+}
+
+/* ------------------------------------------------------------------ */
+/* first-run setup wizard                                              */
+/* ------------------------------------------------------------------ */
+
+function showSetup() {
+  $('#setup').classList.add('on');
+  $('#setupScrim').classList.add('on');
+  $('#setup').setAttribute('aria-hidden', 'false');
+  $('#setupScrim').setAttribute('aria-hidden', 'false');
+}
+
+function hideSetup() {
+  $('#setup').classList.remove('on');
+  $('#setupScrim').classList.remove('on');
+  $('#setup').setAttribute('aria-hidden', 'true');
+  $('#setupScrim').setAttribute('aria-hidden', 'true');
+}
+
+function initSetup() {
+  $('#btnSetup').onclick = () => {
+    showSetup();
+    loadSetup();
+  };
+  $('#setupClose').onclick = hideSetup;
+  $('#setupScrim').onclick = hideSetup;
+  $('#setupRescan').onclick = async () => {
+    try {
+      await api.setupAction('detect');
+      await loadSetup();
+      toast('Re-scanned local components.');
+    } catch (err) {
+      toast(friendly(err), 'error');
+    }
+  };
+  $('#setupDone').onclick = async () => {
+    try {
+      await api.setupAction('complete');
+      applyState(await api.state());
+      hideSetup();
+      toast('Setup saved - have fun.');
+    } catch (err) {
+      toast(friendly(err), 'error');
+    }
+  };
+  $('#setupBody').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-setup]');
+    if (btn) onSetupAction(btn.dataset.setup);
+  });
+  $('#setupBody').addEventListener('change', (e) => {
+    if (e.target.id === 'setupVariant') S.setupVariant = e.target.value;
+  });
+}
+
+async function loadSetup() {
+  try {
+    S.setup = await api.setupStatus();
+  } catch (err) {
+    toast(friendly(err), 'error');
+    return;
+  }
+  renderSetup();
+  if (S.setup.firstRun) showSetup();
+}
+
+function setupBadge(ok, onText = 'Ready', offText = 'Missing') {
+  return `<span class="setup-pill ${ok ? 'ok' : 'miss'}">${ok ? onText : offText}</span>`;
+}
+
+function renderSetup() {
+  const st = S.setup;
+  if (!st) return;
+  const pc = st.photocraft;
+  const oc = st.opencode;
+  const en = st.engine;
+  const mo = st.models;
+  const ocPercent = oc.total ? Math.min(100, Math.floor((oc.received / oc.total) * 100)) : 0;
+  const missing = mo.missing || [];
+  const modelLine = mo.entries
+    .map(
+      (entry) =>
+        `<span class="${entry.exists ? 'ok' : entry.required ? 'miss' : 'opt'}">${entry.exists ? '✓' : '✗'} ${esc(entry.label)}${
+          entry.exists && entry.sizeText ? ` · ${esc(entry.sizeText)}` : ''
+        }</span>`
+    )
+    .join('');
+  const engineLog = (en.log || []).slice(-5).join('\n');
+  const ocPhase =
+    oc.phase === 'downloading'
+      ? `Downloading… ${ocPercent}%`
+      : oc.phase === 'extracting'
+        ? 'Extracting…'
+        : '';
+  const pick = S.setupVariant || 'auto';
+  const opt = (value, label) => `<option value="${value}" ${pick === value ? 'selected' : ''}>${label}</option>`;
+
+  $('#setupBody').innerHTML = `
+    <div class="setup-step ${pc.found ? 'ok' : 'miss'}">
+      <div class="setup-step-head"><span class="setup-dot"></span><b>PhotoCraft</b>${setupBadge(pc.found, 'Found', 'Not found')}</div>
+      <p class="setup-note">${pc.found ? esc(pc.exe) : 'The canvas app EggLab places renders into. Install PhotoCraft, then re-scan or locate its executable.'}</p>
+      <div class="setup-actions">
+        <button class="mini" data-setup="locate-pc">Locate…</button>
+        ${pc.found ? '<button class="mini" data-setup="launch-pc">Launch</button>' : ''}
+      </div>
+    </div>
+    <div class="setup-step ${oc.running ? 'busy' : oc.found ? 'ok' : 'miss'}">
+      <div class="setup-step-head"><span class="setup-dot"></span><b>OpenCode</b>${oc.running ? '<span class="setup-pill">Working…</span>' : setupBadge(oc.found, 'Found', 'Not installed')}</div>
+      <p class="setup-note">${oc.found ? esc(oc.exe) : 'The agent runtime behind the chat. Install the standalone build here, or point EggLab at an existing opencode.exe.'}${oc.error ? `<br><span class="setup-err">${esc(oc.error)}</span>` : ''}</p>
+      ${oc.running ? `<div class="setup-progress"><i style="width:${ocPercent}%"></i></div><p class="setup-note">${esc(ocPhase || 'Preparing…')}</p>` : ''}
+      <div class="setup-actions">
+        <button class="mini" data-setup="install-oc" ${oc.running ? 'disabled' : ''}>${oc.found ? 'Reinstall' : 'Install for me (78 MB)'}</button>
+      </div>
+    </div>
+    <div class="setup-step ${en.running ? 'busy' : en.installed ? 'ok' : 'miss'}">
+      <div class="setup-step-head"><span class="setup-dot"></span><b>Image engine</b>${en.running ? '<span class="setup-pill">Downloading…</span>' : setupBadge(en.installed, en.variant ? `Installed · ${esc(en.variant)}` : 'Installed', 'Not installed')}</div>
+      <p class="setup-note">${en.installed ? esc(en.dir) : 'The local Stable Diffusion engine (stable-diffusion.cpp). Downloaded once: CUDA is fastest on NVIDIA, Vulkan works everywhere, CPU is the fallback.'}${en.error ? `<br><span class="setup-err">${esc(en.error)}</span>` : ''}</p>
+      ${en.running ? `<div class="setup-log">${esc(engineLog || 'Starting…')}</div>` : ''}
+      <div class="setup-actions">
+        <select id="setupVariant" ${en.running ? 'disabled' : ''}>
+          ${opt('auto', 'Auto-detect')}
+          ${opt('cuda', 'CUDA (NVIDIA, ~900 MB)')}
+          ${opt('vulkan', 'Vulkan (any GPU, ~29 MB)')}
+          ${opt('cpu', 'CPU (~17 MB)')}
+        </select>
+        <button class="mini" data-setup="install-engine" ${en.running ? 'disabled' : ''}>${en.installed ? 'Reinstall / switch' : 'Download engine'}</button>
+      </div>
+    </div>
+    <div class="setup-step ${missing.length ? 'miss' : 'ok'}">
+      <div class="setup-step-head"><span class="setup-dot"></span><b>Models</b>${setupBadge(missing.length === 0, 'All present', `${missing.length} missing`)}</div>
+      <p class="setup-note">${esc(mo.dir)}</p>
+      <div class="setup-model">${modelLine}</div>
+      <div class="setup-actions">
+        <button class="mini" data-setup="download-models" ${missing.length ? '' : 'disabled'}>Download missing</button>
+        <button class="mini" data-setup="import-model">Add from file…</button>
+        <button class="mini" data-setup="open-models">Open folder</button>
+      </div>
+    </div>
+  `;
+}
+
+async function refreshRuntime() {
+  try {
+    applyState(await api.state());
+  } catch {}
+}
+
+async function onSetupAction(action) {
+  const st = S.setup;
+  if (!st) return;
+  try {
+    switch (action) {
+      case 'locate-pc': {
+        const file = await api.pickApp();
+        if (!file) return;
+        await api.setupAction('photocraft', { path: file });
+        await loadSetup();
+        await refreshRuntime();
+        toast('PhotoCraft linked.');
+        break;
+      }
+      case 'launch-pc':
+        await api.pcLaunch();
+        toast('Launching PhotoCraft…');
+        break;
+      case 'install-oc':
+        await api.setupAction('opencode');
+        toast('Downloading OpenCode (78 MB)…');
+        break;
+      case 'install-engine': {
+        // The select is rendered dynamically with the engine card.
+        const variant = document.getElementById('setupVariant')?.value || 'auto';
+        S.setupVariant = variant;
+        await api.setupAction('engine', { variant, force: Boolean(st.engine.installed) });
+        toast('Engine download started - keep EggLab open.');
+        break;
+      }
+      case 'download-models': {
+        const ids = st.models.missing || [];
+        if (!ids.length) return;
+        await api.downloadModels(ids);
+        toast(`Downloading ${ids.length} model${ids.length === 1 ? '' : 's'}…`);
+        break;
+      }
+      case 'import-model': {
+        const file = await api.pickModel();
+        if (!file) return;
+        toast('Copying model file…');
+        await api.setupAction('import-model', { path: file });
+        await loadSetup();
+        await refreshRuntime();
+        toast('Model added.');
+        break;
+      }
+      case 'open-models':
+        await api.openPath(st.models.dir);
+        break;
+      default:
+        break;
+    }
+  } catch (err) {
+    toast(friendly(err), 'error');
+  }
+}
+
+function handleSetupEvent(ev) {
+  if (!S.setup) {
+    loadSetup();
+    return;
+  }
+  const st = S.setup;
+  if (ev.step === 'engine') {
+    st.engine.running = ev.status === 'running';
+    if (ev.line) st.engine.log = [...(st.engine.log || []), ev.line].slice(-6);
+    if (ev.status === 'done' || ev.status === 'error') {
+      st.engine.error = ev.error || null;
+      loadSetup();
+      refreshRuntime();
+      if (ev.status === 'done') toast('Image engine ready.');
+      else toast(ev.error || 'Engine download failed.', 'error');
+      return;
+    }
+  } else if (ev.step === 'opencode') {
+    st.opencode.running = ev.status === 'downloading' || ev.status === 'extracting';
+    if (ev.status === 'downloading') st.opencode.phase = 'downloading';
+    if (ev.status === 'extracting') st.opencode.phase = 'extracting';
+    if (ev.received !== undefined) st.opencode.received = ev.received;
+    if (ev.total !== undefined) st.opencode.total = ev.total;
+    if (ev.status === 'done' || ev.status === 'error') {
+      st.opencode.error = ev.error || null;
+      loadSetup();
+      refreshRuntime();
+      if (ev.status === 'done') toast('OpenCode installed.');
+      else toast(ev.error || 'OpenCode install failed.', 'error');
+      return;
+    }
+  } else if (ev.step === 'import') {
+    if (ev.status === 'done' || ev.status === 'error') {
+      if (ev.error) toast(ev.error, 'error');
+      loadSetup();
+      return;
+    }
+  }
+  renderSetup();
 }
 
 boot();

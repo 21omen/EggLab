@@ -10,6 +10,7 @@ import { modelStatus, startDownloads, cancelDownload, useVariant } from './servi
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
 import * as sessions from './service/sessions.mjs';
+import * as setup from './service/setup.mjs';
 import { CONTROL_FILE, DATA_DIR, LOG_DIR, OUT_DIR, PANEL_DIR, TMP_DIR, pruneScratch } from './service/paths.mjs';
 
 protocol.registerSchemesAsPrivileged([
@@ -597,6 +598,49 @@ ipcMain.handle('models:list', () => modelStatus());
 ipcMain.handle('models:download', (e, { ids, variant }) => startDownloads(ids, variant));
 ipcMain.handle('models:cancel', (e, id) => cancelDownload(id));
 ipcMain.handle('models:use', (e, { id, file }) => useVariant(id, file));
+
+ipcMain.handle('setup:status', () => setup.setupStatus());
+ipcMain.handle('setup:action', async (e, { action, payload } = {}) => {
+  switch (action) {
+    case 'detect':
+      return await setup.refreshDetection();
+    case 'photocraft': {
+      const status = await setup.setPhotoCraft(payload?.path);
+      if (serviceUrl) {
+        try {
+          chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+        } catch {}
+      }
+      return status;
+    }
+    case 'engine':
+      return await setup.installEngine(payload?.variant || 'auto', Boolean(payload?.force));
+    case 'opencode':
+      return await setup.installOpencode();
+    case 'import-model':
+      return await setup.importModelFile(payload?.path);
+    case 'complete':
+      return await setup.completeSetup();
+    default:
+      throw new Error(`Unknown setup action: ${action}`);
+  }
+});
+ipcMain.handle('dialog:pickApp', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Locate PhotoCraft',
+    properties: ['openFile'],
+    filters: [{ name: 'Applications', extensions: ['exe'] }],
+  });
+  return res.canceled ? '' : res.filePaths[0] || '';
+});
+ipcMain.handle('dialog:pickModel', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Add a model file',
+    properties: ['openFile'],
+    filters: [{ name: 'Model files', extensions: ['safetensors', 'gguf'] }],
+  });
+  return res.canceled ? '' : res.filePaths[0] || '';
+});
 
 ipcMain.handle('chat:send', async (e, { text, files, refMap }) => {
   return await chat.send(text, files || [], refMap || {});

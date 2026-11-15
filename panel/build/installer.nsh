@@ -84,20 +84,25 @@ _egglab_engineDone:
 !macroend
 
 !macro customUnInstall
-  ; --- Large per-user artifacts live outside $INSTDIR ---------------------
-  ; Engine binaries and the bin cache are disposable: remove them with the app.
-  RMDir /r "$LOCALAPPDATA\EggLab\engine"
-  RMDir /r "$LOCALAPPDATA\EggLab\bin"
-  ; Models are several GB and often shared/reused: ask, default NO (also the
-  ; /SD answer, so a silent uninstall always keeps them).
-  IfFileExists "$LOCALAPPDATA\EggLab\models\*.*" _egglab_modelsPrompt _egglab_modelsDone
-_egglab_modelsPrompt:
-  MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Also delete the downloaded image models?$\r$\n$\r$\nThey can take several GB and would have to be downloaded again later." /SD IDNO IDYES _egglab_modelsDelete IDNO _egglab_modelsDone
-_egglab_modelsDelete:
-  RMDir /r "$LOCALAPPDATA\EggLab\models"
-_egglab_modelsDone:
-  ; Chats, settings and logs in %APPDATA%\EggLab are intentionally kept.
-  RMDir "$LOCALAPPDATA\EggLab"
+  ; An upgrade runs the OLD uninstaller first with --updated: it must not
+  ; delete the engine (still valid, would have to be re-downloaded every
+  ; update) and must not prompt about models. Only a real uninstall cleans up.
+  ${IfNot} ${isUpdated}
+    ; --- Large per-user artifacts live outside $INSTDIR -------------------
+    ; Engine binaries and the bin cache are disposable: remove them with the app.
+    RMDir /r "$LOCALAPPDATA\EggLab\engine"
+    RMDir /r "$LOCALAPPDATA\EggLab\bin"
+    ; Models are several GB and often shared/reused: ask, default NO (also the
+    ; /SD answer, so a silent uninstall always keeps them).
+    IfFileExists "$LOCALAPPDATA\EggLab\models\*.*" _egglab_modelsPrompt _egglab_modelsDone
+  _egglab_modelsPrompt:
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Also delete the downloaded image models?$\r$\n$\r$\nThey can take several GB and would have to be downloaded again later." /SD IDNO IDYES _egglab_modelsDelete IDNO _egglab_modelsDone
+  _egglab_modelsDelete:
+    RMDir /r "$LOCALAPPDATA\EggLab\models"
+  _egglab_modelsDone:
+    ; Chats, settings and logs in %APPDATA%\EggLab are intentionally kept.
+    RMDir "$LOCALAPPDATA\EggLab"
+  ${EndIf}
 !macroend
 
 !endif

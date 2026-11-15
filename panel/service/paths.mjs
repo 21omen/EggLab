@@ -49,11 +49,25 @@ export const MODELS_DIR = fs.existsSync(siblingModels)
   ? siblingModels
   : path.join(localAppData, 'EggLab', 'models');
 
+// Where the Electron shell keeps its immutable payload (app.asar + the files we
+// ship as extraResources). Null in dev, where everything lives in the checkout.
+const RESOURCES_DIR = PACKAGED
+  ? process.resourcesPath || path.join(path.dirname(process.execPath), 'resources')
+  : null;
+
 // The engine runner script. Packaged installs ship it via extraResources
 // (spawn cannot execute files inside app.asar); dev runs it from the repo root.
 export const EGGLAB_PS1 = PACKAGED
-  ? path.join(process.resourcesPath || path.join(path.dirname(process.execPath), 'resources'), 'egglab.ps1')
+  ? path.join(RESOURCES_DIR, 'egglab.ps1')
   : path.join(ROOT, 'egglab.ps1');
+
+/**
+ * The shared engine downloader (installer + first-run wizard). The NSIS
+ * installer ships it in resources\; dev keeps it next to the build config.
+ */
+export const ENGINE_INSTALL_PS1 = PACKAGED
+  ? path.join(RESOURCES_DIR, 'engine-install.ps1')
+  : path.join(PANEL_DIR, 'build', 'engine-install.ps1');
 
 export const OUT_DIR = PACKAGED ? path.join(DATA_DIR, 'out') : path.join(ROOT, 'out');
 export const LOG_DIR = PACKAGED ? path.join(DATA_DIR, 'logs') : path.join(PANEL_DIR, 'logs');
@@ -66,7 +80,7 @@ export const AGENT_DIR = PACKAGED ? path.join(DATA_DIR, 'agent') : path.join(PAN
  * under ELECTRON_RUN_AS_NODE, which cannot read inside app.asar.
  */
 export const KNOWLEDGE_DIR = PACKAGED
-  ? path.join(process.resourcesPath || path.join(path.dirname(process.execPath), 'resources'), 'knowledge')
+  ? path.join(RESOURCES_DIR, 'knowledge')
   : PANEL_DIR;
 /**
  * Generated runtime config (paths.yaml, runtime-profile.yaml). These belong

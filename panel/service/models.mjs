@@ -267,22 +267,52 @@ async function downloadOne(entry, variant) {
     abort: new AbortController(),
   };
   downloads.set(entry.id, dl);
+
+  // Resume a leftover .part (cancelled or interrupted download) instead of
+  // starting the multi-GB transfer over. huggingface.co honours Range.
+  let offset = 0;
+  try {
+    offset = fs.statSync(part).size;
+  } catch {}
+  dl.received = offset;
   emit('model', { id: entry.id, download: publicState(dl) });
 
+  const headers = { 'user-agent': 'EggLab/0.1' };
+  if (offset > 0) headers.range = `bytes=${offset}-`;
   const res = await fetch(variant.url, {
     redirect: 'follow',
     signal: dl.abort.signal,
-    headers: { 'user-agent': 'EggLab/0.1' },
+    headers,
   });
+
+  if (res.status === 416) {
+    // The .part is at least as large as the remote file (or was truncated by
+    // something else) - start over instead of looping on a bad offset.
+    try {
+      fs.rmSync(part, { force: true });
+    } catch {}
+    throw new Error('The partial download does not match the remote file. Press download again to restart.');
+  }
   if (!res.ok || !res.body) {
     throw new Error(`HTTP ${res.status} for ${variant.url}`);
   }
-  dl.total = Number(res.headers.get('content-length')) || 0;
 
-  const out = fs.createWriteStream(part);
+  let append = false;
+  if (res.status === 206) {
+    append = offset > 0;
+    const range = String(res.headers.get('content-range') || '');
+    const total = range.match(/\/(\d+)\s*$/);
+    dl.total = total ? Number(total[1]) : offset + (Number(res.headers.get('content-length')) || 0);
+  } else {
+    // The server ignored Range: restart from zero and truncate the part file.
+    dl.received = 0;
+    dl.total = Number(res.headers.get('content-length')) || 0;
+  }
+
+  const out = fs.createWriteStream(part, append ? { flags: 'a' } : undefined);
   const reader = res.body.getReader();
   let lastEmit = 0;
-  let lastBytes = 0;
+  let lastBytes = dl.received;
   let lastTime = Date.now();
 
   for (;;) {
@@ -304,6 +334,15 @@ async function downloadOne(entry, variant) {
     }
   }
   await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+
+  // A short read must keep the .part file so the next click resumes, never
+  // silently rename a truncated multi-GB model into place.
+  const finalSize = fs.statSync(part).size;
+  if (dl.total && finalSize !== dl.total) {
+    throw new Error(
+      `Download incomplete (${humanBytes(finalSize)} of ${humanBytes(dl.total)}). Press download again to resume.`
+    );
+  }
   fs.renameSync(part, dest);
 
   dl.status = 'done';
@@ -354,4 +393,18 @@ export function retryDownload(id) {
 
 export function publicDownloads() {
   return [...downloads.values()].map(publicState);
+}
+
+/**
+ * Map a bare file name to its registry entry. Used by the wizard's manual
+ * "add model from file" path (and by drag-and-drop onto the Models card):
+ * only files EggLab's config can actually point at are accepted.
+ */
+export function variantForFile(fileName) {
+  const base = path.basename(String(fileName || ''));
+  for (const entry of registry()) {
+    const variant = entry.variants.find((v) => v.file === base);
+    if (variant) return { entryId: entry.id, key: entry.key, file: variant.file };
+  }
+  return null;
 }

@@ -207,10 +207,32 @@ Blocks the main window until done (resume-on-relaunch if dismissed):
   Packaged chat turn (opencode → packaged MCP → `egglab_status`) passed earlier in the
   Phase 1 gate (with `opencode/mimo-v2.6-flash-free` while the InferX provider was down).
 
-**Phase 2 — First-run wizard + dependency detection + model manager** (§4, §5)
-- ✔ Gate A: machine without OpenCode → [Install for me] → chat works.
-- ✔ Gate B: model download killed mid-transfer → resumes to verified completion; manual drag-drop validates.
-- ✔ Gate C: engine download cancelled in installer → wizard detects and completes it.
+**Phase 2 — First-run wizard + dependency detection + model manager** ✅ DONE (2026-11-15)
+- `GET /api/setup` + a setup overlay that auto-shows on first run and reopens from
+  Settings → Setup…: PhotoCraft (detect + Locate… + Launch), OpenCode (detect +
+  standalone install), Engine (download with variant picker, live log), Models
+  (missing list, Download missing, Add from file…, Open folder).
+- OpenCode standalone: pinned v1.19.5 `opencode-windows-x64.zip` (~78 MB) → extracted to
+  `%LOCALAPPDATA%\EggLab\bin\opencode`, validated by running `--version`, then
+  `opencode.exe` is written into settings (npm/scoop installs are still detected first).
+- Engine retry reuses `engine-install.ps1` (same pinned release, SHA-256 verification,
+  resume and cuda→vulkan→cpu ladder as the installer).
+- Model downloads now resume: `.part` + HTTP Range (206) + content-length verification; an
+  interrupted transfer keeps the part file for the next click instead of restarting.
+- Manual model install: "Add from file…" copies a registry file into the models folder
+  (streamed, with progress) and switches the engine config to it.
+- ✔ Gate A passed: on a machine whose only OpenCode was the npm install, the wizard
+  installed the standalone build; that binary drove a full chat turn (MCP tool call
+  included) in 6 s.
+- ✔ Gate B passed: a 644 MB VAE download cancelled at 45 MB resumed from the partial file
+  and finished at exactly the remote content-length.
+- ✔ Gate C passed: engine directory deleted → wizard detected it, re-downloaded the Vulkan
+  build in 9 s, and a turbo render completed end-to-end.
+- Installer update path fixed: upgrades no longer delete the engine (`${isUpdated}` guard
+  in `customUnInstall`); an in-place upgrade now takes ~12 s and keeps the engine.
+- Note: fresh installs keep the author's InferX default model; users choose their chat
+  model under Settings → Agent model (README documents providers). During this gate
+  InferX was down and `opencode/beam-free` was used as the working test model.
 
 **Phase 3 — Public release**
 - Push repo, tag `v0.1.0`, CI builds, Release page with SHA256SUMS, README with SmartScreen instructions.

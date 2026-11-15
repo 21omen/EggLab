@@ -25,10 +25,12 @@ export const ASPECTS = {
  * this repo is published and installs must work on any Windows profile.
  * ------------------------------------------------------------------ */
 
-// PhotoCraft install folder: sibling checkout first (dev), then the usual
-// per-user/Program Files locations. Empty when nothing is found — the
-// first-run wizard then asks the user to locate it (or skip).
-function detectPhotoCraftDir() {
+/**
+ * PhotoCraft install folder: sibling checkout first (dev), then the usual
+ * per-user/Program Files locations. Empty when nothing is found — the
+ * first-run wizard then asks the user to locate it (or skip).
+ */
+export function detectPhotoCraft() {
   const candidates = [
     path.join(ROOT, '..', 'photocraft-app'),
     path.join(ROOT, '..', 'photocraft'),
@@ -62,9 +64,11 @@ function defaultOpenCodeExe() {
 // The dev workspace root: the checkout's parent (PhotoCraft requires the
 // automation roots to contain the projects folder).
 const DEV_ROOT = path.dirname(ROOT);
-const PHOTO_DIR = detectPhotoCraftDir();
+const PHOTO_DIR = detectPhotoCraft();
 
 export const DEFAULTS = {
+  // First-run wizard: shown until the user finishes (or dismisses) it.
+  setup: { completed: false, at: null },
   // Packaged installs keep config.json (engine/model locations, written by
   // the installer or the first-run wizard) in the user data folder; dev keeps
   // reading it from the repo root next to egglab.ps1.
@@ -281,6 +285,11 @@ export function modelFileFor(key) {
  * get the flag back and pass it to spawn/execFile.
  */
 let whereCache; // undefined = not probed yet (null = probed, nothing found)
+/** Forget the PATH probe so the next resolve sees a just-installed OpenCode. */
+export function clearOpenCodeCache() {
+  whereCache = undefined;
+}
+
 function whereOpenCode() {
   if (whereCache !== undefined) return whereCache;
   whereCache = [];

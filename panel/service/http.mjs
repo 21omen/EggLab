@@ -8,6 +8,7 @@ import * as models from './models.mjs';
 import * as chat from './chat.mjs';
 import * as pc from './photocraft.mjs';
 import * as sessions from './sessions.mjs';
+import * as setup from './setup.mjs';
 import { alphaStats, describeAlpha } from './imagecheck.mjs';
 import { featherEdges, regionMask } from './pngfeather.mjs';
 import { getSettings, patchSettings } from './settings.mjs';
@@ -107,6 +108,34 @@ async function handle(req, res, url) {
 
     case 'GET /api/models':
       return json(res, 200, models.modelStatus());
+
+    case 'GET /api/setup':
+      return json(res, 200, await setup.setupStatus());
+
+    case 'POST /api/setup/detect':
+      return json(res, 200, await setup.refreshDetection());
+
+    case 'POST /api/setup/photocraft': {
+      const status = await setup.setPhotoCraft(body.path);
+      if (selfUrl) {
+        try {
+          chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+        } catch {}
+      }
+      return json(res, 200, status);
+    }
+
+    case 'POST /api/setup/engine':
+      return json(res, 200, await setup.installEngine(body.variant || 'auto', Boolean(body.force)));
+
+    case 'POST /api/setup/opencode':
+      return json(res, 200, await setup.installOpencode());
+
+    case 'POST /api/setup/import-model':
+      return json(res, 200, await setup.importModelFile(body.path));
+
+    case 'POST /api/setup/complete':
+      return json(res, 200, await setup.completeSetup());
 
     case 'POST /api/models/download': {
       const ids = Array.isArray(body.ids) ? body.ids : [body.id].filter(Boolean);
