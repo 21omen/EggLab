@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('egglab', {
   chatClear: () => ipcRenderer.invoke('chat:clear'),
   chatHistory: () => ipcRenderer.invoke('chat:history'),
   sessionsList: () => ipcRenderer.invoke('sessions:list'),
+  sessionNew: () => ipcRenderer.invoke('sessions:newThread'),
   sessionRename: (key, title) => ipcRenderer.invoke('sessions:rename', { key, title }),
   sessionDelete: (key) => ipcRenderer.invoke('sessions:delete', key),
   sessionSwitch: (key, title) => ipcRenderer.invoke('sessions:switch', { key, title }),

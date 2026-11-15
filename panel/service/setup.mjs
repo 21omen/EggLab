@@ -238,9 +238,9 @@ export async function installEngine(variant = 'auto', force = false) {
 /* OpenCode                                                            */
 /* ------------------------------------------------------------------ */
 
-// Pinned: the standalone Windows build used by the wizard. Users with their
-// own install (npm/scoop/…) never hit this path.
-const OPENCODE_VERSION = '1.19.5';
+// OpenCode v2 (also shipped inside the desktop app). v1.x cannot read the v2
+// session schema, so the wizard installs a version that can.
+const OPENCODE_VERSION = '2.3.0';
 const OPENCODE_ZIP = `https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-windows-x64.zip`;
 
 function systemTar() {

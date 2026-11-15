@@ -86,6 +86,12 @@ function friendly(err) {
   let msg = err?.message || String(err);
   msg = msg.replace(/^Error invoking remote method '[^']+':\s*/i, '');
   msg = msg.replace(/^Error:\s*/i, '');
+  // OpenCode keeps its sessions in one shared SQLite database and a newer
+  // client migrates it forward. The old binary then fails on every run; say so
+  // in words instead of surfacing "no such column: project_id".
+  if (/no such column|no such table/i.test(msg) && /project|session/i.test(msg)) {
+    return 'EggLab found an outdated OpenCode binary for the current OpenCode data. Open Setup and install OpenCode again (or update OpenCode), then retry.';
+  }
   return msg;
 }
 
@@ -248,16 +254,22 @@ function initEggDrag() {
 
 async function newChat() {
   try {
-    const ok = await api.chatClear();
-    if (ok === false) {
-      toast('The agent is still working — press stop before starting a new chat.', 'error');
-      return;
-    }
+    // A new chat is a NEW THREAD: the previous conversation stays in the chat
+    // list with its transcript and OpenCode session. (This used to call
+    // chatClear, which wiped the transcript — "new chat" destroyed history.)
+    const res = await api.sessionNew();
+    S.docKey = res?.key || S.docKey;
+    S.threadKey = res?.threadId || res?.key || S.threadKey;
+    S.threadTitle = res?.title || null;
     S.items = [];
     S.nodeIndex.clear();
     renderTimeline();
+    renderThreadLabel();
+    updateEmpty();
     closeSessions();
-    toast('Started a new chat', 'ok');
+    if ($('#sessions')?.classList.contains('on')) renderSessions();
+    toast('Started a new chat — the previous one is still in the chat list', 'ok');
+    $('#input')?.focus();
   } catch (err) {
     toast(friendly(err), 'error');
   }
@@ -330,7 +342,7 @@ function applyState(state) {
   S.outDir = state.outDir;
   S.items = state.chat?.items || [];
   S.docKey = state.chat?.docKey || 'no-document';
-  S.threadKey = state.chat?.docKey || 'no-document';
+  S.threadKey = state.chat?.threadId || state.chat?.docKey || 'no-document';
   S.threadTitle = state.chat?.title || null;
   S.pcDoc = state.photocraft?.document || null;
   for (const job of state.jobs || []) S.jobs.set(job.id, job);
@@ -455,9 +467,12 @@ function handleChatEvent(ev) {
     case 'session':
       break;
     case 'thread':
-      // The agent switched to another document's own conversation.
+      // The service switched the on-screen thread (new chat, a chat picked in
+      // the list, or the agent creating a document). `threadId` is the
+      // transcript; `docKey` is its document — they differ for threads beyond
+      // a document's primary one.
       S.docKey = ev.docKey || 'no-document';
-      S.threadKey = ev.docKey || 'no-document';
+      S.threadKey = ev.threadId || ev.docKey || 'no-document';
       S.threadTitle = ev.title || null;
       S.items = ev.items || [];
       S.nodeIndex.clear();
@@ -484,12 +499,13 @@ async function loadThread() {
   try {
     const hist = await api.chatHistory();
     S.docKey = hist.docKey || 'no-document';
-    S.threadKey = hist.docKey || 'no-document';
+    S.threadKey = hist.threadId || hist.docKey || 'no-document';
     S.threadTitle = hist.title || null;
     S.items = hist.items || [];
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
+    updateEmpty();
   } catch (err) {
     toast(friendly(err), 'error');
   }
@@ -507,7 +523,7 @@ function renderThreadLabel() {
   el.title = title ? (S.pcDoc?.path || 'Open the chat list') : 'Open the chat list';
   // Only claim "unsaved" when the thread belongs to the focused document,
   // because that is the only dirty flag we actually have.
-  el.classList.toggle('dirty', Boolean(S.threadKey && S.pcDoc?.key === S.threadKey && S.pcDoc.dirty));
+  el.classList.toggle('dirty', Boolean(S.docKey && S.pcDoc?.key === S.docKey && S.pcDoc.dirty));
 }
 
 /* ------------------------------------------------------------------ */
@@ -519,6 +535,28 @@ async function openSessions() {
   const on = box.classList.toggle('on');
   box.setAttribute('aria-hidden', on ? 'false' : 'true');
   if (on) await renderSessions();
+}
+
+function sessionDocLabel(s) {
+  const key = String(s?.docKey || '');
+  if (key.startsWith('untitled:')) {
+    const [, name = 'Untitled', size = ''] = key.split(':');
+    const draft = String(s?.docName || name).replace(/\.(pcraft|psd|psb|jfif|png|jpe?g|tiff?)$/i, '');
+    return size ? `${draft} · ${size}` : `Draft · ${draft}`;
+  }
+  if (s?.docName) return String(s.docName).replace(/\.(pcraft|psd|psb|jfif|png|jpe?g|tiff?)$/i, '');
+  if (!key || key === 'no-document') return 'No document';
+  const base = key.split(/[\\/]/).pop() || key;
+  return base.replace(/\.[^.]+$/, '') || key;
+}
+
+function timeAgo(ts) {
+  const seconds = Math.round((Date.now() - Number(ts || 0)) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 90) return 'just now';
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
 }
 
 async function renderSessions() {
@@ -538,53 +576,85 @@ async function renderSessions() {
     foot.textContent = '';
     return;
   }
-  list.innerHTML = '';
+
+  // Group by PhotoCraft document: a chat belongs to a canvas, like the
+  // document-scoped sidebar in Notion / Google Docs. The active document's
+  // group comes first; render/tmp artefacts share one "Generated images"
+  // group at the end; inside a group the newest conversation is first.
+  const groups = new Map();
   for (const s of docs) {
-    const row = document.createElement('div');
-    row.className = `session-row${s.current ? ' current' : ''}`;
-    row.innerHTML = `
-      <div class="s-main">
-        <div class="s-title">${esc(s.title || 'Untitled chat')}</div>
-        <div class="s-sub">
-          <span class="s-dot${s.exists ? '' : ' dead'}">${s.exists ? '●' : '○'}</span>
-          ${esc(s.docName || s.key.replace(/^untitled:/, 'untitled · '))} · ${esc((s.model || '').split('/').pop() || 'no model')}
+    const key = s.transient ? '__generated' : s.docKey || s.key || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  const latest = (rows) => Math.max(...rows.map((s) => Number(s.updatedAt) || 0));
+  const ordered = [...groups.entries()].sort((a, b) => {
+    if (a[0] === '__generated') return 1;
+    if (b[0] === '__generated') return -1;
+    const aCurrent = a[1].some((s) => s.current);
+    const bCurrent = b[1].some((s) => s.current);
+    if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
+    return latest(b[1]) - latest(a[1]);
+  });
+
+  list.innerHTML = '';
+  for (const [groupKey, rows] of ordered) {
+    const head = document.createElement('div');
+    head.className = `s-group${groupKey === S.docKey ? ' current' : ''}`;
+    head.textContent = groupKey === '__generated' ? 'Generated images' : sessionDocLabel(rows[0]);
+    head.title = groupKey === '__generated' ? 'Chats opened on renders and previews' : groupKey;
+    list.appendChild(head);
+
+    for (const s of rows) {
+      const row = document.createElement('div');
+      row.className = `session-row${s.current ? ' current' : ''}`;
+      row.innerHTML = `
+        <div class="s-main">
+          <div class="s-title">${esc(s.title || 'Untitled chat')}</div>
+          <div class="s-sub">
+            <span class="s-dot${s.exists ? '' : ' dead'}">${s.exists ? '●' : '○'}</span>
+            ${esc(timeAgo(s.updatedAt) || 'new')} · ${esc((s.model || '').split('/').pop() || 'no model')}
+          </div>
         </div>
-      </div>
-      <div class="s-acts">
-        <button class="icon" data-act="rename" title="Rename">
-          <svg viewBox="0 0 16 16"><path d="M11.2 2.2a1.4 1.4 0 0 1 2 0l.6.6a1.4 1.4 0 0 1 0 2l-7.6 7.6-3 .8.8-3Z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-        </button>
-        <button class="icon danger" data-act="delete" title="Delete chat">
-          <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.6 8h4.8l.6-8" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-        </button>
-      </div>`;
-    row.onclick = async (e) => {
-      const act = e.target.closest('[data-act]')?.dataset.act;
-      if (act === 'rename') return renameSession(s);
-      if (act === 'delete') return deleteSession(s);
-      if (s.current) return closeSessions();
-      await switchSession(s);
-    };
-    list.appendChild(row);
+        <div class="s-acts">
+          <button class="icon" data-act="rename" title="Rename">
+            <svg viewBox="0 0 16 16"><path d="M11.2 2.2a1.4 1.4 0 0 1 2 0l.6.6a1.4 1.4 0 0 1 0 2l-7.6 7.6-3 .8.8-3Z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="icon danger" data-act="delete" title="Delete chat">
+            <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.6 8h4.8l.6-8" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+        </div>`;
+      row.onclick = async (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'rename') return renameSession(s);
+        if (act === 'delete') return deleteSession(s);
+        if (s.current) return closeSessions();
+        await switchSession(s);
+      };
+      list.appendChild(row);
+    }
   }
   const current = docs.find((d) => d.current);
   foot.innerHTML = current
-    ? `This chat follows the active PhotoCraft document. Autosave keeps its project on disk.`
+    ? 'Chats are grouped by PhotoCraft document. The active document comes first.'
     : '';
 }
 
 async function switchSession(s) {
   try {
-    const res = await api.sessionSwitch(s.key, s.title);
-    S.docKey = res.key;
-    S.threadKey = res.key;
-    S.threadTitle = res.history?.title || s.title || null;
-    S.items = res.history?.items || [];
+    const res = await api.sessionSwitch(s.key);
+    const hist = res.history || {};
+    S.docKey = hist.docKey || s.docKey || 'no-document';
+    S.threadKey = hist.threadId || s.threadId || s.key;
+    S.threadTitle = hist.title || s.title || null;
+    S.items = hist.items || [];
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
+    updateEmpty();
     closeSessions();
-    toast(`Switched to ${s.title || s.key}`, 'ok');
+    await refreshPc();
+    toast(`Switched to ${hist.title || s.title || 'chat'}`, 'ok');
   } catch (err) {
     toast(friendly(err), 'error');
   }
@@ -2210,20 +2280,7 @@ function bind() {
   };
   $('#btnSessionNew').onclick = async (e) => {
     e.stopPropagation();
-    try {
-      const ok = await api.chatClear();
-      if (ok === false) {
-        toast('The agent is still working — press stop before starting a new chat.', 'error');
-        return;
-      }
-      S.items = [];
-      S.nodeIndex.clear();
-      renderTimeline();
-      closeSessions();
-      toast('Started a new chat for this document', 'ok');
-    } catch (err) {
-      toast(friendly(err), 'error');
-    }
+    await newChat();
   };
   document.addEventListener('click', (e) => {
     if (!$('#sessions').classList.contains('on')) return;

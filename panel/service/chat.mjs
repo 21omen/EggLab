@@ -655,6 +655,37 @@ export function pruneOrphanThreads() {
 }
 
 /**
+ * Forget conversations that were started but never used.
+ *
+ * "New chat" mints a thread immediately, so an abandoned click (or a wizard /
+ * automation run) leaves an empty row behind forever. Anything that has no
+ * message, no OpenCode session and is older than a day is safe to drop; the
+ * thread on screen and recently created ones are kept. Runs at startup.
+ */
+export function pruneEmptyThreads(olderThanMs = 24 * 60 * 60 * 1000) {
+  const currentThread = sessions.current().key;
+  let pruned = 0;
+  for (const [id, entry] of Object.entries(sessions.registryThreads())) {
+    if (!entry || id === currentThread) continue;
+    if (entry.sessionId) continue;
+    if (Date.now() - (Number(entry.updatedAt) || 0) < olderThanMs) continue;
+    const file = historyFile(id);
+    let items = 0;
+    try {
+      const data = readJson(file, null);
+      items = data && Array.isArray(data.items) ? data.items.length : 0;
+    } catch {}
+    if (items > 0) continue;
+    try {
+      if (fs.existsSync(file)) fs.rmSync(file, { force: true });
+    } catch {}
+    sessions.unbind(id);
+    pruned++;
+  }
+  return pruned;
+}
+
+/**
  * Carry a thread across a document identity change.
  *
  * A document that is saved for the first time stops being
@@ -953,17 +984,14 @@ export async function send(text, files = [], refMap = {}) {
 
   const runOnce = (model, opts = {}) =>
     new Promise((resolve) => {
-      const args = [
-        'run',
-        '--format',
-        'json',
-        '--dir',
-        AGENT_DIR,
-        '--agent',
-        s.opencode.agent,
-        '--model',
-        model,
-      ];
+      // Resolved once per run: the binary generation decides the flag set.
+      const oc = resolveOpenCode();
+      const major = oc.version?.[0] ?? 1;
+      const args = ['run', '--format', 'json'];
+      // v1 selects the project directory with --dir; v2 removed the flag and
+      // uses the working directory instead (set to AGENT_DIR below).
+      if (major < 2) args.push('--dir', AGENT_DIR);
+      args.push('--agent', s.opencode.agent, '--model', model);
       if (bound.sessionId) args.push('--session', bound.sessionId);
       else if (firstRun) args.push('--title', title);
       // `message` and `--file` are both variadic in the CLI: the message must come
@@ -971,7 +999,6 @@ export async function send(text, files = [], refMap = {}) {
       args.push(agentMessage);
       for (const file of cleanFiles) args.push('--file', file);
 
-      const oc = resolveOpenCode();
       const child = spawn(oc.cmd, args, {
         cwd: AGENT_DIR,
         windowsHide: true,

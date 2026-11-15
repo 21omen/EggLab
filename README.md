@@ -61,6 +61,16 @@ After that, open **Settings** and pick a chat model under **Agent model**. EggLa
 your OpenCode providers — the free models that ship with OpenCode work, and paid
 providers/API keys are configured inside OpenCode itself.
 
+## Chats are scoped to your document
+
+![Chat list grouped by document](docs/sessions.png)
+
+Every PhotoCraft document keeps its own conversations. Pressing **+** starts a new
+thread and leaves the previous one intact in the chat list; the list is grouped by
+document, and reopening a document resumes the chat you were reading last (not merely
+the one that was messaged most recently). Renders and previews opened by the agent are
+folded into one “Generated images” group so they cannot flood the list.
+
 ## Auto-update
 
 Installed copies check the GitHub releases of this repository about 12 seconds after launch

@@ -359,6 +359,8 @@ if (!gotLock) {
     trace('history sanitized');
     const pruned = chat.pruneOrphanThreads();
     if (pruned) trace(`pruned ${pruned} orphan chat transcript(s)`);
+    const empties = chat.pruneEmptyThreads();
+    if (empties) trace(`pruned ${empties} empty chat thread(s)`);
     const scratch = pruneScratch();
     if (scratch) trace(`pruned ${scratch} stale reference render(s)`);
 
@@ -663,11 +665,14 @@ ipcMain.handle('chat:history', () => chat.getHistory());
 ipcMain.handle('sessions:list', () => sessions.list());
 ipcMain.handle('sessions:rename', (e, { key, title }) => sessions.rename(key, title));
 ipcMain.handle('sessions:delete', (e, key) => chat.deleteThread(key));
-ipcMain.handle('sessions:switch', async (e, { key, title }) => {
+ipcMain.handle('sessions:switch', async (e, { key }) => {
   if (chat.isBusy()) {
     throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');
   }
-  const res = chat.useDocument(key, title || null);
+  // `key` is a THREAD id. useThread resolves the document it belongs to, so a
+  // secondary conversation (`<doc>#2`) switches to the right document instead
+  // of treating the thread id as one.
+  const res = chat.useThread(key);
   if (res.changed) trace(`thread -> ${key} (picked in the chat list)`);
 
   // The chat follows the active PhotoCraft document, so picking a chat has to
@@ -675,10 +680,11 @@ ipcMain.handle('sessions:switch', async (e, { key, title }) => {
   // back to the previous document on its next poll — a session switch that
   // appeared to fail.
   holdSyncUntil = Date.now() + 4000;
-  const shown = await showDocumentForKey(key).catch(() => false);
-  if (shown) trace(`document follows chat -> ${key}`);
+  const shown = await showDocumentForKey(chat.documentKey()).catch(() => false);
+  if (shown) trace(`document follows chat -> ${chat.documentKey()}`);
   return { ...res, history: chat.getHistory() };
 });
+ipcMain.handle('sessions:newThread', () => chat.newThread());
 
 ipcMain.handle('pc:status', () => pc.status());
 ipcMain.handle('pc:launch', () => pc.launch());

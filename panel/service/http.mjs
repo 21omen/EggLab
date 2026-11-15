@@ -185,6 +185,16 @@ async function handle(req, res, url) {
     case 'POST /api/sessions/rename':
       return json(res, 200, sessions.rename(body.key, body.title));
 
+    case 'POST /api/sessions/new':
+      return json(res, 200, chat.newThread());
+
+    case 'POST /api/sessions/switch': {
+      // HTTP has no window control, so it switches the chat only; the desktop
+      // UI additionally brings the thread's document forward via IPC.
+      const result = chat.useThread(body.key);
+      return json(res, 200, { ...result, history: chat.getHistory() });
+    }
+
     case 'POST /api/sessions/clear':
       return json(res, 200, { ok: chat.clearHistory() });
 

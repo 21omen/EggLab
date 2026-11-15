@@ -20,7 +20,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { visionForModel, resolveOpenCode } from './settings.mjs';
-import { DATA_DIR, readJson, writeJson, uid } from './paths.mjs';
+import { AGENT_DIR, DATA_DIR, OUT_DIR, TMP_DIR, readJson, writeJson, uid } from './paths.mjs';
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_FILE = path.join(DATA_DIR, 'sessions.json');
@@ -53,12 +53,25 @@ function loadRegistry() {
 let registry = loadRegistry();
 registry.currentKey = registry.currentKey ?? null;
 registry.threads = registry.threads && typeof registry.threads === 'object' ? registry.threads : {};
+/**
+ * Last thread READ per document (`docKey -> threadId`). `updatedAt` tracks the
+ * last MESSAGE, but a document should resume the conversation the user was
+ * looking at: reading an older thread and then hopping tabs must come back to
+ * that thread, not to whichever sibling was messaged most recently.
+ */
+registry.activeThreads =
+  registry.activeThreads && typeof registry.activeThreads === 'object' ? registry.activeThreads : {};
 // A thread always knows which document it belongs to. Primary threads (id ===
 // docKey) written before that field existed inherit it from their own id.
 for (const [id, entry] of Object.entries(registry.threads)) {
   if (!entry || typeof entry !== 'object') continue;
   entry.id = id;
   if (!entry.docKey) entry.docKey = id;
+}
+// Drop active pointers whose thread is gone or now belongs to another document.
+for (const [doc, id] of Object.entries(registry.activeThreads)) {
+  const entry = registry.threads[id];
+  if (!entry || entry.docKey !== doc) delete registry.activeThreads[doc];
 }
 
 function save() {
@@ -80,7 +93,15 @@ export async function opencodeSessions(limit = 40) {
     const { stdout } = await execFileAsync(
       oc.cmd,
       ['session', 'list', '--format', 'json', '--max-count', String(limit)],
-      { cwd: DATA_DIR, windowsHide: true, maxBuffer: 8 * 1024 * 1024, shell: oc.shell },
+      {
+        // Sessions are project-scoped (v2 especially): list them from the same
+        // directory the chats run in, otherwise every known session shows as
+        // "dead" because it belongs to another project.
+        cwd: AGENT_DIR,
+        windowsHide: true,
+        maxBuffer: 8 * 1024 * 1024,
+        shell: oc.shell,
+      },
     );
     const parsed = JSON.parse(String(stdout).trim() || '[]');
     return Array.isArray(parsed) ? parsed : [];
@@ -99,9 +120,11 @@ export async function opencodeSessions(limit = 40) {
  */
 export function setCurrent(key) {
   const next = key || 'no-document';
-  if (registry.currentKey === next) return next;
-  registry.currentKey = next;
-  save();
+  const entry = registry.threads[next];
+  const changed = registry.currentKey !== next;
+  if (entry?.docKey) registry.activeThreads[entry.docKey] = next;
+  if (changed) registry.currentKey = next;
+  if (changed || entry?.docKey) save();
   return next;
 }
 
@@ -141,6 +164,12 @@ export function migrateKey(from, to) {
     }
   }
   if (registry.currentKey === from) registry.currentKey = to;
+  // The document's remembered thread follows the identity change.
+  if (registry.activeThreads[from]) {
+    const active = registry.activeThreads[from];
+    delete registry.activeThreads[from];
+    registry.activeThreads[to] = active === from ? to : active;
+  }
   save();
   return true;
 }
@@ -303,6 +332,7 @@ export function newThread({ docKey = null, docName = null } = {}) {
   };
   registry.threads[id] = entry;
   registry.currentKey = id;
+  registry.activeThreads[doc] = id;
   save();
   return entry;
 }
@@ -330,6 +360,8 @@ export function registryThreads() {
  */
 export function threadFor(docKey) {
   if (!docKey) return null;
+  const remembered = registry.threads[registry.activeThreads[docKey]];
+  if (remembered && remembered.docKey === docKey) return remembered;
   let best = null;
   for (const thread of Object.values(registry.threads)) {
     if (!thread || thread.docKey !== docKey) continue;
@@ -346,6 +378,23 @@ export function threadsFor(docKey) {
     .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
 }
 
+/**
+ * Documents that exist only as artefacts: renders in `out/`, scaled previews in
+ * `tmp/`. The agent (and PhotoCraft) open these as documents while placing or
+ * exporting, and each one used to add another "Untitled-1" chat to the list.
+ * They are real threads for as long as they are on screen, but the chat list
+ * folds them into a single "Generated images" group.
+ */
+export function isTransientDocKey(key) {
+  const value = String(key || '');
+  if (/^[A-Za-z]:[\\/]/.test(value) === false) return false;
+  const normalized = value.replace(/\//g, '\\').toLowerCase();
+  const roots = [OUT_DIR, TMP_DIR]
+    .filter(Boolean)
+    .map((root) => `${String(root).replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()}\\`);
+  return roots.some((root) => normalized.startsWith(root));
+}
+
 /** The registry, merged with OpenCode's live list so dead ids are visible. */
 export async function list(limit = 40) {
   const live = await opencodeSessions(limit);
@@ -359,6 +408,7 @@ export async function list(limit = 40) {
       threadId: id,
       docKey: entry.docKey || id,
       docName: entry.docName || null,
+      transient: isTransientDocKey(entry.docKey || id),
       // Fall back to the document name, then OpenCode's own title, so a chat
       // that has not spoken yet still reads as something.
       title: entry.title || liveEntry?.title || entry.docName || 'Untitled chat',
@@ -385,6 +435,10 @@ export function rename(key, title) {
 
 /** Forget a binding; OpenCode's own history is deleted separately. */
 export function unbind(key) {
+  const entry = registry.threads[key];
+  if (entry?.docKey && registry.activeThreads[entry.docKey] === key) {
+    delete registry.activeThreads[entry.docKey];
+  }
   if (key === registry.currentKey) registry.currentKey = null;
   delete registry.threads[key];
   save();
@@ -398,7 +452,8 @@ export async function deleteSession(key) {
     try {
       const oc = resolveOpenCode();
       await execFileAsync(oc.cmd, ['session', 'delete', id], {
-        cwd: DATA_DIR,
+        // Same project scope the chats are created in (see opencodeSessions).
+        cwd: AGENT_DIR,
         windowsHide: true,
         shell: oc.shell,
       });

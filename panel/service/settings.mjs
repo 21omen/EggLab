@@ -285,9 +285,11 @@ export function modelFileFor(key) {
  * get the flag back and pass it to spawn/execFile.
  */
 let whereCache; // undefined = not probed yet (null = probed, nothing found)
+const versionCache = new Map();
 /** Forget the PATH probe so the next resolve sees a just-installed OpenCode. */
 export function clearOpenCodeCache() {
   whereCache = undefined;
+  versionCache.clear();
 }
 
 function whereOpenCode() {
@@ -306,6 +308,57 @@ function whereOpenCode() {
   return whereCache;
 }
 
+/** Version tuple from `opencode --version` ("1.19.5", "opencode v2.3.0"). */
+function probeOpenCodeVersion(exe) {
+  if (versionCache.has(exe)) return versionCache.get(exe);
+  let version = null;
+  try {
+    const out = execFileSync(exe, ['--version'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 10000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const match = String(out).match(/(\d+)\.(\d+)\.(\d+)/);
+    if (match) version = [Number(match[1]), Number(match[2]), Number(match[3])];
+  } catch {}
+  versionCache.set(exe, version);
+  return version;
+}
+
+function compareVersions(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+/** CLIs bundled with the OpenCode desktop app (newest first). */
+function desktopOpenCodeCandidates() {
+  const roaming = process.env.APPDATA || '';
+  if (!roaming) return [];
+  const root = path.join(roaming, 'ai.opencode.desktop', 'cli');
+  try {
+    return fs
+      .readdirSync(root)
+      .map((name) => ({ name, file: path.join(root, name, 'opencode-cli.exe') }))
+      .filter((entry) => {
+        try {
+          return fs.statSync(entry.file).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => compareVersions(probeOpenCodeVersion(b.file), probeOpenCodeVersion(a.file)))
+      .map((entry) => entry.file);
+  } catch {
+    return [];
+  }
+}
+
 export function resolveOpenCode() {
   const configured = settings.opencode?.exe || '';
   const home = process.env.USERPROFILE || os.homedir();
@@ -313,22 +366,48 @@ export function resolveOpenCode() {
   const roaming = process.env.APPDATA || '';
   const candidates = [
     configured,
-    roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+    ...desktopOpenCodeCandidates(),
     home && path.join(home, '.opencode', 'bin', 'opencode.exe'),
+    roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
     local && path.join(local, 'Programs', 'opencode', 'opencode.exe'),
     home && path.join(home, 'scoop', 'shims', 'opencode.exe'),
     ...whereOpenCode(),
-  ];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
+  ].filter(Boolean);
+
+  // Every OpenCode client on the machine shares one data directory, and a
+  // newer client migrates its schema forward. An older CLI then fails on every
+  // run with "no such column: project_id". So pick the NEWEST working CLI that
+  // exists instead of trusting the configured path: the newest client is the
+  // one that matches (or upgrades) the shared schema.
+  let best = null;
+  let bestVersion = null;
+  let bestOrder = Number.POSITIVE_INFINITY;
+  const seen = new Set();
+  candidates.forEach((candidate, order) => {
+    if (!candidate || seen.has(candidate)) return;
+    seen.add(candidate);
+    let exists = false;
     try {
-      if (fs.existsSync(candidate)) {
-        return { cmd: candidate, shell: /\.(cmd|bat)$/i.test(candidate) };
-      }
+      exists = fs.existsSync(candidate);
     } catch {}
-  }
+    if (!exists) return;
+    const version = /\.(cmd|bat)$/i.test(candidate) ? null : probeOpenCodeVersion(candidate);
+    if (!best) {
+      best = candidate;
+      bestVersion = version;
+      bestOrder = order;
+      return;
+    }
+    const cmp = compareVersions(version, bestVersion);
+    if (cmp > 0 || (cmp === 0 && order < bestOrder)) {
+      best = candidate;
+      bestVersion = version;
+      bestOrder = order;
+    }
+  });
+  if (best) return { cmd: best, shell: /\.(cmd|bat)$/i.test(best), version: bestVersion };
   // Last resort: PATH lookup by CreateProcess (.exe only).
-  return { cmd: 'opencode', shell: false };
+  return { cmd: 'opencode', shell: false, version: null };
 }
 
 let modelsCache = null;
@@ -341,13 +420,20 @@ export async function opencodeModels(force = false) {
     return modelsCache;
   }
   const result = await new Promise((resolve) => {
-    const exe = settings.opencode?.exe || 'opencode';
+    // Same binary the chat will use: probing an older CLI can return a model
+    // list the chat process cannot actually run.
+    const oc = resolveOpenCode();
     // Run from the user's home directory so OpenCode reads its global config
     // (.jsonc) instead of the panel's shadowing old .json.
     const cwd = process.env.HOME || process.env.USERPROFILE;
-    const child = spawn(exe, ['models', '--refresh'], {
+    // v1 needs --refresh to bypass its cache; v2 has no such flag.
+    const major = oc.version?.[0] ?? 1;
+    const args = ['models'];
+    if (major < 2) args.push('--refresh');
+    const child = spawn(oc.cmd, args, {
       cwd,
       windowsHide: true,
+      shell: oc.shell,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';

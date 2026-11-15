@@ -2290,3 +2290,16 @@ body.is-busy .egg-orb-dot {
   gap: 8px;
   margin-top: 8px;
 }
+/* chats grouped by PhotoCraft document */
+.s-group {
+  margin: 10px 8px 3px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-group:first-child { margin-top: 4px; }
+.s-group.current { color: var(--gold2); }
