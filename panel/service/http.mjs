@@ -144,6 +144,10 @@ async function handle(req, res, url) {
     case 'POST /api/update/check':
       return json(res, 200, await updater.checkForUpdates({ userInitiated: true }));
 
+    case 'POST /api/update/install':
+      updater.installUpdate();
+      return json(res, 200, { installing: true });
+
     case 'POST /api/models/download': {
       const ids = Array.isArray(body.ids) ? body.ids : [body.id].filter(Boolean);
       return json(res, 200, models.startDownloads(ids, body.variant || null));

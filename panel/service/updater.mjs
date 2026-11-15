@@ -1,33 +1,46 @@
 /**
  * Auto-update (packaged installs only).
  *
- * electron-updater reads `resources\app-update.yml` (generated from the
- * `build.publish` block) and pulls new versions from the GitHub releases of
- * YanNyeinHtet/EggLab. Downloads happen in the background; when one is ready
- * the user is asked to restart. A failed check must never disturb the app -
- * offline machines simply stay on the current version.
+ * Deliberately does NOT use electron-updater's transport: that downloads
+ * through Chromium's network stack, which fails TLS to GitHub's asset CDN
+ * (`objects.githubusercontent.com` → net::ERR_CONNECTION_RESET) on networks
+ * that break certificate-revocation checks. The exact same problem is why the
+ * engine downloader uses `curl --ssl-no-revoke`. So:
  *
- * Testing hook: EGGLAB_UPDATE_AUTO=1 installs immediately without the dialog,
- * so the release pipeline can verify the whole feed → download → NSIS →
- * restart path unattended.
+ *   check    Node fetch → api.github.com/repos/<owner>/<repo>/releases/latest
+ *            (the API also publishes a sha256 digest per asset)
+ *   download curl.exe with --ssl-no-revoke, resume and a stall guard
+ *   verify   SHA-256 against the API digest before anything is executed
+ *   install  run the NSIS installer silently (`/S --force-run`), then exit
+ *
+ * A failed check or download only lands in `state.error`; the app keeps
+ * running on the current version and retries on the next launch/6h poll.
+ *
+ * Testing hook: EGGLAB_UPDATE_AUTO=1 installs without the restart dialog so
+ * the release pipeline can verify fetch → download → verify → install
+ * unattended.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { app, dialog } from 'electron';
-import electronUpdater from 'electron-updater';
 import { emit } from './bus.mjs';
-import { LOG_DIR } from './paths.mjs';
+import { LOG_DIR, UPDATES_DIR } from './paths.mjs';
 
-const { autoUpdater } = electronUpdater;
+const OWNER = 'YanNyeinHtet';
+const REPO = 'EggLab';
+const API_URL = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
 
 let initialized = false;
 let checking = false;
+let downloading = false;
 let timer = null;
+let readyFile = null;
 
 let state = {
   status: 'idle', // idle | dev | checking | current | available | downloading | downloaded | error
-  version: null, // version offered by the feed
-  current: null,
+  version: null,
   percent: 0,
   error: null,
   at: null,
@@ -42,7 +55,7 @@ function log(line) {
 function publish(next) {
   state = { ...state, ...next, at: Date.now() };
   log(`${state.status} ${state.version || ''} ${state.percent || ''} ${state.error || ''}`.trim());
-  emit('update', { update: state });
+  emit('update', { update: updateStatus() });
 }
 
 export function updateStatus() {
@@ -53,20 +66,198 @@ export function updateStatus() {
   };
 }
 
-/**
- * Check the feed. Safe to call repeatedly: concurrent checks collapse into the
- * running one, and errors only land in `state.error` (never thrown at callers).
- */
+function versionParts(value) {
+  return String(value || '')
+    .replace(/^v/i, '')
+    .split(/[.\-+]/)
+    .slice(0, 3)
+    .map((part) => Number(part) || 0);
+}
+
+function isNewer(remote, current) {
+  const a = versionParts(remote);
+  const b = versionParts(current);
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+async function fetchLatestRelease() {
+  const res = await fetch(API_URL, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      'user-agent': `EggLab/${app.getVersion()}`,
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (res.status === 404) return null; // repository exists but no release yet
+  if (res.status === 403) throw new Error('GitHub API rate limit reached - try again later.');
+  if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+  return await res.json();
+}
+
+function sha256(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(file);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+function runCurl(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl.exe', args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      if (stderr.length > 8000) stderr = stderr.slice(-4000);
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`curl exited ${code}${stderr ? `: ${stderr.trim().split(/\r?\n/).slice(-1)[0]}` : ''}`));
+    });
+  });
+}
+
+async function downloadAsset(asset, dest) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const part = `${dest}.part`;
+  const total = Number(asset.size) || 0;
+  const tick = setInterval(() => {
+    let size = 0;
+    try {
+      size = fs.statSync(part).size;
+    } catch {}
+    publish({
+      status: 'downloading',
+      percent: total ? Math.min(99, Math.floor((size / total) * 100)) : 0,
+    });
+  }, 700);
+  try {
+    await runCurl([
+      '-L',
+      '--ssl-no-revoke',
+      '--retry',
+      '3',
+      '-C',
+      '-',
+      '--connect-timeout',
+      '20',
+      '--speed-limit',
+      '1024',
+      '--speed-time',
+      '60',
+      '-o',
+      part,
+      '--',
+      asset.browser_download_url,
+    ]);
+  } finally {
+    clearInterval(tick);
+  }
+
+  const got = fs.statSync(part).size;
+  if (total && got !== total) {
+    throw new Error(`Download incomplete (${got} of ${total} bytes). It will resume next time.`);
+  }
+  const digest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
+  if (digest) {
+    const have = (await sha256(part)).toLowerCase();
+    if (have !== digest) {
+      try {
+        fs.rmSync(part, { force: true });
+      } catch {}
+      throw new Error('Download checksum mismatch - discarded the file.');
+    }
+  }
+  fs.renameSync(part, dest);
+  return dest;
+}
+
+function installNow() {
+  const file = readyFile;
+  if (!file || !fs.existsSync(file)) {
+    log('install skipped: installer file missing');
+    return;
+  }
+  log(`installing ${file}`);
+  try {
+    // NSIS one-click: /S = silent, --force-run = start EggLab afterwards.
+    spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+  } catch (err) {
+    log(`install failed ${err?.message || err}`);
+    return;
+  }
+  setTimeout(() => app.exit(0), 1200);
+}
+
+function askToRestart() {
+  if (process.env.EGGLAB_UPDATE_AUTO === '1') {
+    log('auto-installing (EGGLAB_UPDATE_AUTO=1)');
+    setImmediate(installNow);
+    return;
+  }
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: 'EggLab update ready',
+      message: `EggLab ${state.version} is ready to install.`,
+      detail: 'Restart now to finish the update. Your chats, settings and models are kept.',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    .then(({ response }) => {
+      if (response === 0) installNow();
+    })
+    .catch(() => {});
+}
+
 export async function checkForUpdates({ userInitiated = false } = {}) {
   if (!app.isPackaged) return { ...updateStatus(), status: 'dev' };
-  if (checking) return updateStatus();
+  if (checking || downloading) return updateStatus();
   checking = true;
-  publish({ status: 'checking', error: null });
+  publish({ status: 'checking', error: null, percent: 0 });
   try {
-    autoUpdater.checkForUpdates().catch((err) => {
-      publish({ status: 'error', error: String(err?.message || err).slice(0, 300) });
-    });
-    if (userInitiated) log('check requested by user');
+    const release = await fetchLatestRelease();
+    if (!release) {
+      publish({ status: 'current', version: null });
+      return updateStatus();
+    }
+    const version = String(release.tag_name || '').replace(/^v/i, '');
+    const asset = (release.assets || []).find((item) => /^EggLab-Setup-.*\.exe$/i.test(item.name || ''));
+    if (!asset || !version || !isNewer(version, app.getVersion())) {
+      publish({ status: 'current', version: null, percent: 0 });
+      if (userInitiated) log(`up to date (latest release: ${version || 'none'})`);
+      return updateStatus();
+    }
+
+    publish({ status: 'available', version });
+    const dest = path.join(UPDATES_DIR, asset.name);
+    downloading = true;
+    try {
+      if (fs.existsSync(dest)) {
+        const digest = String(asset.digest || '').replace(/^sha256:/i, '').toLowerCase();
+        const ok = digest ? (await sha256(dest)).toLowerCase() === digest : true;
+        if (!ok) {
+          log('cached installer failed verification, re-downloading');
+          try {
+            fs.rmSync(dest, { force: true });
+          } catch {}
+        }
+      }
+      if (!fs.existsSync(dest)) await downloadAsset(asset, dest);
+      readyFile = dest;
+      publish({ status: 'downloaded', version, percent: 100 });
+      askToRestart();
+    } finally {
+      downloading = false;
+    }
   } catch (err) {
     publish({ status: 'error', error: String(err?.message || err).slice(0, 300) });
   } finally {
@@ -75,67 +266,25 @@ export async function checkForUpdates({ userInitiated = false } = {}) {
   return updateStatus();
 }
 
-function askToRestart() {
-  if (process.env.EGGLAB_UPDATE_AUTO === '1') {
-    log('auto-installing (EGGLAB_UPDATE_AUTO=1)');
-    setImmediate(() => autoUpdater.quitAndInstall(true, true));
-    return;
-  }
-  dialog
-    .showMessageBox({
-      type: 'info',
-      title: 'EggLab update ready',
-      message: `EggLab ${state.version} is ready to install.`,
-      detail: 'Restart now to finish the update. Your chats and settings are kept.',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    })
-    .then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall(true, true);
-    })
-    .catch(() => {});
+export function installUpdate() {
+  installNow();
 }
 
 export function initUpdater() {
   if (initialized || !app.isPackaged) return false;
   initialized = true;
 
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowPrerelease = false;
-  autoUpdater.logger = {
-    info: (m) => log(`info ${m}`),
-    warn: (m) => log(`warn ${m}`),
-    error: (m) => log(`error ${m}`),
-    debug: (m) => log(`debug ${m}`),
-  };
+  // Leftovers from an interrupted download: keep the finished installer (it is
+  // verified and reused on the next check), drop partial files.
+  try {
+    fs.mkdirSync(UPDATES_DIR, { recursive: true });
+    for (const file of fs.readdirSync(UPDATES_DIR)) {
+      if (file.endsWith('.part')) fs.rmSync(path.join(UPDATES_DIR, file), { force: true });
+    }
+  } catch {}
 
-  autoUpdater.on('checking-for-update', () => publish({ status: 'checking' }));
-  autoUpdater.on('update-available', (info) => {
-    publish({ status: 'available', version: info?.version || null });
-  });
-  autoUpdater.on('update-not-available', () => {
-    publish({ status: 'current', version: null, percent: 0 });
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    publish({
-      status: 'downloading',
-      percent: Math.max(0, Math.min(100, Math.round(progress?.percent || 0))),
-    });
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    publish({ status: 'downloaded', version: info?.version || state.version, percent: 100 });
-    askToRestart();
-  });
-  autoUpdater.on('error', (err) => {
-    publish({ status: 'error', error: String(err?.message || err).slice(0, 300) });
-  });
-
-  // First check after the window settles, then a slow periodic poll. GitHub's
-  // release API is rate limited per address; six hours is plenty for a desktop
-  // app and invisible to the user.
+  // First check after the window settles, then a slow periodic poll. The
+  // unauthenticated GitHub API allows 60 requests/hour per address.
   setTimeout(() => checkForUpdates(), 12000).unref?.();
   timer = setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000);
   timer.unref?.();

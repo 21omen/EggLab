@@ -633,6 +633,7 @@ ipcMain.handle('setup:action', async (e, { action, payload } = {}) => {
 });
 ipcMain.handle('update:status', () => updater.updateStatus());
 ipcMain.handle('update:check', async () => await updater.checkForUpdates({ userInitiated: true }));
+ipcMain.handle('update:install', () => updater.installUpdate());
 
 ipcMain.handle('dialog:pickApp', async () => {
   const res = await dialog.showOpenDialog(win, {

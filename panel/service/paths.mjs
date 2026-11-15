@@ -41,6 +41,11 @@ export const BIN_DIR = PACKAGED
   ? path.join(localAppData, 'EggLab', 'bin')
   : path.join(ROOT, 'bin');
 
+/** Downloaded update installers (large, local-only) until they are applied. */
+export const UPDATES_DIR = PACKAGED
+  ? path.join(localAppData, 'EggLab', 'updates')
+  : path.join(ROOT, '.updates');
+
 // Default models folder: the sibling `Models` directory the dev checkout has
 // always used (present next to the repo), else a per-user folder. Never a
 // hardcoded machine path — the repo is published.

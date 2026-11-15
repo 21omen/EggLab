@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('egglab', {
 
   updateStatus: () => ipcRenderer.invoke('update:status'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
 
   chatSend: (text, files, refMap) => ipcRenderer.invoke('chat:send', { text, files, refMap }),
   chatStop: () => ipcRenderer.invoke('chat:stop'),

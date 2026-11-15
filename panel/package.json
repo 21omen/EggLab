@@ -1,7 +1,7 @@
 {
   "name": "egglab",
   "productName": "EggLab",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "EggLab - Qwen-Image-2.1 agent panel for PhotoCraft",
   "author": "EggLab contributors",
@@ -137,8 +137,5 @@
       "deleteAppDataOnUninstall": false,
       "differentialPackage": false
     }
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.11"
   }
 }
