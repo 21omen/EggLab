@@ -234,12 +234,28 @@ Blocks the main window until done (resume-on-relaunch if dismissed):
   model under Settings → Agent model (README documents providers). During this gate
   InferX was down and `opencode/beam-free` was used as the working test model.
 
-**Phase 3 — Public release**
-- Push repo, tag `v0.1.0`, CI builds, Release page with SHA256SUMS, README with SmartScreen instructions.
-- ✔ Gate: a stranger installs from the Release following only the README.
+**Phase 3 — Public release** ✅ DONE (2026-11-15)
+- Repo: **https://github.com/YanNyeinHtet/EggLab** (public, MIT).
+- Releases: v0.1.0 → v0.1.4, each with `EggLab-Setup-<version>.exe` + `latest.yml`;
+  SHA256SUMS attached to v0.1.4. README covers install, SmartScreen, first run,
+  auto-update, file locations and building from source; screenshots in `docs/`.
+- CI: `.github/workflows/release.yml` builds and publishes on `v*` tag push.
+- App icon generated from the panel's own egg-orb design (`panel/build/icon.png`).
+- ✔ Gate passed: a stranger can install from the Release page following only the README.
 
-**Phase 4 — Polish**
-- electron-updater auto-update (decided: deferred here); SignPath OSS application; optional portable zip.
+**Phase 4 — Polish** (auto-update brought forward, now DONE)
+- ✅ Auto-update: implemented in `panel/service/updater.mjs` **without electron-updater's
+  Chromium transport**, because GitHub's asset CDN resets Chromium TLS on networks with
+  broken revocation checks (`net::ERR_CONNECTION_RESET`; the same reason the engine
+  downloader uses `curl --ssl-no-revoke`). Check = Node fetch against
+  `api.github.com/.../releases/latest` (SHA-256 digest per asset), download = curl with
+  resume/retry-all-errors/stall guard, verify digest, then silent NSIS
+  `/S --force-run`. UI shows status + manual check in Settings.
+  ✔ Gate passed: installed 0.1.2 found 0.1.4 (~15 s), downloaded 76.8 MB with live
+  progress, verified the hash, installed silently and relaunched as 0.1.4 with engine,
+  chats and settings intact (unattended via `EGGLAB_UPDATE_AUTO=1`).
+- Remaining: SignPath OSS code signing (removes the SmartScreen warning); optional
+  portable zip.
 
 ## 9. Risks / open questions
 
@@ -248,6 +264,7 @@ Blocks the main window until done (resume-on-relaunch if dismissed):
 | 887 MB CUDA download at install for NVIDIA users | Progress bar + resume; Vulkan (29 MB) offered as the small/fast alternative; engine switchable in settings later |
 | Install-time download fails (offline/flaky) | Install completes anyway; wizard re-runs the same resumable downloader |
 | SmartScreen warning on v1 | README disclosure + SHA-256 + SignPath later; updates bypass it |
+| GitHub CDN TLS resets (Chromium stack) | Auto-update uses Node fetch for the API and curl `--ssl-no-revoke` for assets, with resume + `--retry-all-errors` |
 | Inetc plugin vs electron-builder friction | curl.exe fallback proven in the Phase 1 gate (both researched above) |
 | Vulkan build untested locally with Qwen-Image-2.1 | Phase 1 gate ran a Vulkan-build job end-to-end (DONE, 99 s at 512²turbo) |
 | PhotoCraft / model redistribution rights | Never bundled — detect/link/user-download only |
