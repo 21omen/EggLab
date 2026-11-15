@@ -208,21 +208,34 @@ function installNow() {
   }
   log(`installing ${file}`);
   try {
-    // NSIS removes the program files before copying the new build. Electron's
-    // renderer/GPU children can still hold those files for a moment after the
-    // main process exits, and the uninstaller then aborts with "file is busy"
-    // (shown by the installer as "Failed to uninstall old application files").
-    // Hand the install to a detached helper that waits for THIS process to end,
-    // drops any stray EggLab process, and only then starts the installer.
-    const escaped = file.replace(/'/g, "''");
+    // NSIS removes the program files before copying the new build. A running
+    // app - or a leftover Electron renderer that shares the EggLab.exe name -
+    // keeps those files locked, and the old-uninstaller step then aborts with
+    // "file is busy" (surfaced as "Failed to uninstall old application
+    // files"). The app cannot fix that after it exits, so hand over to a
+    // detached helper script that: waits briefly for this process, force-stops
+    // every remaining EggLab process, and only then starts the installer.
+    fs.mkdirSync(UPDATES_DIR, { recursive: true });
+    const helperPath = path.join(UPDATES_DIR, 'install-helper.ps1');
+    const psQuote = (value) => String(value).replace(/'/g, "''");
     const helper = [
-      `Wait-Process -Id ${process.pid} -Timeout 30 -ErrorAction SilentlyContinue`,
-      'Start-Sleep -Milliseconds 600',
-      'Get-Process -Name EggLab -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue',
+      "$ErrorActionPreference = 'SilentlyContinue'",
+      `$log = '${psQuote(path.join(LOG_DIR, 'update.log'))}'`,
+      `Add-Content -LiteralPath $log -Value ('[' + (Get-Date -Format o) + '] helper: start (pid=${process.pid})')`,
+      '$deadline = (Get-Date).AddSeconds(8)',
+      `while ((Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Milliseconds 250 }`,
+      'for ($i = 0; $i -lt 20; $i++) {',
+      '  $procs = Get-Process -Name EggLab -ErrorAction SilentlyContinue',
+      '  if (-not $procs) { break }',
+      '  $procs | Stop-Process -Force -ErrorAction SilentlyContinue',
+      '  Start-Sleep -Milliseconds 300',
+      '}',
       'Start-Sleep -Milliseconds 500',
-      `Start-Process -FilePath '${escaped}' -ArgumentList '/S','--force-run'`,
-    ].join('; ');
-    spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', helper], {
+      `Add-Content -LiteralPath $log -Value ('[' + (Get-Date -Format o) + '] helper: starting installer')`,
+      `Start-Process -FilePath '${psQuote(file)}' -ArgumentList '/S','--force-run'`,
+    ].join('\r\n');
+    fs.writeFileSync(helperPath, helper, 'utf8');
+    spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', helperPath], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -318,7 +331,9 @@ export function initUpdater() {
   try {
     fs.mkdirSync(UPDATES_DIR, { recursive: true });
     for (const file of fs.readdirSync(UPDATES_DIR)) {
-      if (file.endsWith('.part')) fs.rmSync(path.join(UPDATES_DIR, file), { force: true });
+      if (file.endsWith('.part') || file.endsWith('.ps1')) {
+        fs.rmSync(path.join(UPDATES_DIR, file), { force: true });
+      }
     }
   } catch {}
 

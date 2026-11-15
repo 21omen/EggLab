@@ -56,6 +56,17 @@
     MessageBox MB_OK|MB_ICONSTOP "EggLab needs about 1.5 GB of free disk space on drive $EggLabDriveLetter:. Free some space and run the installer again." /SD IDOK
     Abort
   _egglab_spaceOk:
+
+    ; --- Close a previous EggLab before the install section runs -----------
+    ; The one-click flow has no "please close the app" page. A running app (or
+    ; a leftover Electron renderer with the same exe name) keeps the program
+    ; files locked, and the old-uninstaller step then aborts with "file is
+    ; busy" (shown as "Failed to uninstall old application files"). Closing it
+    ; here is safe: the update restarts the app, and chat data is written as it
+    ; changes. taskkill exits 128 on a fresh install (nothing to kill).
+    nsExec::Exec 'taskkill /IM "EggLab.exe" /T /F'
+    Pop $R8
+    Sleep 500
   !endif
 !macroend
 
