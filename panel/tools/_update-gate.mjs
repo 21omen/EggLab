@@ -1,6 +1,7 @@
 // Polls the running EggLab until it reports the new version (auto-update gate).
 import fs from 'node:fs';
 
+const target = process.argv[2] || '0.1.3';
 const ctlPath = `${process.env.APPDATA}/EggLab/control.json`;
 const read = () => {
   try {
@@ -34,7 +35,7 @@ for (;;) {
     console.log(`${Math.round((Date.now() - t0) / 1000)}s: ${line}`);
     last = line;
   }
-  if (st && st.current === '0.1.1') {
+  if (st && st.current === target) {
     console.log('UPDATED to', st.current);
     break;
   }

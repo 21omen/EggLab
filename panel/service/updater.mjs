@@ -137,25 +137,47 @@ async function downloadAsset(asset, dest) {
       percent: total ? Math.min(99, Math.floor((size / total) * 100)) : 0,
     });
   }, 700);
+
+  // Some networks reset TLS sessions mid-handshake (this is also why the
+  // engine downloader uses --ssl-no-revoke). curl's own --retry does not
+  // cover every transport error, so retry the whole transfer here; -C -
+  // resumes from the .part file instead of starting over.
   try {
-    await runCurl([
-      '-L',
-      '--ssl-no-revoke',
-      '--retry',
-      '3',
-      '-C',
-      '-',
-      '--connect-timeout',
-      '20',
-      '--speed-limit',
-      '1024',
-      '--speed-time',
-      '60',
-      '-o',
-      part,
-      '--',
-      asset.browser_download_url,
-    ]);
+    let lastError = null;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        await runCurl([
+          '-L',
+          '--ssl-no-revoke',
+          '--retry',
+          '5',
+          '--retry-all-errors',
+          '-C',
+          '-',
+          '--connect-timeout',
+          '20',
+          '--speed-limit',
+          '1024',
+          '--speed-time',
+          '60',
+          '-o',
+          part,
+          '--',
+          asset.browser_download_url,
+        ]);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        let have = 0;
+        try {
+          have = fs.statSync(part).size;
+        } catch {}
+        log(`download attempt ${attempt} failed at ${have} bytes: ${err?.message || err}`);
+        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
+      }
+    }
+    if (lastError) throw lastError;
   } finally {
     clearInterval(tick);
   }
