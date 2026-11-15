@@ -362,7 +362,7 @@ function mergeThreadItems(base, extra) {
 const restored = sessions.current();
 let threadId = restored.key || NO_DOC_KEY;
 let docKey = restored.entry?.docKey || threadId;
-let docTitle = restored.entry?.docName || restored.entry?.title || null;
+let docTitle = restored.entry?.docName || null;
 let history = readJson(historyFile(threadId), null);
 if ((!history || !Array.isArray(history.items)) && threadId === NO_DOC_KEY) {
   // Carry the pre-Phase-2 single-thread transcript into the no-document thread.

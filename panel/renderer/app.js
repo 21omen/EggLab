@@ -538,14 +538,15 @@ async function openSessions() {
 }
 
 function sessionDocLabel(s) {
+  // Derive the label from the document KEY, never from docName: older entries
+  // stored a chat title there when the thread had no document, which made the
+  // "No document" group read like a conversation.
   const key = String(s?.docKey || '');
+  if (!key || key === 'no-document') return 'No document';
   if (key.startsWith('untitled:')) {
     const [, name = 'Untitled', size = ''] = key.split(':');
-    const draft = String(s?.docName || name).replace(/\.(pcraft|psd|psb|jfif|png|jpe?g|tiff?)$/i, '');
-    return size ? `${draft} · ${size}` : `Draft · ${draft}`;
+    return size ? `${name} · ${size}` : `Draft · ${name}`;
   }
-  if (s?.docName) return String(s.docName).replace(/\.(pcraft|psd|psb|jfif|png|jpe?g|tiff?)$/i, '');
-  if (!key || key === 'no-document') return 'No document';
   const base = key.split(/[\\/]/).pop() || key;
   return base.replace(/\.[^.]+$/, '') || key;
 }
