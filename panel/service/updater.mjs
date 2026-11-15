@@ -78,7 +78,7 @@ export async function checkForUpdates({ userInitiated = false } = {}) {
 function askToRestart() {
   if (process.env.EGGLAB_UPDATE_AUTO === '1') {
     log('auto-installing (EGGLAB_UPDATE_AUTO=1)');
-    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
     return;
   }
   dialog
@@ -93,7 +93,7 @@ function askToRestart() {
       noLink: true,
     })
     .then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall(false, true);
+      if (response === 0) autoUpdater.quitAndInstall(true, true);
     })
     .catch(() => {});
 }
