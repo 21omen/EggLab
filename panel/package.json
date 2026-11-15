@@ -1,16 +1,92 @@
 {
-  "name": "egglab-panel",
+  "name": "egglab",
   "productName": "EggLab",
   "version": "0.1.0",
   "private": true,
   "description": "EggLab - Qwen-Image-2.1 agent panel for PhotoCraft",
+  "author": "EggLab contributors",
   "main": "main.mjs",
   "type": "module",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.egglab.panel",
+    "productName": "EggLab",
+    "artifactName": "EggLab-Setup-${version}.${ext}",
+    "directories": {
+      "output": "../dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "**/*",
+      "!tools{,/**}",
+      "!build{,/**}",
+      "!_backup-*{,/**}",
+      "!chats{,/**}",
+      "!logs{,/**}",
+      "!tmp{,/**}",
+      "!out{,/**}",
+      "!agent{,/**}",
+      "!evals{,/**}",
+      "!integration{,/**}",
+      "!migration{,/**}",
+      "!archive{,/**}",
+      "!test-*.mjs",
+      "!dump-tools.mjs",
+      "!*.log",
+      "!control.json",
+      "!settings.json",
+      "!sessions*.json",
+      "!downloads.json",
+      "!projects.json",
+      "!chat.json",
+      "!photocraft.token",
+      "!window-state.json",
+      "!config/paths.yaml",
+      "!config/runtime-profile.yaml",
+      "!_verify-*.png",
+      "!p[012].json",
+      "!prompt.json",
+      "!shot.png",
+      "!MANIFEST-SHA256.txt",
+      "!oc-serve.*.log"
+    ],
+    "extraResources": [
+      { "from": "../egglab.ps1", "to": "egglab.ps1" },
+      { "from": "build/engine-install.ps1", "to": "engine-install.ps1" },
+      { "from": "mcp-server.mjs", "to": "knowledge/mcp-server.mjs" },
+      { "from": "AGENT.md", "to": "knowledge/AGENT.md" },
+      { "from": "ROUTER.md", "to": "knowledge/ROUTER.md" },
+      { "from": "manifest.yaml", "to": "knowledge/manifest.yaml" },
+      { "from": "skills", "to": "knowledge/skills" },
+      { "from": "references", "to": "knowledge/references" },
+      { "from": "templates", "to": "knowledge/templates" },
+      { "from": "evals", "to": "knowledge/evals" },
+      {
+        "from": "config",
+        "to": "knowledge/config",
+        "filter": ["**/*", "!paths.yaml", "!runtime-profile.yaml"]
+      }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "shortcutName": "EggLab",
+      "uninstallDisplayName": "EggLab",
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
+    }
   }
 }

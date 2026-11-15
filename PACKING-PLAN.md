@@ -179,21 +179,33 @@ Blocks the main window until done (resume-on-relaunch if dismissed):
 - One observed artifact: the first save of a transcript written by pre-thread-redesign code
   normalizes its `threadId`/`docKey` header once (items untouched); byte-stable afterwards.
 
-**Phase 1 — Build pipeline + install-time engine download**
-- electron-builder config (appId, NSIS `oneClick` + perUser, icon, `extraResources` = `egglab.ps1`),
-  `npm run dist` → ~120 MB installer; custom NSIS step §3 (Inetc plugin, or curl.exe fallback — proven in this gate).
-- ⚠ Packaged-mode follow-ups discovered in Phase 0 (must be solved here):
-  1. **MCP server spawn**: `opencode.json` currently runs `['node', <PANEL_DIR>/mcp-server.mjs]`.
-     Packaged has no `node` on PATH and `mcp-server.mjs` sits inside asar (unreadable to plain
-     node). Fix: ship `mcp-server.mjs` + `skills/` + `references/` via `extraResources`, spawn
-     `[process.execPath, <resources>/mcp-server.mjs]` with `ELECTRON_RUN_AS_NODE=1` in the
-     MCP `environment`. (mcp-server.mjs imports only node builtins — verified.)
-  2. **KNOWLEDGE_ROOT** in generated `paths.yaml` currently points at PANEL_DIR (asar in
-     packaged) — repoint to the extraResources knowledge dir from (1).
-  3. `resolveOpenCode()` returns `shell:true` for `.cmd` shims; chat spawn already honors it.
-     Keep exe-first ordering so the shell path stays a rare fallback (arg-quoting surface).
-- ✔ Gate: fresh Windows profile, no Node/Python/CUDA toolkit installed → run installer once → app + engine
-  present; a real generation job succeeds end-to-end.
+**Phase 1 — Build pipeline + install-time engine download** ✅ DONE (2026-11-15)
+- electron-builder v26: NSIS `oneClick` + per-user, `artifactName` `EggLab-Setup-0.1.0.exe`
+  (**76.6 MB** — engine and models are never packed), `extraResources` = `egglab.ps1`,
+  `engine-install.ps1`, and the knowledge package (`knowledge/`: AGENT.md, ROUTER.md,
+  manifest.yaml, mcp-server.mjs, skills/, references/, templates/, evals/, config/).
+- `panel/build/installer.nsh` (auto-picked as the NSIS include):
+  - `preInit`: hard Windows 10+ check (registry, not WinVer's manifest-dependent
+    GetVersionEx) + best-effort ~1.5 GB free-space probe; both abort before any file
+    is written, and are skipped in the uninstaller compile.
+  - `customInstall`: downloads the pinned stable-diffusion.cpp release via
+    `engine-install.ps1` (GPU-variant auto-detect, SHA-256 verified, curl-resumable,
+    cuda→vulkan→cpu degradation ladder); failures are reported and never abort the
+    install. Silent installs (`/S`) download too (`/SD IDOK`).
+  - `customUnInstall`: removes engine + bin cache; prompts (default NO, and the `/SD`
+    answer) before deleting models; `%APPDATA%\EggLab` data is kept.
+- Packaged-mode fixes folded in: `KNOWLEDGE_DIR` is the single source of truth for
+  prompts/manifest/runtime config; MCP spawns `[EggLab.exe, resources\knowledge\mcp-server.mjs]`
+  with `ELECTRON_RUN_AS_NODE=1`; `readJson` strips a UTF-8 BOM (PowerShell-written configs).
+- ✔ Gate passed: `npm run dist` error-free (only icon/signing warnings).
+  Silent install on this machine → `%LOCALAPPDATA%\Programs\egglab`, engine at
+  `%LOCALAPPDATA%\EggLab\engine\sd` with `engine-info.json`; **auto variant downloaded
+  the CUDA set (1.4 GB, 276 s)**; installed app started, `engine ready: true`, and a real
+  turbo job rendered end-to-end (`%APPDATA%\EggLab\out\*.png`). Vulkan variant gate also
+  passed (28.6 MB, job DONE in 99 s). Uninstaller: program dir + engine removed,
+  `%APPDATA%\EggLab` and models kept, shortcuts removed, exit 0.
+  Packaged chat turn (opencode → packaged MCP → `egglab_status`) passed earlier in the
+  Phase 1 gate (with `opencode/mimo-v2.6-flash-free` while the InferX provider was down).
 
 **Phase 2 — First-run wizard + dependency detection + model manager** (§4, §5)
 - ✔ Gate A: machine without OpenCode → [Install for me] → chat works.
@@ -215,7 +227,7 @@ Blocks the main window until done (resume-on-relaunch if dismissed):
 | Install-time download fails (offline/flaky) | Install completes anyway; wizard re-runs the same resumable downloader |
 | SmartScreen warning on v1 | README disclosure + SHA-256 + SignPath later; updates bypass it |
 | Inetc plugin vs electron-builder friction | curl.exe fallback proven in the Phase 1 gate (both researched above) |
-| Vulkan build untested locally with Qwen-Image-2.1 | Phase 1 gate also runs one Vulkan-build job before we offer it as the NVIDIA alternative |
+| Vulkan build untested locally with Qwen-Image-2.1 | Phase 1 gate ran a Vulkan-build job end-to-end (DONE, 99 s at 512²turbo) |
 | PhotoCraft / model redistribution rights | Never bundled — detect/link/user-download only |
 | NVIDIA CUDA redistribution | Redistributable runtime components may ship with apps (we're not shipping them — they arrive in the official engine zip the user downloads) |
 | Paths breaking when packaged | Phase 0 dual-mode `paths.mjs` + gate tests before any build work |

@@ -59,8 +59,23 @@ export const OUT_DIR = PACKAGED ? path.join(DATA_DIR, 'out') : path.join(ROOT, '
 export const LOG_DIR = PACKAGED ? path.join(DATA_DIR, 'logs') : path.join(PANEL_DIR, 'logs');
 export const TMP_DIR = PACKAGED ? path.join(DATA_DIR, 'tmp') : path.join(PANEL_DIR, 'tmp');
 export const AGENT_DIR = PACKAGED ? path.join(DATA_DIR, 'agent') : path.join(PANEL_DIR, 'agent');
-/** Generated runtime config (paths.yaml, runtime-profile.yaml). */
-export const CONFIG_DIR = PACKAGED ? path.join(DATA_DIR, 'config') : path.join(PANEL_DIR, 'config');
+/**
+ * The read-only knowledge package (skills/, references/, templates/, config/,
+ * manifest, prompts). Dev reads it from the repo checkout; packaged installs
+ * ship a real-copy under resources\knowledge because mcp-server.mjs runs
+ * under ELECTRON_RUN_AS_NODE, which cannot read inside app.asar.
+ */
+export const KNOWLEDGE_DIR = PACKAGED
+  ? path.join(process.resourcesPath || path.join(path.dirname(process.execPath), 'resources'), 'knowledge')
+  : PANEL_DIR;
+/**
+ * Generated runtime config (paths.yaml, runtime-profile.yaml). These belong
+ * to the knowledge package — mcp-server serves `config/` from KNOWLEDGE_DIR —
+ * so packaged mode writes into resources\knowledge\config (per-user install,
+ * user-writable; regenerated at every startup, so updates replacing
+ * resources\ lose nothing).
+ */
+export const CONFIG_DIR = path.join(KNOWLEDGE_DIR, 'config');
 /** Chat transcripts, one JSON file per thread. */
 export const CHATS_DIR = PACKAGED ? path.join(DATA_DIR, 'chats') : path.join(PANEL_DIR, 'chats');
 /** Service URL + token handshake file for the dev tools. */
@@ -74,7 +89,11 @@ for (const dir of [OUT_DIR, LOG_DIR, TMP_DIR, AGENT_DIR, DATA_DIR, CONFIG_DIR]) 
 
 export function readJson(file, fallback = null) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Strip a UTF-8 BOM: PowerShell 5.1's `Set-Content -Encoding UTF8` (and
+    // some editors) write one, and JSON.parse chokes on it — which would make
+    // a perfectly good config.json silently fall back to defaults.
+    const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(text);
   } catch {
     return fallback;
   }

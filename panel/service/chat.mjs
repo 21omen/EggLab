@@ -3,12 +3,16 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { emit } from './bus.mjs';
 import { getSettings, patchSettings, engineConfig, workflowParams, visionForModel, resolveOpenCode } from './settings.mjs';
-import { AGENT_DIR, CHATS_DIR, CONFIG_DIR, DATA_DIR, LOG_DIR, OUT_DIR, PANEL_DIR, TMP_DIR, readJson, uid, writeJson } from './paths.mjs';
+import { AGENT_DIR, CHATS_DIR, CONFIG_DIR, DATA_DIR, KNOWLEDGE_DIR, LOG_DIR, OUT_DIR, PACKAGED, PANEL_DIR, TMP_DIR, readJson, uid, writeJson } from './paths.mjs';
 import * as sessions from './sessions.mjs';
 
-const CORE_PROMPT = path.join(PANEL_DIR, 'AGENT.md');
-const ROUTER_PROMPT = path.join(PANEL_DIR, 'ROUTER.md');
-const MANIFEST_FILE = path.join(PANEL_DIR, 'manifest.yaml');
+// The knowledge package is the single source of truth for prompts and the
+// skill index: the repo checkout in dev, resources\knowledge when packaged
+// (mcp-server serves the same directory, and asar copies are unreachable to
+// its ELECTRON_RUN_AS_NODE process anyway).
+const CORE_PROMPT = path.join(KNOWLEDGE_DIR, 'AGENT.md');
+const ROUTER_PROMPT = path.join(KNOWLEDGE_DIR, 'ROUTER.md');
+const MANIFEST_FILE = path.join(KNOWLEDGE_DIR, 'manifest.yaml');
 
 function agentLog(line) {
   try {
@@ -105,7 +109,7 @@ function writeRuntimeConfig({ cfg, quality, turbo }) {
   const outDir = OUT_DIR;
   const slash = (value) => String(value ?? '').replace(/\\/g, '/');
   const vars = {
-    KNOWLEDGE_ROOT: slash(PANEL_DIR),
+    KNOWLEDGE_ROOT: slash(KNOWLEDGE_DIR),
     OUT_DIR: slash(outDir),
     PROJECTS_DIR: slash(s.photocraft.projectRoot),
     MODELS_DIR: slash(cfg.models),
@@ -188,9 +192,18 @@ export function buildWorkspace({ url, token }) {
     mcp: {
       egglab: {
         type: 'local',
-        command: ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
+        // Packaged installs have no `node` on PATH and mcp-server.mjs lives
+        // outside app.asar (extraResources): run it with the Electron binary
+        // in Node mode (ELECTRON_RUN_AS_NODE). Dev keeps plain node.
+        command: PACKAGED
+          ? [process.execPath, path.join(KNOWLEDGE_DIR, 'mcp-server.mjs')]
+          : ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
         enabled: true,
-        environment: { EGGLAB_URL: url, EGGLAB_TOKEN: token },
+        environment: {
+          EGGLAB_URL: url,
+          EGGLAB_TOKEN: token,
+          ...(PACKAGED ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        },
         timeout: 1800000,
       },
       // The user's global config carries Blender, Context7, GitHub grep,

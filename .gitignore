@@ -55,6 +55,11 @@ dist/
 # ---------------------------------------------------------------------------
 _backup-*/
 _verify-*.png
+panel/p0.json
+panel/p1.json
+panel/p2.json
+panel/prompt.json
+panel/shot.png
 tools/_ui-*/
 tools/_legacy-v1/
 panel/_backup-*/
