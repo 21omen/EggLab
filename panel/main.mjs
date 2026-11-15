@@ -11,6 +11,7 @@ import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
 import * as sessions from './service/sessions.mjs';
 import * as setup from './service/setup.mjs';
+import * as updater from './service/updater.mjs';
 import { CONTROL_FILE, DATA_DIR, LOG_DIR, OUT_DIR, PANEL_DIR, TMP_DIR, pruneScratch } from './service/paths.mjs';
 
 protocol.registerSchemesAsPrivileged([
@@ -502,6 +503,11 @@ if (!gotLock) {
 
     createWindow();
     trace('window created');
+    try {
+      trace(`auto-update ${updater.initUpdater() ? 'armed' : 'unavailable (dev build)'}`);
+    } catch (err) {
+      trace(`auto-update init failed ${err?.message || err}`);
+    }
 
     // One shortcut brings the assistant back from anywhere. It must never be
     // the only way to reach the egg, so failures are logged, not fatal.
@@ -625,6 +631,9 @@ ipcMain.handle('setup:action', async (e, { action, payload } = {}) => {
       throw new Error(`Unknown setup action: ${action}`);
   }
 });
+ipcMain.handle('update:status', () => updater.updateStatus());
+ipcMain.handle('update:check', async () => await updater.checkForUpdates({ userInitiated: true }));
+
 ipcMain.handle('dialog:pickApp', async () => {
   const res = await dialog.showOpenDialog(win, {
     title: 'Locate PhotoCraft',

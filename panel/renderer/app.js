@@ -316,6 +316,7 @@ async function boot() {
   setBusy(false);
   initSetup();
   loadSetup();
+  initUpdates();
   if (shell.expanded) $('#input').focus();
 }
 
@@ -371,6 +372,9 @@ function handleEvent(ev) {
       break;
     case 'setup':
       handleSetupEvent(ev);
+      break;
+    case 'update':
+      paintUpdate(ev.update);
       break;
     case 'settings':
       // Settings changed outside this window (an MCP tool or the HTTP API).
@@ -2678,6 +2682,53 @@ function handleSetupEvent(ev) {
     }
   }
   renderSetup();
+}
+
+/* ------------------------------------------------------------------ */
+/* auto-update status                                                  */
+/* ------------------------------------------------------------------ */
+
+let updateManual = false;
+let updateNotified = '';
+
+function initUpdates() {
+  $('#btnUpdateCheck').onclick = async () => {
+    updateManual = true;
+    try {
+      paintUpdate(await api.updateCheck());
+    } catch (err) {
+      toast(friendly(err), 'error');
+    } finally {
+      updateManual = false;
+    }
+  };
+  api.updateStatus().then(paintUpdate).catch(() => {});
+}
+
+function paintUpdate(st) {
+  if (!st) return;
+  const pill = document.getElementById('updatePill');
+  if (pill) {
+    const labels = {
+      idle: 'Updates',
+      dev: 'Dev build',
+      checking: 'Checking…',
+      current: 'Up to date',
+      available: `Update ${st.version || ''} found`,
+      downloading: `Downloading ${st.percent || 0}%`,
+      downloaded: `Update ${st.version || ''} ready`,
+      error: 'Update failed',
+    };
+    pill.textContent = st.packaged === false ? 'Dev build' : labels[st.status] || 'Updates';
+    pill.title = st.error || (st.packaged === false ? 'Auto-update is disabled in dev builds.' : '');
+  }
+  const tag = `${st.status}:${st.version || ''}:${st.percent || ''}`;
+  if (tag === updateNotified) return;
+  updateNotified = tag;
+  if (st.status === 'downloaded') toast(`Update ${st.version} ready — restart EggLab to install.`);
+  else if (st.status === 'available') toast(`Downloading EggLab ${st.version}…`);
+  else if (st.status === 'current' && updateManual) toast('EggLab is up to date.');
+  else if (st.status === 'error' && updateManual && st.error) toast(`Update check failed: ${st.error}`, 'error');
 }
 
 boot();

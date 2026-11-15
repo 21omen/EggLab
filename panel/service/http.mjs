@@ -9,6 +9,7 @@ import * as chat from './chat.mjs';
 import * as pc from './photocraft.mjs';
 import * as sessions from './sessions.mjs';
 import * as setup from './setup.mjs';
+import * as updater from './updater.mjs';
 import { alphaStats, describeAlpha } from './imagecheck.mjs';
 import { featherEdges, regionMask } from './pngfeather.mjs';
 import { getSettings, patchSettings } from './settings.mjs';
@@ -136,6 +137,12 @@ async function handle(req, res, url) {
 
     case 'POST /api/setup/complete':
       return json(res, 200, await setup.completeSetup());
+
+    case 'GET /api/update':
+      return json(res, 200, updater.updateStatus());
+
+    case 'POST /api/update/check':
+      return json(res, 200, await updater.checkForUpdates({ userInitiated: true }));
 
     case 'POST /api/models/download': {
       const ids = Array.isArray(body.ids) ? body.ids : [body.id].filter(Boolean);

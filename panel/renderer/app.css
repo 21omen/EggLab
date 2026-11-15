@@ -2282,3 +2282,11 @@ body.is-busy .egg-orb-dot {
 .setup-model .ok { color: var(--green); }
 .setup-model .miss { color: var(--red); }
 .setup-model .opt { color: var(--dimmer); }
+/* auto-update row in the About card */
+.about-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}

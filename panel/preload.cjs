@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('egglab', {
   pickApp: () => ipcRenderer.invoke('dialog:pickApp'),
   pickModel: () => ipcRenderer.invoke('dialog:pickModel'),
 
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+
   chatSend: (text, files, refMap) => ipcRenderer.invoke('chat:send', { text, files, refMap }),
   chatStop: () => ipcRenderer.invoke('chat:stop'),
   chatClear: () => ipcRenderer.invoke('chat:clear'),

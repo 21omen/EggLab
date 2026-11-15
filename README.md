@@ -1,172 +1,115 @@
 # EggLab
 
-Local AI image generation and editing for Windows, powered by **Qwen-Image-2.1**.
-One standalone engine, no ComfyUI, no Python, no cloud.
+**Local AI image generation and editing for Windows.** A floating egg opens a design agent
+for **PhotoCraft** — chat, generate, edit layers, and place results straight onto the canvas.
 
-## What is here
+Everything runs on your own GPU: [Qwen-Image-2.1](https://huggingface.co/Qwen) on
+[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). No ComfyUI, no
+Python, no cloud rendering.
 
-```
-EggLab\
-  engine\sd\        stable-diffusion.cpp CUDA build (sd-cli.exe) + CUDA runtime DLLs
-  out\              generated images
-  config.json       engine + model locations and defaults
-  install.ps1       engine download + model check
-  egglab.ps1        runner (text-to-image and image editing)
-  egglab.cmd        convenience wrapper for egglab.ps1
-  egglab-edit.cmd   drag-and-drop edit helper
-```
+![EggLab panel](docs/panel.png)
 
-Models live in `D:\neww\Models` (see `config.json`):
+## What it can do
 
-| File | Role | Size |
-|---|---|---|
-| `qwen-image-2.1-UC-fp8.safetensors` | Qwen-Image-2.1 diffusion model (uncensored, fp8) | 6.6 GB |
-| `qwen_image_2.1_vae_bf16.safetensors` | Qwen-Image-2.1 VAE | 0.63 GB |
-| `Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf` | Qwen3-VL-8B text encoder (uncensored, Q6_K) | 6.3 GB |
-| `Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf` | vision projector (image editing) | 1.1 GB |
-| `qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors` | Turbo LoRA (optional, `-Turbo` fast mode) | 0.85 GB |
+- **Chat with a design agent** that knows PhotoCraft: layers, masks, text, exports.
+- **Generate images** (quality 40-step or turbo 8-step LoRA) at up to 2048 px.
+- **Edit images** — reference photos, multi-reference compositions, transparent cut-outs.
+- **Place results** on the PhotoCraft canvas as layers, or export flat/layered files.
+- **Local-first** — models and renders stay on your disk; only chat text goes to the model
+  provider you pick.
 
-## Quick start
+## Requirements
 
-Text to image:
-
-```
-egglab.cmd "a neon shop sign that reads EGGLAB, rainy night, reflections"
-```
-
-Edit an image:
-
-```
-egglab.cmd "change the sign text to NEON CAT, keep the rainy mood" -Image .\photo.png
-```
-
-Or drag a PNG onto `egglab-edit.cmd`, type the instruction, press Enter.
-
-Fast mode (8 steps, about half the time, quality holds up well):
-
-```
-egglab.cmd "a neon shop sign that reads EGGLAB, rainy night" -Turbo
-```
-
-Quick smoke test (fast, low resolution):
-
-```
-egglab.cmd "a red apple on a wooden table" -Steps 4 -Width 512 -Height 512
-```
-
-Options:
-
-| Option | Default | Meaning |
-|---|---|---|
-| `-Width` / `-Height` | 1024 / 1024 | output size (multiples of 32); when editing and omitted, follows the source aspect ratio, max 1024 |
-| `-Steps` | 20 | sampling steps |
-| `-Cfg` | 6.0 | guidance scale |
-| `-Seed` | random | reproducibility |
-| `-Out` | `out\egglab-<time>.png` | output path |
-| `-NoOffload` | off | keep weights in VRAM (needs more than 8 GB) |
-| `-Cpu` | off | pure CPU backend |
-| `-Turbo` | off | Turbo LoRA: 8 steps, CFG 1.0, fixed sigma schedule; `-Steps` / `-Cfg` still override |
-| `-Open` | off | open the result when done |
-
-Multiple references: repeat `-Image a.png -Image b.png` (up to 10).
-
-RGBA generation: start the prompt with
-`This is an RGBA image with transparency. ... The image has alpha channel and the background is transparent.`
-
-## Performance (RTX 4060 Ti 8 GB, 1024x1024)
-
-- text to image, 20 steps: about **93 s** (7 s load, 77 s sampling, 3.4 s VAE decode, ~3.4 s/step).
-  Quality now defaults to 40 steps, so expect roughly double.
-- text to image, Turbo 8 steps: about **48 s** (35 s sampling, ~2.4 s/step)
-- image edit, 20 steps: about **110 s** with the q8_0 prefix cache (~4.1 s/step; without it the
-  cache is disabled on 8 GB VRAM and it takes ~205 s). Quality at 40 steps is roughly double.
-- image edit, 8 steps: about **62 s** end to end
-- 512x512, 4 steps: ~25 s, only useful to check plumbing — the image is very rough
+- Windows 10 or 11 (x64)
+- **PhotoCraft** installed (the canvas app EggLab drives — not bundled)
+- ~25 GB free disk: engine (17 MB–1.5 GB depending on GPU) + models (~20 GB, your choice)
+- A GPU is strongly recommended:
+  - NVIDIA → CUDA engine (fastest, ~1.4 GB download)
+  - Any DX12 GPU → Vulkan engine (~29 MB)
+  - CPU works but is slow
+- Internet for the engine download and the model downloads
 
 ## Install
 
-```
-.\install.ps1
-```
+1. Download **`EggLab-Setup-<version>.exe`** from [Releases](../../releases).
+2. Windows SmartScreen will warn because the installer is not code-signed yet:
+   **More info → Run anyway**.
+3. The installer copies the app (~77 MB) and downloads the engine that matches your GPU
+   (SHA-256 verified, resumable; CUDA → Vulkan → CPU fallback if a download fails).
+4. Launch EggLab and finish the setup wizard (below).
 
-It downloads the pinned CUDA engine build and checks the required model files
-(plus the optional Turbo LoRA). If a file is missing it searches `-ComfyUIPath`
-(default `D:\ComfyUI\models`) and copies it in automatically; otherwise it prints
-the official download link. Use `-ModelsPath` / `-EnginePath` to relocate, or
-`-NoCopy` to only report.
+`SHA256SUMS.txt` is attached to every release if you want to verify the download:
 
-## Panel (the EggLab companion window)
-
-`egglab-panel.cmd` starts the Electron side panel that sits next to PhotoCraft
-(`egglab-panel.cmd -Dev` adds devtools). It is a separate window on purpose:
-PhotoCraft's WASM plug-in API is filter-only, so the panel talks to the running
-app over its control port instead of modifying PhotoCraft.
-
-The chat bubble is an **OpenCode agent** (`panel/agent/`), not a local chat
-model. It drives Qwen-Image-2.1 and PhotoCraft through the `egglab` MCP server in
-`panel/mcp-server.mjs`. Pick the model in **Settings → Agent model**; custom
-providers can be marked as image-capable in `panel/settings.json`:
-
-```json
-"opencode": {
-  "model": "inferx/deepseek-v4.1-flash-1017-basic",
-  "customProviders": ["inferx"],
-  "vision": true
-}
+```powershell
+Get-FileHash .\EggLab-Setup-0.1.0.exe -Algorithm SHA256
 ```
 
-`customProviders` lists providers whose model list comes from a live endpoint
-with no capability metadata (opencode otherwise treats them as text-only and
-silently drops attachments). `vision` declares image input for the selected
-model; set it to `false` for a model that really cannot see.
+## First run
 
-### References — layers, text layers, and the live canvas
+![EggLab setup](docs/setup.png)
 
-| Button / gesture | What it sends |
+The wizard checks the four pieces EggLab needs:
+
+| Piece | What it is | What the wizard does |
+|---|---|---|
+| **PhotoCraft** | The canvas app | Detects it, or lets you locate `photocraft.exe` |
+| **OpenCode** | The agent runtime | Detects an existing install, or downloads the standalone build (~78 MB) |
+| **Engine** | stable-diffusion.cpp | Usually installed already; can re-download and switch GPU variant |
+| **Models** | Qwen-Image-2.1 + VAE + text encoder + turbo LoRA | Downloads missing files (resumable) or imports files you already have |
+
+After that, open **Settings** and pick a chat model under **Agent model**. EggLab uses
+your OpenCode providers — the free models that ship with OpenCode work, and paid
+providers/API keys are configured inside OpenCode itself.
+
+## Auto-update
+
+Installed copies check the GitHub releases of this repository about 12 seconds after launch
+and every 6 hours after that. Updates download in the background and ask for a restart;
+chats, settings, models and the engine are kept. You can also trigger a check from
+**Settings → Check for updates**.
+
+## Where things live
+
+| Path | Contents |
 |---|---|
-| **Attach** | any image file |
-| **Use selected layer** | the active PhotoCraft layer, alpha preserved |
-| **Pick layer** | any layer from a list with kind badges: `T` type, `P` pixel, `S` shape, `A` adjustment, `O` smart object, `F` fill, `G` group |
-| `@LayerName` in the message | that layer, exported automatically on send |
-| **Show canvas** | the whole flattened canvas as `@canvas` |
+| `%LOCALAPPDATA%\Programs\egglab` | Program files |
+| `%LOCALAPPDATA%\EggLab\engine` | Image engine (downloaded, never packaged) |
+| `%LOCALAPPDATA%\EggLab\models` | Models — or the folder you choose |
+| `%APPDATA%\EggLab` | Chats, settings, logs, renders (`out`) |
 
-Text layers work exactly like pixel layers: the panel exports the rendered
-glyphs (transparent background) and the agent can use them as a design
-reference. For type-driven art the agent is instructed to keep PhotoCraft's
-editable text layer on top rather than baking words into pixels, unless the user
-wants a fully rendered poster.
+Uninstalling removes the app and the engine, keeps your chats/settings, and asks before
+deleting models.
 
-**Show canvas** is the hybrid-workflow hook: `photocraft_canvas` (same route as
-`photocraft_preview`) exports a flat PNG of the document via `doc.save`, so the
-agent sees the real composite — not a screenshot of the app window. It is used
-to match colours, check layout, and verify placements.
+## Build from source
 
-### Projects and sessions
-
-- Work is autosaved after the agent places or edits a layer **when the document
-  already has a file**. Untitled documents are never given a path silently; the
-  panel asks with its own Save-as dialog.
-- Projects live in `projects/<slug>/<slug>.pcraft` under the PhotoCraft write
-  root (`D:\neww`).
-- Chats are per document: switching documents switches threads; each thread is
-  an OpenCode session. Changing the agent model forks a fresh session so a
-  vision-blind thread is never reused. Rename, delete and prune are in the
-  thread popover.
-
-### QA probes
-
-```
-node panel\tools\canvas-text-test.mjs   # type layer export + composite canvas + MCP surface
-node panel\tools\vision-e2e.mjs         # attaches both as refs and asks the agent what it sees
-node panel\tools\fork-test.mjs          # model change forks the session
+```powershell
+cd panel
+npm install
+npm start          # dev panel (uses the repo checkout layout)
+npm run dist       # one-click installer in ..\dist
 ```
 
-## Notes
+Node 20+ is required for development only; the released installer needs nothing but Windows.
 
-- The engine is `stable-diffusion.cpp` (MIT). Qwen-Image-2.1 support landed 2026/09/20.
-- Qwen-Image-2.1 needs **its own VAE**; Qwen-Image 1.0 and Wan 2.2 VAEs are not interchangeable.
-- For image editing the vision projector (`mmproj`) must be present.
-- Outputs land in `out\`; the engine also prints per-step timings when you add `-v` to the raw command.
-- `-Turbo` logs many `unused lora tensor (...img_mlp.gate_up...)` warnings. They are expected:
-  the Turbo LoRA has 665 tensors and the engine applies 569; the rest do not exist in this
-  fp8 base and are ignored.
+Releases are published by pushing a `v*` tag — see
+[`.github/workflows/release.yml`](.github/workflows/release.yml). Locally:
+
+```powershell
+cd panel
+$env:GH_TOKEN = "..."   # a token with repo scope
+npm run dist -- --publish always
+```
+
+## Project layout
+
+```
+egglab.ps1              engine runner (text-to-image, edit, turbo)
+panel/                  Electron panel + agent + service layer
+panel/build/            NSIS customization + engine downloader
+panel/service/          settings, engine, chat, models, setup, updater
+panel/knowledge (skills, references, templates)
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -60,25 +60,74 @@
       "!oc-serve.*.log"
     ],
     "extraResources": [
-      { "from": "../egglab.ps1", "to": "egglab.ps1" },
-      { "from": "build/engine-install.ps1", "to": "engine-install.ps1" },
-      { "from": "mcp-server.mjs", "to": "knowledge/mcp-server.mjs" },
-      { "from": "AGENT.md", "to": "knowledge/AGENT.md" },
-      { "from": "ROUTER.md", "to": "knowledge/ROUTER.md" },
-      { "from": "manifest.yaml", "to": "knowledge/manifest.yaml" },
-      { "from": "skills", "to": "knowledge/skills" },
-      { "from": "references", "to": "knowledge/references" },
-      { "from": "templates", "to": "knowledge/templates" },
-      { "from": "evals", "to": "knowledge/evals" },
+      {
+        "from": "../egglab.ps1",
+        "to": "egglab.ps1"
+      },
+      {
+        "from": "build/engine-install.ps1",
+        "to": "engine-install.ps1"
+      },
+      {
+        "from": "mcp-server.mjs",
+        "to": "knowledge/mcp-server.mjs"
+      },
+      {
+        "from": "AGENT.md",
+        "to": "knowledge/AGENT.md"
+      },
+      {
+        "from": "ROUTER.md",
+        "to": "knowledge/ROUTER.md"
+      },
+      {
+        "from": "manifest.yaml",
+        "to": "knowledge/manifest.yaml"
+      },
+      {
+        "from": "skills",
+        "to": "knowledge/skills"
+      },
+      {
+        "from": "references",
+        "to": "knowledge/references"
+      },
+      {
+        "from": "templates",
+        "to": "knowledge/templates"
+      },
+      {
+        "from": "evals",
+        "to": "knowledge/evals"
+      },
       {
         "from": "config",
         "to": "knowledge/config",
-        "filter": ["**/*", "!paths.yaml", "!runtime-profile.yaml"]
+        "filter": [
+          "**/*",
+          "!paths.yaml",
+          "!runtime-profile.yaml"
+        ]
       }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YanNyeinHtet",
+        "repo": "EggLab"
+      }
+    ],
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -88,5 +137,8 @@
       "deleteAppDataOnUninstall": false,
       "differentialPackage": false
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }
