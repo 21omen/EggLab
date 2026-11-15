@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Runtime state — user data, tokens, transcripts, logs. Never publish these.
+# ---------------------------------------------------------------------------
+control.json
+photocraft.token
+settings.json
+sessions.json
+sessions.backup.json
+window-state.json
+downloads.json
+projects.json
+chat.json
+config.json
+agent/
+chats/
+logs/
+tmp/
+out/
+electron-data/
+oc-serve.*.log
+config/paths.yaml
+config/runtime-profile.yaml
+panel/control.json
+panel/photocraft.token
+panel/settings.json
+panel/sessions.json
+panel/sessions.backup.json
+panel/window-state.json
+panel/downloads.json
+panel/projects.json
+panel/chat.json
+panel/agent/
+panel/chats/
+panel/logs/
+panel/tmp/
+panel/out/
+panel/oc-serve.*.log
+panel/config/paths.yaml
+panel/config/runtime-profile.yaml
+
+# ---------------------------------------------------------------------------
+# Large binaries — downloaded at install/run time (see PACKING-PLAN.md)
+# ---------------------------------------------------------------------------
+engine/
+Models/
+dist/
+*.safetensors
+*.gguf
+
+# ---------------------------------------------------------------------------
+# Scratch / backups — dev-only verification scripts and old copies
+# ---------------------------------------------------------------------------
+_backup-*/
+_verify-*.png
+tools/_ui-*/
+tools/_legacy-v1/
+panel/_backup-*/
+panel/tools/_ui-*/
+panel/tools/_legacy-v1/
+test-*.mjs
+panel/test-*.mjs
+dump-tools.mjs
+panel/dump-tools.mjs

@@ -1,0 +1,13 @@
+import { api } from './api.mjs';
+const p = await api('GET', '/api/photocraft/project');
+console.log('doc:', JSON.stringify(p.document));
+const l = await api('POST', '/api/photocraft/layers', {});
+const flat = [];
+const walk = (xs) => (xs || []).forEach((x) => { flat.push(x); walk(x.children); });
+walk(l.layers);
+console.log('layers:');
+for (const x of flat) console.log(' ', x.name, `[${x.kind}]`, JSON.stringify(x.bounds), x.visible === false ? 'hidden' : '');
+const jobs = await api('GET', '/api/jobs');
+for (const j of jobs.jobs.slice(-6)) console.log('JOB', j.id, j.status, j.phase, j.percent, j.outPath || j.error || '', j.prompt?.slice(0, 80));
+const c = await api('POST', '/api/photocraft/preview', { maxSide: 900 });
+console.log('canvas:', c.path);

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "egglab": {
+      "type": "local",
+      "command": ["node", "./panel/mcp-server.mjs"],
+      "enabled": true,
+      "timeout": 1800000
+    }
+  },
+  "agent": {
+    "egglab": {
+      "description": "EggLab design agent for PhotoCraft",
+      "mode": "primary",
+      "model": "inferx/deepseek-v4.1-flash-1017-basic",
+      "prompt": "{file:./AGENT.md}",
+      "tools": {
+        "bash": false,
+        "edit": false,
+        "write": false
+      }
+    }
+  }
+}

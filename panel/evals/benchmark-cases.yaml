@@ -1,0 +1,131 @@
+version: 1
+cases:
+  - id: poster_editorial_01
+    category: new_design
+    brief: Create a premium editorial product poster from supplied product photo and exact copy.
+    must_load: [design-direction, asset-planning, photocraft-production, qa-delivery]
+    conditional: [image-generation, reference-editing]
+    must_not: [invent_product_label, alter_brand_name]
+    checks: [hierarchy, exact_text, product_fidelity, editable_type, saved_project]
+  - id: product_scene_02
+    category: product_compositing
+    brief: Place the supplied bottle in a believable studio scene while preserving label and silhouette.
+    must_load: [asset-planning, reference-editing, photocraft-production, qa-delivery]
+    conditional: [image-generation, transparency]
+    checks: [label_identity, perspective, contact_shadow, seam_free]
+  - id: transparent_cutout_03
+    category: alpha
+    brief: Extract the supplied object as a transparent PNG with clean edges.
+    must_load: [transparency, reference-editing, qa-delivery]
+    checks: [real_alpha, edge_fringe, bounds, exported_png_alpha_check]
+  - id: person_relight_04
+    category: identity_sensitive
+    brief: Change lighting mood while preserving the person's identity and composition.
+    must_load: [reference-editing, qa-delivery]
+    checks: [consent_gate, identity_invariants, anatomy, minimal_drift]
+  - id: object_remove_05
+    category: local_edit
+    brief: Remove one named object and preserve everything else in the photo.
+    must_load: [reference-editing, scenario-recipes, qa-delivery]
+    checks: [local_scope, texture_continuity, edge_seams, no_unrequested_changes]
+  - id: portrait_retouch_06
+    category: retouch
+    brief: Remove temporary blemishes while retaining natural skin texture and identity.
+    must_load: [reference-editing, scenario-recipes, qa-delivery]
+    checks: [skin_texture, identity, local_scope]
+  - id: package_label_07
+    category: exact_text
+    brief: Replace the label text with the exact supplied wording on the existing package.
+    must_load: [reference-editing, photocraft-production, qa-delivery]
+    checks: [exact_copy, perspective, material, editable_type]
+  - id: text_only_08
+    category: typography
+    brief: Create a type-only poster with exact copy and no generated image background or texture.
+    must_load: [design-direction, photocraft-production, qa-delivery]
+    must_not: [generated_background, forced_grain, forced_support_elements]
+    checks: [exact_copy, hierarchy, font_availability, no_texture]
+  - id: minimal_luxury_09
+    category: minimal_design
+    brief: Create a restrained luxury visual with generous negative space.
+    must_load: [design-direction, qa-delivery]
+    checks: [clear_focal_point, intentional_whitespace, restrained_palette]
+    must_not: [forced_three_ornaments, forced_headline_overlap]
+  - id: vector_logo_10
+    category: vector
+    brief: Reconstruct supplied logo geometry as editable vector shapes without inventing marks.
+    must_load: [photocraft-production, qa-delivery]
+    checks: [geometry, exact_spelling, editable_paths]
+    must_not: [photo_grain, invented_logo_elements]
+  - id: infographic_11
+    category: data_structured
+    brief: Create an infographic from supplied verified data and preserve all values and units.
+    must_load: [design-direction, photocraft-production, qa-delivery]
+    checks: [data_accuracy, units, labels, source_traceability]
+    must_not: [fabricated_data, misleading_axes]
+  - id: multi_person_12
+    category: composite
+    brief: Compose three supplied people into one scene with explicit positions and preserved identities.
+    must_load: [asset-planning, reference-editing, qa-delivery]
+    checks: [person_count, identity_mapping, occlusion, anatomy]
+  - id: upscale_13
+    category: enhancement
+    brief: Increase useful detail while preserving source content; identify synthesized detail.
+    must_load: [scenario-recipes, reference-editing, qa-delivery]
+    checks: [source_preservation, no_invented_text, uncertainty_report]
+  - id: outpaint_capability_14
+    category: capability_check
+    brief: Extend a photograph beyond its current frame.
+    must_load: [reference-editing, scenario-recipes, qa-delivery]
+    checks: [live_capability_check, honest_fallback, no_false_claim]
+  - id: style_card_15
+    category: style
+    brief: Apply the selected Swiss style card to a provided content brief.
+    must_load: [design-direction, qa-delivery]
+    conditional: [photocraft-production]
+    checks: [style_card_loaded, grid, hierarchy, no_copying_protected_art]
+  - id: document_review_16
+    category: review
+    brief: Inspect an existing open PhotoCraft design and identify the three most important fixes.
+    must_load: [photocraft-production, qa-delivery]
+    checks: [active_document_confirmed, inspect_before_mutation, prioritized_critique]
+    must_not: [unrequested_regeneration]
+  - id: batch_partial_failure_17
+    category: error_recovery
+    brief: A PhotoCraft batch returns an error after several operations.
+    must_load: [photocraft-production, qa-delivery]
+    checks: [inspect_partial_success, no_blind_retry, preserve_layers]
+  - id: engine_unavailable_18
+    category: runtime_failure
+    brief: Requested model is unavailable in local runtime.
+    must_load: [image-generation]
+    checks: [query_status, discover_models, no_assumed_install, honest_status]
+  - id: retry_budget_19
+    category: retry
+    brief: First generation fails due to transient runtime error, second attempt succeeds.
+    must_load: [image-generation, qa-delivery]
+    checks: [one_transient_retry, new_trace, no_duplicate_unnecessary_call]
+  - id: false_phantom_text_20
+    category: visual_qa
+    brief: Generated image contains small unrequested pseudo-text in the background.
+    must_load: [qa-delivery]
+    checks: [phantom_text_detected, fix_or_hold]
+  - id: canvas_dimension_21
+    category: canvas
+    brief: User requests A4 portrait at 300 ppi for print.
+    must_load: [photocraft-production, qa-delivery]
+    checks: [correct_pixel_dimensions, profile_if_supported, no_unintended_resize]
+  - id: source_license_22
+    category: licensing
+    brief: User asks whether a downloaded model checkpoint can be used commercially.
+    must_load: [image-generation]
+    checks: [exact_checkpoint_license, current_source_verification, no_legacy_claim_as_fact]
+  - id: save_export_23
+    category: delivery
+    brief: Complete a design and deliver editable project plus final PNG.
+    must_load: [photocraft-production, qa-delivery]
+    checks: [project_saved, export_exists, dimensions_verified, truthful_report]
+  - id: unavailable_reference_24
+    category: retrieval_failure
+    brief: A required style/reference file path is missing from the knowledge library.
+    must_load: [design-direction]
+    checks: [report_missing_file, no_fabrication, safe_alternative]

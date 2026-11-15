@@ -1,0 +1,83 @@
+package:
+  name: egglab-agent
+  version: 2.1.0
+  default_entrypoint: AGENT.md
+  router: ROUTER.md
+  schema: egglab-knowledge-manifest-v1
+  description: One creative director with progressive-disclosure skills.
+loading:
+  startup: [AGENT.md, ROUTER.md, skill_metadata_only]
+  activation: [selected_skill_SKILL_md, only_required_references]
+  allow_multiple_skills: true
+  references_must_be_allowlisted: true
+  unknown_paths: reject
+  read_only: true
+skills:
+  - name: design-direction
+    path: skills/design-direction/SKILL.md
+    description: Visual concept, audience-aware hierarchy, composition, palette, typography and style choice.
+    triggers: [new_design, visual_concept, poster, advertisement, packaging, design_review, style_selection]
+    required_for: [new_visual_concept, subjective_design_review]
+    references: [references/design/visual-principles.md, references/design/finishing-and-support.md, references/styles/blue-note.md, references/styles/riso.md, references/styles/swiss.md, references/styles/bauhaus.md, references/styles/memphis.md, references/styles/midcentury-travel.md, references/styles/editorial-luxury.md, references/styles/grunge-print.md]
+  - name: asset-planning
+    path: skills/asset-planning/SKILL.md
+    description: L0-L7 asset decomposition, production method, world line, render planning and editable assembly.
+    triggers: [multi_asset_composition, advertisement, product_visualization, layered_composite]
+    required_for: [multi_asset_job]
+    references: [references/asset-planning/asset-stack.md]
+  - name: image-generation
+    path: skills/image-generation/SKILL.md
+    description: New assets/scenes, prompt construction, runtime-aware rendering and iteration.
+    triggers: [text_to_image, new_asset, new_scene, background_plate, atmosphere_plate]
+    required_for: [image_generation]
+    references: [references/engine/qwen-image-2.1-legacy-facts.md, references/image-generation/prompt-blueprint.md]
+  - name: reference-editing
+    path: skills/reference-editing/SKILL.md
+    description: Image edits, reference roles, identity/product preservation, scoped changes and seam checks.
+    triggers: [image_edit, reference_compositing, identity_preservation, relight, retouch, object_removal]
+    required_for: [source_image_edit, reference_composite]
+    references: [references/reference-editing/reference-mapping.md, references/reference-editing/local-edit-and-seam-control.md]
+  - name: transparency
+    path: skills/transparency/SKILL.md
+    description: True alpha, subject extraction, transparent edits, alpha validation and mask fallbacks.
+    triggers: [alpha, transparent_png, cutout, subject_extraction, sticker]
+    required_for: [transparent_asset]
+    references: [references/transparency/alpha-workflow.md]
+  - name: photocraft-production
+    path: skills/photocraft-production/SKILL.md
+    description: PhotoCraft documents, typography, vectors, layers, masks, adjustments, audit, save and export.
+    triggers: [layout, typography, layers, masks, document, canvas, audit, save, export, photocraft]
+    required_for: [photocraft_operation]
+    references: [references/photocraft/command-catalog.md, references/photocraft/document-type-shapes.md, references/photocraft/layers-masks-adjustments.md, references/photocraft/filters-transform-export.md]
+  - name: scenario-recipes
+    path: skills/scenario-recipes/SKILL.md
+    description: Specialized recipes for common edits, compositing, restoration, labels, logos and structured work.
+    triggers: [background_replace, product_compositing, skin_retouch, object_removal, label_change, outpaint, infographic, restoration, logo, sticker]
+    required_for: [named_specialized_recipe]
+    references: [references/scenarios/scenario-recipes.md]
+  - name: qa-delivery
+    path: skills/qa-delivery/SKILL.md
+    description: Profile-aware QA, measurements, source integrity, project state and verified delivery.
+    triggers: [visual_verification, quality_control, review, delivery, export_check]
+    required_for: [artifact_production, artifact_review]
+    references: [references/qa/audit-metrics-and-profiles.md]
+references:
+  - references/design/visual-principles.md
+  - references/design/finishing-and-support.md
+  - references/asset-planning/asset-stack.md
+  - references/engine/qwen-image-2.1-legacy-facts.md
+  - references/image-generation/prompt-blueprint.md
+  - references/reference-editing/reference-mapping.md
+  - references/reference-editing/local-edit-and-seam-control.md
+  - references/transparency/alpha-workflow.md
+  - references/photocraft/command-catalog.md
+  - references/photocraft/document-type-shapes.md
+  - references/photocraft/layers-masks-adjustments.md
+  - references/photocraft/filters-transform-export.md
+  - references/scenarios/scenario-recipes.md
+  - references/qa/audit-metrics-and-profiles.md
+  - references/styles/README.md
+  - references/research/README.md
+  - references/research/local/agent-failure-research.md
+  - references/research/local/qwen-image-2.1-features.md
+  - references/research/local/qwen-seamless-local-edit.md

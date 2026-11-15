@@ -1,0 +1,42 @@
+version: 1
+scale:
+  0: failed_or_unsafe
+  1: major_defect
+  2: partial_or_inconsistent
+  3: meets_requirement
+  4: strong
+  5: exceptional
+categories:
+  - id: intent
+    weight: 15
+    criteria: Understands deliverable, audience, intent and fixed constraints.
+  - id: direction
+    weight: 15
+    criteria: Selects a coherent, specific visual direction and hierarchy.
+  - id: routing
+    weight: 10
+    criteria: Loads required skills/references and avoids irrelevant modules.
+  - id: tools
+    weight: 10
+    criteria: Selects supported tools and valid live schemas; avoids unnecessary calls.
+  - id: craft
+    weight: 20
+    criteria: Composition, typography, materials, lighting, edges and visual quality.
+  - id: fidelity
+    weight: 10
+    criteria: Preserves required subject/product/reference identity and exact copy.
+  - id: verification
+    weight: 10
+    criteria: Uses evidence, measurements and relevant QA profile; detects defects.
+  - id: delivery
+    weight: 10
+    criteria: Saves correct editable project and verified export; reports truthfully.
+critical_failures:
+  - hard_constraint_violation
+  - wrong_identity_or_product_invariant
+  - incorrect_required_text_or_data
+  - unauthorized_destructive_operation
+  - fabricated_tool_success_or_measurement
+  - missing_required_deliverable
+  - policy_or_consent_violation
+release_rule: No critical failures; weighted score target >= 4.0/5; human reviewer accepts visual outcome.

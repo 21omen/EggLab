@@ -1,0 +1,16 @@
+{
+  "name": "egglab-panel",
+  "productName": "EggLab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EggLab - Qwen-Image-2.1 agent panel for PhotoCraft",
+  "main": "main.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

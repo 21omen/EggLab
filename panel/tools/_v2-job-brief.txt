@@ -1,0 +1,7 @@
+Make a launch poster for a fictional high-altitude tea brand called Fogline.
+
+Deliverable: one 1080×1350 social poster, saved as D:\neww\projects\fogline\fogline.pcraft and exported as a PNG next to it.
+Direction: quiet editorial, deep pine green and bone paper; a misty mountain ridge as the field; one small contour-line detail. No people, no product photo.
+Exact copy: headline "FOGLINE"; subline "HIGH-ALTITUDE TEA · LOT 07"; footer "Fogline Tea Co. · 1,840 m".
+All text must be editable PhotoCraft type, not baked into the render. Use one generated background at the size it occupies in the layout, then assemble the type in PhotoCraft.
+Check the composite before calling it done. Report the verified project path, export path, and the exact pixel size of the background render.

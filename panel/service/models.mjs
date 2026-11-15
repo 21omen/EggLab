@@ -1,0 +1,357 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { emit } from './bus.mjs';
+import { engineConfig, getSettings, setEngineModel } from './settings.mjs';
+import { humanBytes, readJson, writeJson, DATA_DIR } from './paths.mjs';
+
+const STATE_FILE = path.join(DATA_DIR, 'downloads.json');
+
+const HF = 'https://huggingface.co';
+
+/**
+ * Curated model sources. Every URL was HEAD-checked; each entry is a file that
+ * stable-diffusion.cpp can load directly (safetensors or GGUF).
+ */
+const UC_REPO = `${HF}/KasugaiSakura/Qwen-Image-2.1-Uncensored-Abenzerps-GGUF/resolve/main`;
+
+const DIFFUSION_VARIANTS = [
+  {
+    id: 'uc-fp8',
+    label: 'Uncensored FP8 · 6.6 GB',
+    file: 'qwen-image-2.1-UC-fp8.safetensors',
+    url: `${UC_REPO}/qwen-image-2.1-UC-fp8.safetensors`,
+    note: 'Uncensored weights in fp8. Fast to load and a good fit for 8 GB.',
+  },
+  {
+    id: 'uc-q5km',
+    label: 'Uncensored Q5_K_M · 4.9 GB',
+    file: 'qwen-image-2.1-UC-Q5_K_M.gguf',
+    url: `${UC_REPO}/qwen-image-2.1-UC-Q5_K_M.gguf`,
+    note: 'Uncensored weights quantised to Q5_K_M. Smallest uncensored option.',
+  },
+  {
+    id: 'uc-bf16',
+    label: 'Uncensored BF16 · 14.2 GB',
+    file: 'qwen-image-2.1-UC-BF16.gguf',
+    url: `${HF}/klvnyong/Qwen-Image-2.1-UC/resolve/main/diffusion_models/qwen-image-2.1-UC-BF16.gguf`,
+    note: 'Uncensored Qwen-Image-2.1 in GGUF. Best fidelity, needs offload on 8 GB.',
+  },
+  {
+    id: 'q8',
+    label: 'Official Q8_0 · 7.6 GB',
+    file: 'Qwen-Image-2.1-Q8_0.gguf',
+    url: `${HF}/off-grid-ai/Qwen-Image-2.1-GGUF/resolve/main/Qwen-Image-2.1-Q8_0.gguf`,
+    note: 'Official weights, tested with stable-diffusion.cpp. Good balance for 8 GB.',
+  },
+  {
+    id: 'q4',
+    label: 'Official Q4_K_S · 4.1 GB',
+    file: 'Qwen-Image-2.1-Q4_K_S.gguf',
+    url: `${HF}/off-grid-ai/Qwen-Image-2.1-GGUF/resolve/main/Qwen-Image-2.1-Q4_K_S.gguf`,
+    note: 'Smallest option, fastest to load, lower detail.',
+  },
+];
+
+function registry() {
+  const cfg = engineConfig();
+  return [
+    {
+      id: 'diffusion',
+      label: 'Qwen-Image-2.1 DiT',
+      note: 'The image model itself (fp8 / GGUF).',
+      required: true,
+      key: 'diffusion',
+      variants: DIFFUSION_VARIANTS,
+    },
+    {
+      id: 'vae',
+      label: 'Qwen-Image VAE',
+      note: 'Must be the 2.1 VAE; older Qwen-VAE files produce washed out colours.',
+      required: true,
+      key: 'vae',
+      variants: [
+        {
+          id: 'vae',
+          label: 'bf16 · 0.68 GB',
+          file: 'qwen_image_2.1_vae_bf16.safetensors',
+          url: `${HF}/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors`,
+        },
+      ],
+    },
+    {
+      id: 'llm',
+      label: 'Qwen3-VL 8B text encoder',
+      note: 'Reads prompts and reference images (Q6_K GGUF).',
+      required: true,
+      key: 'llm',
+      variants: [
+        {
+          id: 'q6k',
+          label: 'Uncensored Q6_K · 6.7 GB',
+          file: 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf',
+          url: `${HF}/HauhauCS/Qwen3VL-8B-Uncensored-HauhauCS-Balanced/resolve/main/Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf`,
+        },
+      ],
+    },
+    {
+      id: 'mmproj',
+      label: 'Vision projector (edits)',
+      note: 'Required for image editing / multi-reference prompts.',
+      required: true,
+      key: 'llmVision',
+      variants: [
+        {
+          id: 'f16',
+          label: 'mmproj f16 · 1.2 GB',
+          file: 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf',
+          url: `${HF}/HauhauCS/Qwen3VL-8B-Uncensored-HauhauCS-Balanced/resolve/main/Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf`,
+        },
+      ],
+    },
+    {
+      id: 'turbo',
+      label: 'Turbo LoRA',
+      note: 'Optional. Turns Quality (40 steps) into Turbo (8 steps, CFG 1).',
+      required: false,
+      key: 'turbo',
+      variants: [
+        {
+          id: 'lora',
+          label: 'Turbo LoRA · 0.9 GB',
+          file: 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors',
+          url: `${HF}/Comfy-Org/Qwen-Image-2.1/resolve/main/loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors`,
+        },
+      ],
+    },
+  ];
+}
+
+function targetFor(entry) {
+  const cfg = engineConfig();
+  const modelsDir = cfg.models;
+  // Keep the configured file name; fall back to the variant when config is stale.
+  const configured =
+    entry.key === 'turbo' ? cfg.turbo?.lora : cfg[entry.key];
+  return { modelsDir, configured };
+}
+
+export function modelStatus() {
+  const cfg = engineConfig();
+  const stored = readJson(STATE_FILE, {});
+  return {
+    modelsDir: cfg.models,
+    engineReady: fs.existsSync(path.join(cfg.engine, 'sd-cli.exe')),
+    engineDir: cfg.engine,
+    entries: registry().map((entry) => {
+      const { configured } = targetFor(entry);
+      const variant =
+        entry.variants.find((v) => v.file === configured) || entry.variants[0];
+      const file = configured || variant.file;
+      const full = path.join(cfg.models, file);
+      let size = 0;
+      try {
+        size = fs.statSync(full).size;
+      } catch {}
+      const dl = stored[entry.id];
+      return {
+        id: entry.id,
+        label: entry.label,
+        note: entry.note,
+        required: entry.required,
+        key: entry.key,
+        file,
+        path: full,
+        exists: size > 0,
+        size,
+        sizeText: size ? humanBytes(size) : '',
+        variant: variant.id,
+        variants: entry.variants.map((v) => {
+          let installed = false;
+          try {
+            installed = fs.statSync(path.join(cfg.models, v.file)).size > 0;
+          } catch {}
+          return {
+            id: v.id,
+            label: v.label,
+            file: v.file,
+            note: v.note || '',
+            installed,
+            current: v.file === file,
+            downloadable: Boolean(v.url),
+          };
+        }),
+        download: dl && dl.status === 'running' ? dl : null,
+      };
+    }),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* switching between installed variants                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Point the engine at a variant that is already on disk. Downloads call
+ * setEngineModel too, but a user may keep several quantisations around and
+ * want to switch back and forth without re-downloading.
+ */
+export function useVariant(entryId, fileOrId) {
+  const cfg = engineConfig();
+  const entry = registry().find((e) => e.id === entryId);
+  if (!entry) throw new Error(`Unknown model: ${entryId}`);
+  const variant = entry.variants.find((v) => v.file === fileOrId || v.id === fileOrId);
+  if (!variant) throw new Error(`Unknown variant for ${entry.label}`);
+  const full = path.join(cfg.models, variant.file);
+  let size = 0;
+  try {
+    size = fs.statSync(full).size;
+  } catch {}
+  if (!size) throw new Error(`${variant.file} is not installed`);
+  setEngineModel(entry.key, variant.file);
+  const status = modelStatus();
+  emit('models', { status });
+  return status;
+}
+
+/* ------------------------------------------------------------------ */
+/* downloads                                                           */
+/* ------------------------------------------------------------------ */
+
+const downloads = new Map();
+let queue = Promise.resolve();
+
+function persist() {
+  const out = {};
+  for (const [id, dl] of downloads) {
+    out[id] = {
+      status: dl.status,
+      received: dl.received,
+      total: dl.total,
+      error: dl.error || null,
+      file: dl.file,
+      updated: Date.now(),
+    };
+  }
+  writeJson(STATE_FILE, out);
+}
+
+function publicState(dl) {
+  return {
+    id: dl.id,
+    status: dl.status,
+    received: dl.received,
+    total: dl.total,
+    percent: dl.total ? Math.floor((dl.received / dl.total) * 100) : 0,
+    speed: dl.speed || 0,
+    speedText: dl.speed ? `${humanBytes(dl.speed)}/s` : '',
+    receivedText: humanBytes(dl.received),
+    totalText: humanBytes(dl.total),
+    file: dl.file,
+    error: dl.error || null,
+  };
+}
+
+async function downloadOne(entry, variant) {
+  const cfg = engineConfig();
+  const dest = path.join(cfg.models, variant.file);
+  const part = `${dest}.part`;
+  fs.mkdirSync(cfg.models, { recursive: true });
+
+  const dl = {
+    id: entry.id,
+    status: 'running',
+    received: 0,
+    total: 0,
+    speed: 0,
+    file: variant.file,
+    abort: new AbortController(),
+  };
+  downloads.set(entry.id, dl);
+  emit('model', { id: entry.id, download: publicState(dl) });
+
+  const res = await fetch(variant.url, {
+    redirect: 'follow',
+    signal: dl.abort.signal,
+    headers: { 'user-agent': 'EggLab/0.1' },
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`HTTP ${res.status} for ${variant.url}`);
+  }
+  dl.total = Number(res.headers.get('content-length')) || 0;
+
+  const out = fs.createWriteStream(part);
+  const reader = res.body.getReader();
+  let lastEmit = 0;
+  let lastBytes = 0;
+  let lastTime = Date.now();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!out.write(Buffer.from(value))) {
+      await new Promise((resolve) => out.once('drain', resolve));
+    }
+    dl.received += value.length;
+    const now = Date.now();
+    if (now - lastEmit > 400) {
+      const dt = (now - lastTime) / 1000;
+      if (dt > 0) dl.speed = (dl.received - lastBytes) / dt;
+      lastBytes = dl.received;
+      lastTime = now;
+      lastEmit = now;
+      emit('model', { id: entry.id, download: publicState(dl) });
+      persist();
+    }
+  }
+  await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+  fs.renameSync(part, dest);
+
+  dl.status = 'done';
+  dl.percent = 100;
+  if (entry.id === 'turbo') setEngineModel('turbo', variant.file);
+  else setEngineModel(entry.key, variant.file);
+
+  emit('model', { id: entry.id, download: publicState(dl) });
+  emit('models', { status: modelStatus() });
+  persist();
+}
+
+export function startDownloads(ids, variantId = null) {
+  const entries = registry();
+  const started = [];
+  for (const id of ids) {
+    const entry = entries.find((e) => e.id === id);
+    if (!entry) continue;
+    const variant = entry.variants.find((v) => v.id === variantId) || entry.variants[0];
+    if (!variant) continue;
+    if (!variant.url) continue;
+    if (downloads.get(id)?.status === 'running') continue;
+    started.push(id);
+    queue = queue
+      .then(() => downloadOne(entry, variant))
+      .catch((err) => {
+        const dl = downloads.get(id) || { id, received: 0, total: 0 };
+        dl.status = 'error';
+        dl.error = err.name === 'AbortError' ? 'Canceled' : err.message;
+        downloads.set(id, dl);
+        emit('model', { id, download: publicState(dl) });
+        persist();
+      });
+  }
+  return { started, queue: publicState(downloads.get(started[0]) || {}) };
+}
+
+export function cancelDownload(id) {
+  const dl = downloads.get(id);
+  if (!dl) return false;
+  dl.abort?.abort();
+  return true;
+}
+
+export function retryDownload(id) {
+  return startDownloads([id]);
+}
+
+export function publicDownloads() {
+  return [...downloads.values()].map(publicState);
+}

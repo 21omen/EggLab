@@ -1,0 +1,28 @@
+// Round-12 candidates (generation size envelope). Zero new bullets: each is a
+// sentence folded into an existing block, per the distillation lesson. Apply
+// with: node tools\_distill-apply.mjs _r12-pairs.txt
+// Gate with _agentdoc.mjs + both checks before baking into a session.
+// Sources: agent-failure-research.md §11 (round 12) — sd.cpp /32 rule,
+// Qwen training buckets ~1.0-1.76 MP, 2.x curriculum to 2048p.
+@@@PAIR|R12a element sizing with envelope numbers
+@@@FIND
+- Generate at the size the asset occupies in the layout (or ~1.5×), not the canvas
+  size. A 300 px prop does not need 2048 px.
+@@@REPL
+- Generate at the size the asset occupies in the layout (or ~1.5×), not the canvas
+  size. A 300 px prop does not need 2048 px — compute the footprint, pass explicit
+  width/height, and floor text-bearing assets at 512. Render time scales with area
+  (512² ≈ ¼ of 1024²); anything past 2048 is clamped, so upscale in PhotoCraft
+  instead of over-rendering.
+@@@END
+@@@PAIR|R12b enforced envelope + trained buckets
+@@@FIND
+- **Sizes are multiples of 32.** 1024 is the default on 8 GB; 2048 is the ceiling and
+  roughly 4× the cost. Match the ratio to the use case.
+@@@REPL
+- **Sizes are multiples of 32, 256–2048 enforced.** 1024 is the default on 8 GB;
+  2048 is the ceiling and roughly 4× the cost, and the service clamps anything
+  larger. Quality peaks in the trained buckets, roughly 1.0–1.8 MP (1328²,
+  1664×928, 1472×1104, 1584×1056 and their mirrors). Match the ratio to the use
+  case.
+@@@END

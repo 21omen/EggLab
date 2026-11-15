@@ -1,0 +1,33 @@
+// Round-11 candidates (visual self-verification). Zero new bullets: each is a
+// sentence folded into an existing block, per the distillation lesson. Apply
+// with: node tools\_distill-apply.mjs _r11-pairs.txt
+// Gate with _agentdoc.mjs + both checks before baking into a session.
+@@@PAIR|C16a extract constraints at plan time
+@@@FIND
+3. **Decompose.** Write the asset plan silently (§3). You need to know how many
+   renders and which mode *before* you spend the first one. If the brief names an
+   era or style, read its style card first and plan against it (§12.4).
+@@@REPL
+3. **Decompose.** Write the asset plan silently (§3). You need to know how many
+   renders and which mode *before* you spend the first one. If the brief names an
+   era or style, read its style card first and plan against it (§12.4). Also
+   pull the brief's hard constraints — numbers, names, must-show items — into a
+   numbered list: QA step 2 judges the piece against that list, not a vibe.
+@@@END
+@@@PAIR|C16b QA brief step judges the constraint list
+@@@FIND
+2. **Brief** — does it deliver the one thing asked for?
+@@@REPL
+2. **Brief** — check against the numbered constraint list you extracted at plan
+   time (§1.3): every number, name and must-show item, each seen in the image.
+@@@END
+@@@PAIR|C17 monotonic compare after a repair
+@@@FIND
+Repair: one targeted change, then re-check. If it still fails, say which check failed
+— do not re-roll in silence.
+@@@REPL
+Repair: one targeted change, then re-check, and compare the new read against the
+previous one — a fix that introduces a new failure is a regression; undo that
+change and re-approach. If it still fails, say which check failed — do not
+re-roll in silence.
+@@@END

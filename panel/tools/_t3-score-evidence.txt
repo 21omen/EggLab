@@ -1,0 +1,139 @@
+=== FULL AGENT REPLY ===
+Brief read: 105×210 mm + 3 mm bleed = **111×216 mm**, so the artboard is **1312×2560 px @ 300 ppi**. Direction: strict Swiss grid on a dark metallized foil substrate — huge knocked-back numeral, one hairline system, one photographic chip, legal type along the bottom edge.
+
+Plan:
+1. Render foil substrate plate (quality, the metallic requirement)
+2. Render one hard-cropped chocolate macro (the single photographic element)
+3. Build 1312×2560 wrapper in PhotoCraft: grid, rules, logo knock-out, type
+4. Audit → one fix pass → metallic finish → save + flat exportFoil plate accepted — soft crinkles, real specular ridges, correct bronze-brown. Building the grid now.Logo box is sitting on the foil as a black rectangle — fixing that, setting weights/tracking, placing the photographic block, and grading the foil down to "Midnight".**Delivered.** Wrapper built at true print size: **1312 × 2560 px = 111 × 216 mm @ 300 ppi** (105 × 210 trim + 3 mm bleed all round; trim sits 35 px in, every live element is ≥64 px in, so nothing important gets cut).
+
+Files:
+- Flat art: `D:\neww\EggLab\out\cocoa-line-midnight-70-wrapper\cocoa-line-midnight-70-wrapper-111x216mm-300ppi.png`
+- Project: `D:\neww\projects\cocoa-line-midnight-70-wrapper\cocoa-line-midnight-70-wrapper.pcraft`
+
+**What it is.** Swiss grid, one grotesque (Inter, 700/800 display against 17–22 px legal), flush left, one 6-column measure, hairline system, accent copper pulled from your logo's disc. Your COCOA LINE lockup is used untouched at top-left — its dark plate was dropped to *Lighten* so the mark and disc sit straight on the foil with no box. The heavy "70" is the piece's image: type as image, no hero photo competing with it. One photographic block — broken 70% chocolate, hard square crop, Swiss figure treatment with a tracked caption — because a wrapper that is only type reads like a spec sheet on shelf.
+
+**Metallic.** Not a gradient: a quality 25-step render of crinkled espresso metallized paper with one raking 3200 K key, then a clipped curves pass over the whole piece pulling the mids down to "Midnight". Sheen varies across the sheet, so it behaves like metal, not a brown fill.
+
+**Verified (audit numbers, not impressions):** 0 text collisions · 3-colour palette (foil #251C15 / cream #E1D5BF / copper #C08455) · luminance p2 3 → p98 84, so highlights still read at thumbnail · ink touches all four sides, which is intended — the foil is the bleed. All copy, including the legal, is live editable type.
+
+**Placeholders — do not print as-is.** You gave me no declaration, so I wrote standard dark-chocolate legal: ingredients list, "contains soya / may contain traces of milk and nuts", "cocoa solids 70% minimum", "store in a cool, dry place". Replace with your actual spec; they're one `type.edit` each. Also missing for retail: barcode/QR and batch/BBE block — say where you want them and I'll set them on the grid with the same hairline treatment.
+
+**Weakest thing:** the photographic block is a hard near-black square, so its edge is a visible step against the foil. Tighten the crop into the chocolate so its own dark field never reaches the block edge (or drop the block and let the type hold alone — it can). That's the one change I'd make next.
+
+One production note: this is a rendered foil *look*. If it goes to real metallized stock, the printer will want the foil as a spot channel or a white-underbase knockout — this file is flat CMYK-able art, not a separation.
+
+=== LAYERS OUTPUT (full) ===
+{
+  "document": {
+    "name": "cocoa-line-midnight-70-wrapper",
+    "width": 1312,
+    "height": 2560
+  },
+  "activeLayer": 345,
+  "layers": [
+    {
+      "blend": "Normal",
+      "bounds": [
+        668,
+        2291,
+        535,
+        76
+      ],
+      "clipped": false,
+      "fill": 1,
+      "hasMask": false,
+      "hasVectorMask": false,
+      "hasXmp": false,
+      "id": 345,
+      "kind": "Type",
+      "labelColor": "none",
+      "linkGroup": null,
+      "name": "Legal - allergy",
+      "opacity": 1,
+      "selected": true,
+      "text": {
+        "font": "Inter",
+        "sizePt": 22
+
+=== SECOND BATCH (failed op) ===
+{
+  "ok_count": 12,
+  "total": 14,
+  "failed": 1,
+  "first_failed": 12,
+  "not_run": 1,
+  "results": [
+    {
+      "i": 0,
+      "id": "layer.setProps",
+      "ok": true
+    },
+    {
+      "i": 1,
+      "id": "place",
+      "ok": true
+    },
+    {
+      "i": 2,
+      "id": "type.setStyle",
+      "ok": true,
+      "id_out": 337
+    },
+    {
+      "i": 3,
+      "id": "type.setStyle",
+      "ok": true,
+      "id_out": 338
+    },
+    {
+      "i": 4,
+      "id": "type.setStyle",
+      "ok": true,
+      "id_out": 339
+    },
+    {
+      "i": 5,
+      "id": "type.setStyle",
+      "ok": true,
+      "id
+
+=== AUDIT OUTPUT (full) ===
+{
+  "doc": {
+    "name": "cocoa-line-midnight-70-wrapper",
+    "width": 1312,
+    "height": 2560
+  },
+  "canvas": "D:\\neww\\EggLab\\panel\\tmp\\pc-canvas-1794429782350-1024.png",
+  "background": "#251c15",
+  "backgroundPct": 32,
+  "ink": {
+    "left": 0,
+    "top": 0,
+    "right": 0,
+    "bottom": 0
+  },
+  "edgeTouch": [
+    "top",
+    "right",
+    "bottom",
+    "left"
+  ],
+  "palette": [
+    {
+      "hex": "#251c15",
+      "pct": 32
+    },
+    {
+      "hex": "#2b221b",
+      "pct": 19
+    },
+    {
+      "hex": "#1a130d",
+      "pct": 13
+    },
+    {
+      "hex": "#e1d5bf",
+      "pct": 11
+  

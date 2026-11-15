@@ -1,0 +1,42 @@
+# TEMPLATE ONLY — populate from live EggLab status and actual model config.
+profile_version: 1
+verified_at: null
+verified_by: null
+engine:
+  provider: local
+  model_id: qwen-image-2.1
+  model_build: null
+  quality_steps: "{{QUALITY_STEPS}}"
+  quality_cfg: "{{QUALITY_CFG}}"
+  turbo_steps: "{{TURBO_STEPS}}"
+  turbo_cfg: "{{TURBO_CFG}}"
+  negative_prompt_supported: unknown
+  cfg_policy: unknown
+  accepted_dimensions: {min: null, max: null, multiple_of: null}
+  max_references: null
+  recommended_reference_count: null
+  transparent_rgba: unknown
+  inpaint_modes: []
+  outpaint_supported: unknown
+  parallel_render_supported: unknown
+  observed_vram_gb: null
+  license_name: unknown
+  license_url: null
+photocraft:
+  running: unknown
+  version: null
+  command_catalog_checked_at: null
+  supports_batch: unknown
+  batch_stops_on_first_error: unknown
+  supports_layer_masks: unknown
+  supports_editable_type: unknown
+budgets:
+  max_heavy_renders_per_turn: 2  # v1 legacy default; override only from actual runtime/time budget
+  max_retry_after_transient: 1
+  max_retry_after_content_change: 1
+  max_edit_passes_recommended: 3
+  max_audit_repair_cycles: 1
+notes:
+  - Replace unknown values using live tool responses.
+  - Keep historical observations in references/engine; current capabilities belong here.
+  - Record verification date, method and build.

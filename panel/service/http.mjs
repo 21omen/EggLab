@@ -1,0 +1,454 @@
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { URL } from 'node:url';
+import * as engine from './engine.mjs';
+import * as models from './models.mjs';
+import * as chat from './chat.mjs';
+import * as pc from './photocraft.mjs';
+import * as sessions from './sessions.mjs';
+import { alphaStats, describeAlpha } from './imagecheck.mjs';
+import { featherEdges, regionMask } from './pngfeather.mjs';
+import { getSettings, patchSettings } from './settings.mjs';
+import { LOG_DIR, TMP_DIR, stamp, clamp } from './paths.mjs';
+import { emit } from './bus.mjs';
+
+export const TOKEN = crypto.randomBytes(24).toString('hex');
+let selfUrl = null;
+
+function json(res, status, body) {
+  const data = Buffer.from(JSON.stringify(body));
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': data.length,
+    'cache-control': 'no-store',
+  });
+  res.end(data);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 4_000_000) reject(new Error('Body too large'));
+    });
+    req.on('end', () => {
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function authorized(req, url) {
+  const header = req.headers['x-egglab-token'];
+  const query = url.searchParams.get('token');
+  return header === TOKEN || query === TOKEN;
+}
+
+async function handle(req, res, url) {
+  const route = `${req.method} ${url.pathname.replace(/\/+$/, '')}`;
+  const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await readBody(req);
+
+  switch (route) {
+    case 'GET /api/ping':
+      return json(res, 200, { ok: true, name: 'egglab', version: '0.1.0' });
+
+    case 'GET /api/status': {
+      const s = getSettings();
+      return json(res, 200, {
+        engine: engine.engineStatus(),
+        models: models.modelStatus(),
+        settings: s,
+        photocraft: await pc.status(),
+        chat: { busy: chat.isBusy(), sessionID: chat.getHistory().sessionID },
+      });
+    }
+
+    case 'GET /api/settings':
+      return json(res, 200, getSettings());
+
+    case 'PATCH /api/settings': {
+      const before = getSettings().quality?.steps;
+      const next = patchSettings(body?.patch || body);
+      if (body?.quality?.steps !== undefined && body.quality.steps !== before) {
+        try {
+          fs.appendFileSync(
+            path.join(LOG_DIR, 'main.log'),
+            `${new Date().toISOString()} settings quality.steps ${before} -> ${body.quality.steps} (api)\n`
+          );
+        } catch {}
+      }
+      // The agent prompt bakes in the live values (quality/turbo steps and CFG,
+      // engine/model paths, output dir, control port, roots, default size), and
+      // the workspace config declares the selected model's capabilities. Rebuild
+      // on every patch so the agent never reads a stale manual, and tell the
+      // window so its settings drawer reflects the change immediately.
+      try {
+        chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+      } catch (err) {
+        try {
+          fs.appendFileSync(
+            path.join(LOG_DIR, 'main.log'),
+            `${new Date().toISOString()} workspace rebuild failed: ${err.message}\n`
+          );
+        } catch {}
+      }
+      emit('settings', { settings: next });
+      return json(res, 200, next);
+    }
+
+    case 'GET /api/models':
+      return json(res, 200, models.modelStatus());
+
+    case 'POST /api/models/download': {
+      const ids = Array.isArray(body.ids) ? body.ids : [body.id].filter(Boolean);
+      return json(res, 200, models.startDownloads(ids, body.variant || null));
+    }
+
+    case 'POST /api/models/download/cancel':
+      return json(res, 200, { canceled: models.cancelDownload(body.id) });
+
+    case 'POST /api/check/alpha': {
+      // Any PNG on the machine: a render, an exported layer, or a cut-out the
+      // user handed over. Answers "is this really transparent" with numbers.
+      const file = String(body.path || '');
+      if (!file) return json(res, 400, { error: 'path is required' });
+      const stats = alphaStats(file);
+      return json(res, 200, { ...stats, description: describeAlpha(stats) });
+    }
+
+    case 'POST /api/models/use':
+      return json(res, 200, models.useVariant(body.id, body.file));
+
+    case 'GET /api/jobs':
+      return json(res, 200, { jobs: engine.listJobs() });
+
+    case 'POST /api/jobs': {
+      const job = engine.startJob(body);
+      return json(res, 200, { job });
+    }
+
+    case 'GET /api/chat':
+      return json(res, 200, chat.getHistory());
+
+    case 'GET /api/sessions':
+      return json(res, 200, await sessions.list(Number(body?.limit) || 40));
+
+    case 'POST /api/sessions/rename':
+      return json(res, 200, sessions.rename(body.key, body.title));
+
+    case 'POST /api/sessions/clear':
+      return json(res, 200, { ok: chat.clearHistory() });
+
+    case 'POST /api/sessions/delete':
+      return json(res, 200, await chat.deleteThread(body.key));
+
+    case 'POST /api/chat': {
+      const item = await chat.send(body.text, body.files || [], body.refMap || {});
+      return json(res, 200, { item });
+    }
+
+    case 'POST /api/chat/stop':
+      return json(res, 200, { stopped: chat.stop() });
+
+    case 'POST /api/chat/clear':
+      return json(res, 200, { ok: chat.clearHistory() });
+
+    case 'POST /api/photocraft/launch':
+      return json(res, 200, await pc.launch());
+
+    case 'POST /api/photocraft/layers':
+      return json(res, 200, await pc.layers());
+
+    case 'POST /api/photocraft/preview':
+      return json(res, 200, await pc.preview(Number(body.maxSide) || 1024));
+
+    case 'POST /api/photocraft/place':
+      return json(res, 200, { result: await pc.place(body.path, body), save: await pc.autosave('placed a layer') });
+
+    case 'POST /api/photocraft/new-document':
+      return json(res, 200, { result: await pc.newDocument(body) });
+
+    case 'POST /api/photocraft/export-layers':
+      return json(res, 200, { result: await pc.exportLayers(body) });
+
+    case 'POST /api/photocraft/export-flat':
+      return json(res, 200, await pc.exportFlattened(body));
+
+    case 'POST /api/photocraft/audit':
+      return json(res, 200, await pc.audit(body));
+
+    case 'POST /api/photocraft/export-active':
+      return json(res, 200, await pc.exportActiveLayer());
+
+    case 'POST /api/photocraft/export-layer': {
+      return json(res, 200, await pc.exportLayerByName(body.name, body));
+    }
+
+    case 'POST /api/photocraft/export-layers-by-mentions': {
+      return json(res, 200, await pc.exportLayersByMentions(body.names || []));
+    }
+
+    case 'POST /api/photocraft/command':
+      return json(res, 200, { result: await pc.command(body.id, body.params || {}) });
+
+    case 'POST /api/photocraft/commands':
+      return json(res, 200, await pc.commandCatalog(body || {}));
+
+    case 'GET /api/photocraft/project':
+      return json(res, 200, await pc.projectState());
+
+    case 'POST /api/photocraft/project/save':
+      return json(res, 200, await pc.save(body || {}));
+
+    case 'POST /api/photocraft/project/open':
+      return json(res, 200, await pc.openProject(body || {}));
+
+    case 'POST /api/photocraft/project/close':
+      return json(res, 200, await pc.closeDocument(body || {}));
+
+    case 'POST /api/photocraft/project/path':
+      return json(res, 200, { path: pc.projectPathFor(body.name, body) });
+
+    case 'GET /api/photocraft/project/recent':
+      return json(res, 200, { projects: pc.recentProjects(Number(body?.limit) || 20) });
+
+    case 'POST /api/photocraft/edit-active':
+      return json(res, 200, { ...(await editActive(body)), save: await pc.autosave('edited a layer') });
+
+    case 'GET /api/events': {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      res.write(': connected\n\n');
+      const { bus } = await import('./bus.mjs');
+      const handler = (evt) => {
+        res.write(`data: ${JSON.stringify(evt)}\n\n`);
+      };
+      bus.on('event', handler);
+      req.on('close', () => bus.off('event', handler));
+      return;
+    }
+
+    default:
+      break;
+  }
+
+  // parameterised routes
+  let m = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
+  if (m && req.method === 'GET') {
+    const job = engine.getJob(m[1]);
+    return job ? json(res, 200, { job }) : json(res, 404, { error: 'Unknown job' });
+  }
+  m = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+  if (m && req.method === 'POST') {
+    return json(res, 200, { canceled: engine.cancelJob(m[1]) });
+  }
+
+  return json(res, 404, { error: `No route for ${req.method} ${url.pathname}` });
+}
+
+/**
+ * Export the active PhotoCraft layer, edit it, put the new pixels back at the
+ * same place and hide the original. The whole point of the panel.
+ */
+async function editActive(body) {
+  const exported = await pc.exportActiveLayer();
+  if (!exported?.path) throw new Error('No active layer to edit.');
+  const layer = exported.layer;
+  const size = pc.pngSize(exported.path);
+
+  // A local edit. Two shapes, both built to avoid the same defect: a
+  // hard-edged rectangle pasted back over an unchanged image. Measured on a
+  // real retouch, that path gave an outside delta of exactly 0.00 jumping
+  // straight to ~2.19 at col 260 — a clean 520x839 rectangle with zero feather,
+  // which is what "I can see the seam" looks like in numbers.
+  //
+  //   mode "crop"    (default) edit a tight crop — Qwen is far more reliable on
+  //                  a tight subject than on a whole canvas — then ramp the
+  //                  result's alpha down over the edge band so it crossfades
+  //                  into the layer below instead of stopping at a line.
+  //   mode "inpaint" hand the WHOLE layer to the engine together with a soft
+  //                  mask (sd-cli --init-img --mask --strength). The model
+  //                  repaints one continuous canvas, so nothing is ever pasted
+  //                  and a seam cannot exist by construction. Costs a small
+  //                  global VAE drift; buys a perfect blend.
+  let region = null;
+  let source = exported.path;
+  let pasteBounds = null; // where the result lands; null = use the layer bounds
+  let swapOriginal = false; // result covers the whole layer, so hide the old one
+  const local = {};
+
+  if (Array.isArray(body.region) && body.region.length === 4) {
+    if (!layer?.bounds) throw new Error('A region edit needs a layer with pixel bounds.');
+    const [lx, ly] = layer.bounds;
+    if (!size?.width || !size?.height) throw new Error('Could not read the layer pixels.');
+    const rx = clamp(Math.round(Number(body.region[0]) - lx), 0, size.width - 1);
+    const ry = clamp(Math.round(Number(body.region[1]) - ly), 0, size.height - 1);
+    const rw = clamp(Math.round(Number(body.region[2])), 1, size.width - rx);
+    const rh = clamp(Math.round(Number(body.region[3])), 1, size.height - ry);
+    if (!(rw > 0) || !(rh > 0)) throw new Error('region must be [x, y, width, height] with positive size.');
+    region = [lx + rx, ly + ry, rw, rh];
+
+    // The blend band. Grown OUTSIDE the edit box on purpose: the box is where
+    // the change has to land, and the pixels just beyond it are the ones that
+    // have to absorb the transition. A surgical strip is what reads as a seam.
+    const band = clamp(
+      body.feather === undefined || body.feather === null ? 48 : Number(body.feather),
+      0,
+      256,
+    );
+
+    if (String(body.mode || 'crop') === 'inpaint') {
+      const strength = Number.isFinite(Number(body.strength)) ? Number(body.strength) : 0.4;
+      const maskPath = path.join(TMP_DIR, `pc-mask-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`);
+      regionMask(maskPath, size.width, size.height, [rx, ry, rw, rh], band || 32);
+      local.initImg = exported.path;
+      local.mask = maskPath;
+      local.strength = clamp(strength, 0.05, 1);
+      if (Number.isFinite(Number(body.imgCfg))) local.imgCfg = Number(body.imgCfg);
+      pasteBounds = layer.bounds;
+      swapOriginal = true;
+    } else {
+      const cropped = await pc.cropCopy(exported.path, [rx, ry, rw, rh]);
+      source = cropped.path;
+      region = [lx + cropped.rect[0], ly + cropped.rect[1], cropped.rect[2], cropped.rect[3]];
+      pasteBounds = region;
+      local.feather = band;
+    }
+  }
+  const sourceSize = pc.pngSize(source);
+  const inpaint = Boolean(local.mask);
+
+  // Follow the source's aspect ratio instead of capping each side on its own.
+  // min(1024,w) x min(1024,h) turns a 1024x1280 layer into a 1024x1024 square,
+  // and placeAtBounds then stretches that back over a 1024x1280 box — a 25 %
+  // vertical distortion. Cap the LONG side and let the other side follow.
+  // (engine.mjs rounds both to a multiple of 32 on the way out.)
+  //
+  // The cap differs by mode because the consequence differs. A crop patch is
+  // small and gets pasted into its own rectangle; an inpaint result covers the
+  // WHOLE layer, so a downscale here is a loss of sharpness across the entire
+  // image. Capping a 1024x1280 layer at 1024 made the engine render 832x1024
+  // (its preprocess log: `resize=832x1024`), which placeAtBounds then stretched
+  // back up — 97.9 % of pixels changed and the background visibly softened.
+  // Inpaint therefore runs at the layer's own size; the tiled VAE handles it.
+  const fitted = (() => {
+    const w = Number(sourceSize?.width) || 0;
+    const h = Number(sourceSize?.height) || 0;
+    if (!(w > 0) || !(h > 0)) return {};
+    const cap = inpaint ? 1536 : 1024;
+    const k = Math.min(1, cap / Math.max(w, h));
+    return { width: Math.round(w * k), height: Math.round(h * k) };
+  })();
+
+  const job = engine.startJob({
+    ...body,
+    region: undefined,
+    // Inpainting is driven by --init-img + --mask, and that path is verified
+    // WITHOUT a reference image; passing -r as well would condition the model
+    // twice on the same pixels. `transparent` is forced off because this is not
+    // a cut-out request — a global transparent default must not fire here.
+    images: inpaint ? [] : [source],
+    ...(inpaint ? { transparent: false } : {}),
+    ...local,
+    width: body.width || fitted.width || undefined,
+    height: body.height || fitted.height || undefined,
+  });
+  const done = await engine.waitForJob(job.id);
+  if (done.status !== 'done') {
+    return { ok: false, job: done, error: done.error || 'Edit failed.' };
+  }
+
+  // Crop mode: fade the patch's own edges into transparency before it goes
+  // down, so the composite steps smoothly across the boundary instead of
+  // showing where the rectangle was cut. The interior stays fully opaque —
+  // a ramp that ate the middle would ghost two half-visible versions of the
+  // subject instead of blending them.
+  let output = done.outPath;
+  let feathered = 0;
+  if (local.feather > 0 && done.outPath) {
+    try {
+      const faded = path.join(
+        TMP_DIR,
+        `pc-feather-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`,
+      );
+      feathered = featherEdges(done.outPath, faded, local.feather);
+      if (feathered > 0) output = faded;
+    } catch (err) {
+      emit('log', `feather failed (${err.message}); placing the un-feathered result`);
+    }
+  }
+
+  const doc = await pc.inspect();
+  const d = doc?.document || doc || {};
+  const bounds = pasteBounds || layer?.bounds;
+
+  // The edited crop goes back exactly over the original: paste at its bounds
+  // and let the panel scale the result to those pixels.
+  const placed = bounds
+    ? await pc.placeAtBounds(output, bounds, {
+        name: layer?.name ? `${layer.name} (EggLab${region ? ' region' : ''})` : 'EggLab edit',
+      })
+    : await pc.place(output, {
+        fit: true,
+        name: 'EggLab edit',
+        center: [(d.width || 0) / 2, (d.height || 0) / 2],
+      });
+
+  let hidden = null;
+  // Inpaint results cover the whole layer, so leaving the original visible
+  // would stack two copies of it; a feathered crop sits only over its own
+  // rectangle and the layer beneath is meant to keep showing through.
+  if (body.replace !== false && layer?.id !== undefined && (!region || swapOriginal)) {
+    try {
+      hidden = await pc.command('layer.setProps', { layer: layer.id, visible: false });
+    } catch (err) {
+      hidden = { error: err.message };
+    }
+  }
+
+  return {
+    ok: true,
+    job: done,
+    region,
+    mode: local.mask ? 'inpaint' : region ? 'crop' : 'full',
+    feather: feathered,
+    mask: local.mask || null,
+    alpha: done.alpha || null,
+    layer: layer ? { id: layer.id, name: layer.name, bounds: layer.bounds } : null,
+    placed,
+    hiddenOriginal: hidden,
+    output,
+  };
+}
+
+export function startServer() {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      if (!authorized(req, url)) {
+        return json(res, 401, { error: 'Bad or missing EggLab token' });
+      }
+      handle(req, res, url).catch((err) => {
+        json(res, 500, { error: err.message, code: err.code || null });
+      });
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      selfUrl = `http://127.0.0.1:${port}`;
+      resolve({ server, port, url: selfUrl });
+    });
+  });
+}

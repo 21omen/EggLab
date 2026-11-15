@@ -1,0 +1,400 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import { spawn, execFileSync } from 'node:child_process';
+import { DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
+
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+export const ASPECTS = {
+  '1:1': [1024, 1024],
+  '4:3': [1152, 864],
+  '3:4': [864, 1152],
+  '3:2': [1152, 768],
+  '2:3': [768, 1152],
+  '16:9': [1152, 640],
+  '9:16': [640, 1152],
+  '4:5': [1024, 1280],
+  '5:4': [1280, 1024],
+  '2:1': [1280, 640],
+  '1:2': [640, 1280],
+};
+
+/* ------------------------------------------------------------------ *
+ * Environment detection — no machine-specific paths may be hardcoded:
+ * this repo is published and installs must work on any Windows profile.
+ * ------------------------------------------------------------------ */
+
+// PhotoCraft install folder: sibling checkout first (dev), then the usual
+// per-user/Program Files locations. Empty when nothing is found — the
+// first-run wizard then asks the user to locate it (or skip).
+function detectPhotoCraftDir() {
+  const candidates = [
+    path.join(ROOT, '..', 'photocraft-app'),
+    path.join(ROOT, '..', 'photocraft'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'PhotoCraft'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'photocraft'),
+    'C:\\Program Files\\PhotoCraft',
+    'C:\\Program Files (x86)\\PhotoCraft',
+  ];
+  for (const dir of candidates) {
+    if (!dir) continue;
+    try {
+      if (fs.existsSync(path.join(dir, 'photocraft.exe'))) return dir;
+    } catch {}
+  }
+  return '';
+}
+
+// OpenCode: prefer the npm global install's real .exe (a .cmd shim cannot be
+// spawned without a shell since Node's CVE-2024-27980 hardening), then other
+// common locations, then PATH via where.exe. See resolveOpenCode().
+function defaultOpenCodeExe() {
+  const npmExe = process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')
+    : '';
+  try {
+    if (npmExe && fs.existsSync(npmExe)) return npmExe;
+  } catch {}
+  return '';
+}
+
+// The dev workspace root: the checkout's parent (PhotoCraft requires the
+// automation roots to contain the projects folder).
+const DEV_ROOT = path.dirname(ROOT);
+const PHOTO_DIR = detectPhotoCraftDir();
+
+export const DEFAULTS = {
+  // Packaged installs keep config.json (engine/model locations, written by
+  // the installer or the first-run wizard) in the user data folder; dev keeps
+  // reading it from the repo root next to egglab.ps1.
+  engineRoot: PACKAGED ? DATA_DIR : ROOT,
+  modelsDir: MODELS_DIR,
+  workflow: 'quality',
+  // Qwen-Image-2.1 is specified at 40 steps, CFG 1 (it is meant to be sampled
+  // without guidance). 20 steps was the old panel default and produced soft,
+  // under-resolved renders.
+  quality: { steps: 40, cfg: 1 },
+  turbo: { steps: 8, cfg: 1 },
+  aspect: '1:1',
+  width: 1024,
+  height: 1024,
+  seed: -1,
+  lockSeed: false,
+  batch: 1,
+  transparent: false,
+  offload: true,
+  method: 'euler',
+  // Rough wall-clock cost per sampling step on this 8 GB card, used for the
+  // progress estimate only (the engine has no step counter on stdout).
+  perStepSec: { quality: 4.5, turbo: 5.5 },
+  photocraft: {
+    exe: PHOTO_DIR ? path.join(PHOTO_DIR, 'photocraft.exe') : '',
+    cli: PHOTO_DIR ? path.join(PHOTO_DIR, 'photocraft-cli.exe') : '',
+    controlPort: 7878,
+    tokenFile: path.join(DATA_DIR, 'photocraft.token'),
+    // PhotoCraft refuses paths outside the automation roots. Dev anchors them
+    // at the workspace (the checkout's parent); packaged installs default to
+    // the user profile and let the wizard pick real folders.
+    readRoot: PACKAGED ? os.homedir() : DEV_ROOT,
+    writeRoot: PACKAGED ? os.homedir() : DEV_ROOT,
+    projectRoot: PACKAGED ? path.join(os.homedir(), 'EggLab projects') : path.join(DEV_ROOT, 'projects'),
+    autosave: true,
+    autoLaunch: true,
+    dock: true,
+    dockGap: 6,
+    width: 440,
+  },
+  opencode: {
+    exe: defaultOpenCodeExe(),
+    agent: 'egglab',
+    model: 'inferx/deepseek-v4.1-flash-1017-basic',
+    // Providers whose models come from a live list without capability metadata
+    // (so opencode would treat them as text-only and drop image attachments).
+    customProviders: ['inferx'],
+    // Declare image input for the selected custom-provider model.
+    vision: true,
+    // One turn may hold a render plus several tool round trips.
+    timeoutSec: 1800,
+    // A healthy run emits its first event in seconds. opencode's own retry is
+    // hard-coded to 5 attempts (~68s) and is not configurable, so a silent run
+    // is the panel's job to detect and restart.
+    firstByteSec: 100,
+    // A running tool can legitimately hold the turn for many minutes with no
+    // events; the idle watchdog only runs between tool calls.
+    idleSec: 600,
+    // Capacity ("all replicas at capacity", HTTP 429) is transient. Retry the
+    // SAME model with exponential backoff - there is no fallback model.
+    retries: 6,
+    retryBaseSec: 8,
+    retryMaxSec: 60,
+    retryBudgetSec: 720,
+    // How often the chat bubble reports that it is still waiting.
+    heartbeatSec: 15,
+  },
+};
+
+function isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function merge(base, patch) {
+  if (!isObject(patch)) return base;
+  const out = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (isObject(value) && isObject(base[key])) out[key] = merge(base[key], value);
+    else if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+let settings = merge(DEFAULTS, readJson(SETTINGS_FILE, {}));
+let saveTimer = null;
+
+// Keys that were removed from the schema. An older panel process can rewrite
+// settings.json with them still present (file values win over defaults), so
+// strip them on load and before every save. Leftover keys would otherwise
+// silently override the current retry/watchdog defaults.
+const REMOVED_OPENCODE_KEYS = [
+  'fallbackModel',
+  'capacityRetries',
+  'capacityBackoffSec',
+  'fallbackFirstByteSec',
+];
+
+function sanitize(target) {
+  if (target?.opencode) {
+    for (const key of REMOVED_OPENCODE_KEYS) delete target.opencode[key];
+  }
+  // `lockSeed` was written as the string "on" by an older build.
+  if (target && target.lockSeed === 'on') target.lockSeed = true;
+  return target;
+}
+
+sanitize(settings);
+
+export function getSettings() {
+  return settings;
+}
+
+// Models known to accept image parts. Custom providers are handled separately:
+// opencode's live model list carries no capability metadata for them, so the
+// panel declares image input itself (see chat.prepareAgent) and this helper
+// mirrors that decision for session bookkeeping.
+const VISION_CAPABLE = /vl|vision|gpt-4|gemini|claude|qwen.*(vl|omni)|mimo|deepseek[^/]*v4\.1/i;
+
+export function visionForModel(model = settings.opencode.model, current = settings) {
+  if (current.opencode?.vision === false) return false;
+  const id = String(model || '');
+  const slash = id.indexOf('/');
+  const provider = slash > 0 ? id.slice(0, slash) : '';
+  const custom = (current.opencode?.customProviders || []).map(String);
+  if (provider && custom.includes(provider)) return true;
+  return VISION_CAPABLE.test(id);
+}
+
+export function patchSettings(patch) {
+  settings = merge(settings, patch);
+  sanitize(settings);
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    writeJson(SETTINGS_FILE, settings);
+  }, 150);
+  return settings;
+}
+
+/** Effective sampling parameters for a workflow, honouring custom steps/cfg. */
+export function workflowParams(workflow = settings.workflow) {
+  const isTurbo = workflow === 'turbo';
+  const base = isTurbo ? settings.turbo : settings.quality;
+  return {
+    workflow: isTurbo ? 'turbo' : 'quality',
+    steps: Number(base.steps) || (isTurbo ? 8 : 40),
+    cfg: isTurbo ? Number(base.cfg) || 1 : Number(base.cfg) || 1,
+    method: settings.method || 'euler',
+  };
+}
+
+export function sizeFor(aspect = settings.aspect, width = settings.width, height = settings.height) {
+  const preset = ASPECTS[aspect];
+  if (preset) return { width: preset[0], height: preset[1] };
+  return { width: Number(width) || 1024, height: Number(height) || 1024 };
+}
+
+export function engineConfig() {
+  const cfgPath = path.join(settings.engineRoot, 'config.json');
+  const cfg = readJson(cfgPath, null);
+  const modelsDir = cfg?.models || settings.modelsDir;
+  return {
+    path: cfgPath,
+    raw: cfg,
+    engine: cfg?.engine || path.join(ENGINE_DIR, 'sd'),
+    models: modelsDir,
+    diffusion: cfg?.diffusion || 'qwen-image-2.1-UC-fp8.safetensors',
+    vae: cfg?.vae || 'qwen_image_2.1_vae_bf16.safetensors',
+    llm: cfg?.llm || 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf',
+    llmVision: cfg?.llmVision || 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf',
+    turbo: cfg?.turbo || {
+      lora: 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors',
+      steps: 8,
+      cfg: 1,
+    },
+  };
+}
+
+/** Point the engine config at a different model file (after a download). */
+export function setEngineModel(key, filename) {
+  const cfg = engineConfig();
+  if (!cfg.raw) return null;
+  if (key === 'turbo') {
+    cfg.raw.turbo = { ...(cfg.raw.turbo || {}), lora: filename };
+  } else {
+    cfg.raw[key] = filename;
+  }
+  writeJson(cfg.path, cfg.raw);
+  return cfg.raw;
+}
+
+export function modelFileFor(key) {
+  const cfg = engineConfig();
+  if (key === 'turbo') return { dir: cfg.models, file: cfg.turbo.lora };
+  return { dir: cfg.models, file: cfg[key] };
+}
+
+/* ------------------------------------------------------------------ */
+/* OpenCode model discovery                                           */
+/* ------------------------------------------------------------------ */
+
+/* `opencode models` lists every model the connected providers know about,
+   one per line as `provider/modelId`. We group by provider so the settings
+   drawer can render a provider → model list the user can choose from. The
+   result is cached briefly so repeated drawer opens don't re-spawn opencode. */
+
+/**
+ * Resolve the OpenCode binary without hardcoding any user profile.
+ *
+ * Order: the configured path, the npm global install's real .exe, other
+ * common install locations (V2 standalone, scoop), then `where.exe` for
+ * anything on PATH. A `.cmd`/`.bat` match (npm/shim wrappers) can only be
+ * spawned through a shell since Node's CVE-2024-27980 hardening, so callers
+ * get the flag back and pass it to spawn/execFile.
+ */
+let whereCache; // undefined = not probed yet (null = probed, nothing found)
+function whereOpenCode() {
+  if (whereCache !== undefined) return whereCache;
+  whereCache = [];
+  try {
+    const out = execFileSync('where.exe', ['opencode'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    whereCache = String(out).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch {
+    whereCache = [];
+  }
+  return whereCache;
+}
+
+export function resolveOpenCode() {
+  const configured = settings.opencode?.exe || '';
+  const home = process.env.USERPROFILE || os.homedir();
+  const local = process.env.LOCALAPPDATA || '';
+  const roaming = process.env.APPDATA || '';
+  const candidates = [
+    configured,
+    roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+    home && path.join(home, '.opencode', 'bin', 'opencode.exe'),
+    local && path.join(local, 'Programs', 'opencode', 'opencode.exe'),
+    home && path.join(home, 'scoop', 'shims', 'opencode.exe'),
+    ...whereOpenCode(),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      if (fs.existsSync(candidate)) {
+        return { cmd: candidate, shell: /\.(cmd|bat)$/i.test(candidate) };
+      }
+    } catch {}
+  }
+  // Last resort: PATH lookup by CreateProcess (.exe only).
+  return { cmd: 'opencode', shell: false };
+}
+
+let modelsCache = null;
+let modelsCacheAt = 0;
+const MODELS_CACHE_TTL = 30000; // 30 s — fresh enough for auto-sync
+
+export async function opencodeModels(force = false) {
+  const now = Date.now();
+  if (!force && modelsCache && now - modelsCacheAt < MODELS_CACHE_TTL) {
+    return modelsCache;
+  }
+  const result = await new Promise((resolve) => {
+    const exe = settings.opencode?.exe || 'opencode';
+    // Run from the user's home directory so OpenCode reads its global config
+    // (.jsonc) instead of the panel's shadowing old .json.
+    const cwd = process.env.HOME || process.env.USERPROFILE;
+    const child = spawn(exe, ['models', '--refresh'], {
+      cwd,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    // A hung provider discovery must not freeze the settings drawer.
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {}
+      finish({ providers: [], error: 'opencode models timed out', fetchedAt: Date.now() });
+    }, 20000);
+    child.stdout.on('data', (d) => (stdout += d.toString()));
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('close', () => {
+      const byProvider = new Map();
+      for (const line of stdout.trim().split(/\r?\n/).filter(Boolean)) {
+        const slash = line.indexOf('/');
+        if (slash < 0) continue;
+        const provider = line.slice(0, slash);
+        const modelId = line.slice(slash + 1);
+        if (!byProvider.has(provider)) byProvider.set(provider, []);
+        byProvider.get(provider).push({ id: line, modelId, provider });
+      }
+      const providers = [...byProvider.entries()]
+        .map(([provider, models]) => ({
+          provider,
+          models: models.sort((a, b) => a.modelId.localeCompare(b.modelId)),
+        }))
+        .sort((a, b) => a.provider.localeCompare(b.provider));
+      finish({ providers, error: null, fetchedAt: Date.now() });
+    });
+    child.on('error', (err) => {
+      finish({ providers: [], error: err.message, fetchedAt: Date.now() });
+    });
+  });
+  // Cache only successful listings. A failed scan (opencode busy, provider
+  // offline) should be retried on the next drawer open instead of showing an
+  // empty list for the whole TTL.
+  if (!result.error) {
+    modelsCache = result;
+    modelsCacheAt = Date.now();
+  }
+  return result;
+}
+
+export function ensureDirs() {
+  for (const dir of [settings.modelsDir]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {}
+  }
+}

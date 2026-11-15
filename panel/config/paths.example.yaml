@@ -1,0 +1,14 @@
+# Replace placeholders with paths configured by the EggLab host.
+paths:
+  knowledge_root: "{{KNOWLEDGE_ROOT}}"
+  output_dir: "{{OUT_DIR}}"
+  projects_root: "{{PROJECTS_DIR}}"
+  models_dir: "{{MODELS_DIR}}"
+  engine_dir: "{{ENGINE_DIR}}"
+  temp_dir: "{{TEMP_DIR}}"
+security:
+  read_allowlist: ["{{KNOWLEDGE_ROOT}}/**"]
+  write_allowlist: []
+  deny_parent_traversal: true
+  deny_absolute_paths_outside_root: true
+  follow_symlinks_outside_root: false

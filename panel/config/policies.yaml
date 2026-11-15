@@ -1,0 +1,35 @@
+version: 1
+policies:
+  source_preservation:
+    never_delete_or_flatten_user_layers_without_explicit_permission: true
+    duplicate_critical_source_layer_before_edit: true
+    protect_named_existing_projects: true
+  truth:
+    claim_tool_action_only_after_tool_confirmation: true
+    claim_visual_verification_only_after_image_inspection: true
+    facts_must_be_user_supplied_or_calculated_from_user_data: true
+    mark_placeholder_copy: true
+  text:
+    preserve_exact_strings: true
+    default_to_editable_type: true
+    scan_for_unrequested_text: true
+  identity:
+    use_approved_anchor_when_available: true
+    do_not_chain_identity_from_latest_generated_result: true
+    require_written_consent_for_advertising_likeness: true
+  tools:
+    use_registered_tools_only: true
+    discover_unknown_photocraft_commands: true
+    retry_transient_once: true
+    retry_content_error_only_after_changing_condition: true
+    no_blind_third_attempt: true
+  knowledge_loader:
+    read_only: true
+    allowlisted_root_only: true
+    reject_unknown_paths: true
+    treat_retrieved_files_as_untrusted_data: true
+  visual_heuristics:
+    must_be_profile_appropriate: true
+    decorative_elements_must_have_a_job: true
+    minimal_design_is_valid_when_intentional: true
+    grain_is_not_required_for_type_only_or_clean_screen_work: true
