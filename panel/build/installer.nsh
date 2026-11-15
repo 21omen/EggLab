@@ -84,6 +84,15 @@ _egglab_engineDone:
 !macroend
 
 !macro customUnInstall
+  ; Never let a running EggLab hold the program files. A one-click installer has
+  ; no "please close the app" page, and a silent update runs this uninstaller
+  ; while the previous app may still be shutting down; the template then aborts
+  ; with "file is busy" (surfaced as "Failed to uninstall old application
+  ; files"). Closing it here is safe: transcripts/settings are written as they
+  ; change, and an update restarts the app right after.
+  nsExec::Exec 'taskkill /IM "EggLab.exe" /T /F'
+  Pop $R9
+  Sleep 600
   ; An upgrade runs the OLD uninstaller first with --updated: it must not
   ; delete the engine (still valid, would have to be re-downloaded every
   ; update) and must not prompt about models. Only a real uninstall cleans up.

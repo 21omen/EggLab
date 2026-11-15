@@ -208,13 +208,30 @@ function installNow() {
   }
   log(`installing ${file}`);
   try {
-    // NSIS one-click: /S = silent, --force-run = start EggLab afterwards.
-    spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+    // NSIS removes the program files before copying the new build. Electron's
+    // renderer/GPU children can still hold those files for a moment after the
+    // main process exits, and the uninstaller then aborts with "file is busy"
+    // (shown by the installer as "Failed to uninstall old application files").
+    // Hand the install to a detached helper that waits for THIS process to end,
+    // drops any stray EggLab process, and only then starts the installer.
+    const escaped = file.replace(/'/g, "''");
+    const helper = [
+      `Wait-Process -Id ${process.pid} -Timeout 30 -ErrorAction SilentlyContinue`,
+      'Start-Sleep -Milliseconds 600',
+      'Get-Process -Name EggLab -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue',
+      'Start-Sleep -Milliseconds 500',
+      `Start-Process -FilePath '${escaped}' -ArgumentList '/S','--force-run'`,
+    ].join('; ');
+    spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', helper], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
   } catch (err) {
-    log(`install failed ${err?.message || err}`);
+    log(`install spawn failed ${err?.message || err}`);
     return;
   }
-  setTimeout(() => app.exit(0), 1200);
+  setTimeout(() => app.exit(0), 400);
 }
 
 function askToRestart() {
