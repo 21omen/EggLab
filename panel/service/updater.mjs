@@ -208,43 +208,22 @@ function installNow() {
   }
   log(`installing ${file}`);
   try {
-    // NSIS removes the program files before copying the new build. A running
-    // app - or a leftover Electron renderer that shares the EggLab.exe name -
-    // keeps those files locked, and the old-uninstaller step then aborts with
-    // "file is busy" (surfaced as "Failed to uninstall old application
-    // files"). The app cannot fix that after it exits, so hand over to a
-    // detached helper script that: waits briefly for this process, force-stops
-    // every remaining EggLab process, and only then starts the installer.
-    fs.mkdirSync(UPDATES_DIR, { recursive: true });
-    const helperPath = path.join(UPDATES_DIR, 'install-helper.ps1');
-    const psQuote = (value) => String(value).replace(/'/g, "''");
-    const helper = [
-      "$ErrorActionPreference = 'SilentlyContinue'",
-      `$log = '${psQuote(path.join(LOG_DIR, 'update.log'))}'`,
-      `Add-Content -LiteralPath $log -Value ('[' + (Get-Date -Format o) + '] helper: start (pid=${process.pid})')`,
-      '$deadline = (Get-Date).AddSeconds(8)',
-      `while ((Get-Process -Id ${process.pid} -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Milliseconds 250 }`,
-      'for ($i = 0; $i -lt 20; $i++) {',
-      '  $procs = Get-Process -Name EggLab -ErrorAction SilentlyContinue',
-      '  if (-not $procs) { break }',
-      '  $procs | Stop-Process -Force -ErrorAction SilentlyContinue',
-      '  Start-Sleep -Milliseconds 300',
-      '}',
-      'Start-Sleep -Milliseconds 500',
-      `Add-Content -LiteralPath $log -Value ('[' + (Get-Date -Format o) + '] helper: starting installer')`,
-      `Start-Process -FilePath '${psQuote(file)}' -ArgumentList '/S','--force-run'`,
-    ].join('\r\n');
-    fs.writeFileSync(helperPath, helper, 'utf8');
-    spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', helperPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    }).unref();
+    // Spawn the installer DIRECTLY. A detached PowerShell helper does not work
+    // here: Electron's process job kills it the moment the app exits (verified
+    // with a probe - the script never ran). The NSIS installer re-launches
+    // itself in %TEMP% and escapes that job, and its preInit force-closes
+    // EggLab (taskkill) before the old-uninstaller step, so leftover renderers
+    // cannot block file removal. We just give it a head start, then quit
+    // gracefully so Electron reaps its own child processes.
+    spawn(file, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
   } catch (err) {
     log(`install spawn failed ${err?.message || err}`);
     return;
   }
-  setTimeout(() => app.exit(0), 400);
+  setTimeout(() => app.quit(), 900);
+  // If a window refuses to close, do not hang the update forever.
+  const force = setTimeout(() => app.exit(0), 4000);
+  force.unref?.();
 }
 
 function askToRestart() {
