@@ -6,7 +6,7 @@ import { onEvent, emit } from './service/bus.mjs';
 import { startServer, TOKEN } from './service/http.mjs';
 import { getSettings, patchSettings, opencodeModels } from './service/settings.mjs';
 import { engineStatus, listJobs, startJob, cancelJob, cancelAllJobs, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
-import { modelStatus, startDownloads, cancelDownload, useVariant } from './service/models.mjs';
+import { modelStatus, startDownloads, cancelDownload, retryDownload, useVariant } from './service/models.mjs';
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
 import * as sessions from './service/sessions.mjs';
@@ -614,6 +614,7 @@ ipcMain.handle('jobs:list', () => listJobs().slice(0, 20));
 ipcMain.handle('models:list', () => modelStatus());
 ipcMain.handle('models:download', (e, { ids, variant }) => startDownloads(ids, variant));
 ipcMain.handle('models:cancel', (e, id) => cancelDownload(id));
+ipcMain.handle('models:retry', (e, id) => retryDownload(id));
 ipcMain.handle('models:use', (e, { id, file }) => useVariant(id, file));
 
 ipcMain.handle('setup:status', () => setup.setupStatus());

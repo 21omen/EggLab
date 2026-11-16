@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('egglab', {
   opencodeModels: (force) => ipcRenderer.invoke('opencode:models', { force }),
   downloadModels: (ids, variant) => ipcRenderer.invoke('models:download', { ids, variant }),
   cancelDownload: (id) => ipcRenderer.invoke('models:cancel', id),
+  retryDownload: (id) => ipcRenderer.invoke('models:retry', id),
   useModel: (id, file) => ipcRenderer.invoke('models:use', { id, file }),
 
   setupStatus: () => ipcRenderer.invoke('setup:status'),

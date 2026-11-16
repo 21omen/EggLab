@@ -1001,6 +1001,11 @@ button { cursor: pointer; }
 .model-top { display: flex; align-items: center; gap: 7px; }
 .model-name { font-size: 11.5px; font-weight: 500; flex: 1; min-width: 0; }
 .model-name small { display: block; font-size: 9.5px; color: var(--dimmer); font-weight: 400; margin-top: 1px; }
+.model-beta {
+  font-size: 8.5px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 5px; margin-left: 6px; border-radius: 4px;
+  background: var(--gold); color: var(--gold-ink); vertical-align: 1px;
+}
 .model-size { font-family: var(--mono); font-size: 9.5px; color: var(--dimmer); }
 .model-actions { display: flex; gap: 5px; align-items: center; }
 .model .bar { height: 3px; }

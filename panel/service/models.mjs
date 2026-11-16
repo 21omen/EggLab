@@ -23,6 +23,15 @@ const DIFFUSION_VARIANTS = [
     note: 'Uncensored weights in fp8. Fast to load and a good fit for 8 GB.',
   },
   {
+    id: 'q4km-beta',
+    beta: true,
+    label: 'Official Q4_K_M · 3.9 GB',
+    file: 'qwen-image-2.1-Q4_K_M.gguf',
+    url: `${HF}/unsloth/Qwen-Image-2.1-GGUF/resolve/main/qwen-image-2.1-Q4_K_M.gguf`,
+    note:
+      'Beta: official weights quantised to Q4_K_M. Measured ~35% faster than FP8 and 2.9 GB smaller on an 8 GB card; slightly less detail, and not the uncensored variant.',
+  },
+  {
     id: 'uc-q5km',
     label: 'Uncensored Q5_K_M · 4.9 GB',
     file: 'qwen-image-2.1-UC-Q5_K_M.gguf',
@@ -175,6 +184,7 @@ export function modelStatus() {
             label: v.label,
             file: v.file,
             note: v.note || '',
+            beta: Boolean(v.beta),
             installed,
             current: v.file === file,
             downloadable: Boolean(v.url),
@@ -247,6 +257,7 @@ function publicState(dl) {
     receivedText: humanBytes(dl.received),
     totalText: humanBytes(dl.total),
     file: dl.file,
+    variant: dl.variant || null,
     error: dl.error || null,
   };
 }
@@ -264,6 +275,7 @@ async function downloadOne(entry, variant) {
     total: 0,
     speed: 0,
     file: variant.file,
+    variant: variant.id,
     abort: new AbortController(),
   };
   downloads.set(entry.id, dl);
@@ -347,8 +359,20 @@ async function downloadOne(entry, variant) {
 
   dl.status = 'done';
   dl.percent = 100;
-  if (entry.id === 'turbo') setEngineModel('turbo', variant.file);
-  else setEngineModel(entry.key, variant.file);
+
+  // Installing a model must not silently switch the engine away from a model
+  // that is already working. Auto-select only when the configured file is
+  // missing (first install or a broken install); otherwise the new variant
+  // shows up in the picker and the user switches explicitly.
+  const { configured } = targetFor(entry);
+  let currentExists = false;
+  try {
+    currentExists = fs.statSync(path.join(cfg.models, configured)).size > 0;
+  } catch {}
+  if (!currentExists) {
+    if (entry.id === 'turbo') setEngineModel('turbo', variant.file);
+    else setEngineModel(entry.key, variant.file);
+  }
 
   emit('model', { id: entry.id, download: publicState(dl) });
   emit('models', { status: modelStatus() });
@@ -388,7 +412,11 @@ export function cancelDownload(id) {
 }
 
 export function retryDownload(id) {
-  return startDownloads([id]);
+  // Retry the variant that failed, not entry.variants[0]: the Models row lets
+  // the user pick Q4_K_M / Q5_K_M / FP8, and a retry used to quietly download
+  // a different file.
+  const failed = downloads.get(id);
+  return startDownloads([id], failed?.variant || null);
 }
 
 export function publicDownloads() {

@@ -120,6 +120,19 @@ panel/service/          settings, engine, chat, models, setup, updater
 panel/knowledge (skills, references, templates)
 ```
 
+## Performance
+
+The **Official Q4_K_M** model is available as a beta in Settings → Models. On an
+8 GB RTX 4060 Ti it measured ~35% faster than the FP8 default for Turbo
+text-to-image (29 s vs 47 s at 864×1152) and ~10% faster for one-reference
+edits, because the diffusion weights are 2.9 GB smaller. It is the official
+(non-uncensored) checkpoint; install it alongside FP8 and switch only when you
+want the speed.
+
+Measured engine/backend/flag results and sources are in
+[PERFORMANCE-RESEARCH.md](PERFORMANCE-RESEARCH.md). The UI/function fixes from
+the same audit are in [UI-AUDIT.md](UI-AUDIT.md).
+
 ## Troubleshooting
 
 **“qwen3vl … failed during workspace capacity check” / “failed during weight preparation” (8 GB cards).** The diffusion model (6.6 GB), the text encoder (6 GB) and multi-reference edits all compete for VRAM. EggLab now:

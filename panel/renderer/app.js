@@ -1686,10 +1686,12 @@ function renderModels() {
 
 function paintModelRow(row, entry) {
   const exists = entry.exists;
+  const currentVariant = entry.variants.find((v) => v.current) || entry.variants[0];
+  const beta = currentVariant?.beta ? '<span class="model-beta">BETA</span>' : '';
   row.innerHTML = `
     <div class="model-top">
       <span class="dot ${exists ? 'on' : entry.required ? 'err' : 'warn'}"></span>
-      <div class="model-name">${esc(entry.label)}<small>${esc(entry.file)}</small></div>
+      <div class="model-name">${esc(entry.label)}${beta}<small>${esc(entry.file)}</small></div>
       <span class="model-size">${exists ? esc(entry.sizeText) : entry.required ? 'missing' : 'optional'}</span>
     </div>
     <div class="model-actions"></div>
@@ -1707,13 +1709,19 @@ function paintModelRow(row, entry) {
         if (!v.downloadable) continue;
         const opt = document.createElement('option');
         opt.value = v.id;
-        opt.textContent = v.label;
+        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
         select.appendChild(opt);
       }
+      // Keep the user's choice: progress events repaint this row every 400 ms
+      // and used to reset the dropdown to the first variant mid-download.
+      const wanted = row.dataset.variant;
+      select.value = [...select.options].some((o) => o.value === wanted)
+        ? wanted
+        : select.options[0]?.value || entry.variants[0].id;
       select.onchange = () => {
         row.dataset.variant = select.value;
       };
-      row.dataset.variant = select.options[0]?.value || entry.variants[0].id;
+      row.dataset.variant = select.value;
       actions.appendChild(select);
     }
     const btn = document.createElement('button');
@@ -1740,7 +1748,7 @@ function paintModelRow(row, entry) {
       for (const v of installed) {
         const opt = document.createElement('option');
         opt.value = v.file;
-        opt.textContent = v.label;
+        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
         select.appendChild(opt);
       }
       const current = installed.find((v) => v.current) || installed[0];
@@ -1787,22 +1795,43 @@ function paintDownload(row, entry, dl) {
   }
   const bar = wrap.querySelector('.bar span');
   const note = wrap.querySelector('.model-note');
+  const retryBtn = wrap.querySelector('.dl-retry');
+  if (retryBtn) retryBtn.remove();
   if (dl.status === 'running') {
+    note.className = 'model-note';
     bar.style.width = `${dl.percent || 0}%`;
     note.textContent = `${dl.receivedText || ''} / ${dl.totalText || ''} · ${dl.speedText || ''}`;
-    if (!wrap.querySelector('button')) {
+    if (!wrap.querySelector('.dl-cancel')) {
       const cancel = document.createElement('button');
-      cancel.className = 'mini';
+      cancel.className = 'mini dl-cancel';
       cancel.textContent = 'Cancel';
       cancel.style.marginTop = '4px';
       cancel.onclick = () => api.cancelDownload(entry?.id || dl.id);
       wrap.appendChild(cancel);
     }
   } else if (dl.status === 'error') {
+    wrap.querySelector('.dl-cancel')?.remove();
     bar.style.width = '0%';
     note.className = 'model-err';
     note.textContent = dl.error || 'Download failed';
+    const retry = document.createElement('button');
+    retry.className = 'mini primary dl-retry';
+    retry.textContent = 'Retry';
+    retry.style.marginTop = '4px';
+    retry.onclick = async () => {
+      retry.disabled = true;
+      try {
+        await api.retryDownload(entry?.id || dl.id);
+        toast(`Retrying ${entry?.label || 'download'}…`);
+      } catch (err) {
+        toast(friendly(err), 'error');
+        retry.disabled = false;
+      }
+    };
+    wrap.appendChild(retry);
   } else if (dl.status === 'done') {
+    wrap.querySelector('.dl-cancel')?.remove();
+    note.className = 'model-note';
     bar.style.width = '100%';
     note.textContent = 'download complete';
     setTimeout(() => {
