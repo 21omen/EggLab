@@ -120,6 +120,18 @@ panel/service/          settings, engine, chat, models, setup, updater
 panel/knowledge (skills, references, templates)
 ```
 
+## Troubleshooting
+
+**“qwen3vl … failed during workspace capacity check” (8 GB cards).** The diffusion
+model (6.6 GB) and the text encoder (6 GB) compete for VRAM. If the GPU runs out while
+encoding a prompt, EggLab automatically retries the render with the text encoder in RAM
+(the job detail says “Text encoder on CPU”) — the render completes, prompt encoding is
+just a little slower. For scripting you can force that mode with `egglab.ps1 -TeCpu`.
+
+**Chat says the OpenCode data is outdated.** OpenCode keeps all sessions in one shared
+SQLite database and newer clients upgrade its schema. EggLab picks the newest installed
+OpenCode automatically; if only an old one exists, open Setup and install it again.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
