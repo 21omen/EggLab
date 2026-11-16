@@ -172,6 +172,16 @@ async function handle(req, res, url) {
       return json(res, 200, { jobs: engine.listJobs() });
 
     case 'POST /api/jobs': {
+      // Jobs the agent starts through MCP are only valid while its turn is
+      // running. OpenCode is killed on Stop, but an MCP tool call already on
+      // the wire still reaches us; without this check it would start a render
+      // the user just canceled. (Manual renders from the UI have no source.)
+      if (body?.source === 'agent' && !chat.isBusy()) {
+        return json(res, 409, {
+          error: 'The turn was stopped, so this render was not started.',
+          code: 'STOPPED',
+        });
+      }
       const job = engine.startJob(body);
       return json(res, 200, { job });
     }

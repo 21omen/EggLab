@@ -570,6 +570,9 @@ async function callTool(name, args = {}) {
             ? undefined
             : Number(args.seed) + i;
         const { job } = await api('POST', '/api/jobs', {
+    // Tags the job as agent-started: the panel refuses these when no chat
+    // turn is active, so a tool call still in flight after Stop cannot render.
+    source: 'agent',
           prompt: args.prompt,
           workflow: args.workflow,
           width: args.width,
@@ -597,6 +600,9 @@ async function callTool(name, args = {}) {
       }
       if (!images.length) throw new Error('egglab_edit needs images or use_active_layer=true.');
       const { job } = await api('POST', '/api/jobs', {
+    // Tags the job as agent-started: the panel refuses these when no chat
+    // turn is active, so a tool call still in flight after Stop cannot render.
+    source: 'agent',
         prompt: args.prompt,
         images,
         workflow: args.workflow,
