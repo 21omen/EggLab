@@ -25,6 +25,14 @@ foreach ($line in $head) {
   if ($line -match '(?im)^x-linked-etag:\s*"?([0-9a-f]{64})') { $sha = $Matches[1].ToLower() }
   if ($line -match '(?im)^etag:\s*"?([0-9a-f]{64})') { $sha = $Matches[1].ToLower() }
 }
+# The redirect headers' etag is NOT the LFS object hash; the model API is.
+try {
+  $name = Split-Path $Url -Leaf
+  $api = Invoke-RestMethod -UseBasicParsing 'https://huggingface.co/api/models/unsloth/Qwen-Image-2.1-GGUF?blobs=true'
+  $lfs = ($api.siblings | Where-Object { $_.rfilename -eq $name }).lfs
+  if ($lfs -and $lfs.sha256) { $sha = $lfs.sha256.ToLower() }
+  if ($lfs -and $lfs.size) { $size = [int64]$lfs.size }
+} catch {}
 if (-not $size) { throw 'could not read content-length' }
 $count = [int][Math]::Ceiling($size / $ChunkBytes)
 Write-Host "size=$size chunks=$count chunkBytes=$ChunkBytes sha=$sha"

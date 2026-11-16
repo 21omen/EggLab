@@ -15,7 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 const MODELS = 'D:\\neww\\Models';
-const REFS = [1, 2, 3, 4].map((n) => path.join(os.tmpdir(), `ref-768-${n}.png`));
+const REF_SIDE = process.env.REF_SIDE || '768';
+const REFS = [1, 2, 3, 4].map((n) => path.join(os.tmpdir(), `ref-${REF_SIDE}-${n}.png`));
 const FP8 = path.join(MODELS, 'qwen-image-2.1-UC-fp8.safetensors');
 const Q4 = path.join(MODELS, 'qwen-image-2.1-Q4_K_M.gguf');
 const VAE = path.join(MODELS, 'qwen_image_2.1_vae_bf16.safetensors');

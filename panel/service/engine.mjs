@@ -511,7 +511,7 @@ export function startJob(input = {}) {
   // (verified on a 4060 Ti 8 GB).
   let teCpuRetry = false;
   let sizeRetry = false;
-  let refRetry = false;
+  let sizeRetry2 = false;
   let imageListFile = null;
 if (Array.isArray(images) && images.length) {
   imageListFile = path.join(TMP_DIR, `${id}-images.txt`);
@@ -635,16 +635,25 @@ if (Array.isArray(images) && images.length) {
       /capacity check|cannot make enough memory available|out of memory|failed during (workspace|weight preparation)|allocated capacity/i.test(
         `${stderrText}\n${job.logTail.slice(-20).join('\n')}`,
       );
-    // Stage 1 fallback: a smaller canvas. Edit memory grows with the target
-    // area, and 1024x1280 (same aspect) is the largest verified 4-reference
-    // size on an 8 GB card. This retry is fast because the GPU still encodes
-    // the prompt.
-    const areaCap = 1024 * 1280;
-    if (memoryFailure && !sizeRetry && job.width * job.height > areaCap) {
+    // Memory failures here are dominated by the first transformer block's
+    // attention workspace, which scales with TARGET resolution (measured:
+    // 6.48 GB needed at 1024x1280 vs 6.42 GB free; reference size and model
+    // quantization did not change the number). So the first fallback shrinks
+    // the canvas to a reference-aware ceiling, then a second step to a safe
+    // ~0.9 MP.
+    const fitArea = (cap) => {
+      const current = job.width * job.height;
+      const scale = Math.sqrt(cap / current);
+      return [
+        Math.max(512, round32(job.width * scale)),
+        Math.max(512, round32(job.height * scale)),
+      ];
+    };
+    const refAreaCap =
+      images.length >= 4 ? 1050000 : images.length >= 2 ? 1310720 : 2000000;
+    if (memoryFailure && !sizeRetry && job.width * job.height > refAreaCap) {
       sizeRetry = true;
-      const scale = Math.sqrt(areaCap / (job.width * job.height));
-      const nextW = Math.max(512, round32(job.width * scale));
-      const nextH = Math.max(512, round32(job.height * scale));
+      const [nextW, nextH] = fitArea(refAreaCap);
       const wi = args.indexOf('-Width');
       const hi = args.indexOf('-Height');
       if (wi >= 0) args[wi + 1] = String(nextW);
@@ -664,41 +673,38 @@ if (Array.isArray(images) && images.length) {
       launchNow();
       return;
     }
-
-    // Stage 2 fallback: smaller references. Reference tokens are a large part
-    // of the conditioning graph, and halving their side (~4x fewer pixels) is
-    // much faster to retry than moving the encoder to the CPU.
-    if (memoryFailure && !refRetry && images.length) {
-      const smaller = prepareReferenceImages(images, id, 512);
-      if (smaller.files.join('\n') !== preparedRefs.files.join('\n')) {
-        refRetry = true;
-        for (const file of preparedRefs.temp) {
-          try {
-            fs.unlinkSync(file);
-          } catch {}
-        }
-        preparedRefs.files = smaller.files;
-        preparedRefs.temp = smaller.temp;
-        try {
-          if (imageListFile) fs.writeFileSync(imageListFile, `${smaller.files.join('\n')}\n`, 'utf8');
-        } catch {}
-        log.write('# retry: VRAM capacity check failed, references -> 512px\n');
-        job.logTail.push('--- VRAM was full: retrying with 512px references ---');
-        job.error = null;
-        job.child = null;
-        job.phase = 'starting';
-        job.detail = 'Retrying with 512px references (VRAM was full)';
-        stderrText = '';
-        buffer = '';
-        update(job);
-        launchNow();
-        return;
-      }
+    // Second step: even the reference-aware ceiling can be a few MB short when
+    // browsers hold 3 GB. ~0.9 MP is the last size that reliably fits here.
+    if (memoryFailure && !sizeRetry2 && job.width * job.height > 900000) {
+      sizeRetry2 = true;
+      const [nextW, nextH] = fitArea(900000);
+      const wi = args.indexOf('-Width');
+      const hi = args.indexOf('-Height');
+      if (wi >= 0) args[wi + 1] = String(nextW);
+      if (hi >= 0) args[hi + 1] = String(nextH);
+      job.sizeCapped = `${job.sizeCapped || `${job.width}x${job.height}`} -> ${nextW}x${nextH} (VRAM)`;
+      job.width = nextW;
+      job.height = nextH;
+      log.write(`# retry: VRAM capacity check failed, size -> ${nextW}x${nextH}\n`);
+      job.logTail.push(`--- VRAM still full: retrying at ${nextW}x${nextH} ---`);
+      job.error = null;
+      job.child = null;
+      job.phase = 'starting';
+      job.detail = `Retrying at ${nextW}x${nextH} (VRAM was full)`;
+      stderrText = '';
+      buffer = '';
+      update(job);
+      launchNow();
+      return;
     }
 
-    // Stage 3 fallback: text encoder to CPU (slow prompt encoding, but fits
-    // the tightest memory state).
-    if (memoryFailure && !teCpuRetry) {
+    // The text encoder has its own memory budget. Only retry it on CPU when the
+    // failure actually happened while encoding the prompt — for sampling
+    // workspace failures it costs minutes and changes nothing.
+    const encoderFailure = /qwen3vl|failed to encode prompt|LLM prompt encoding/i.test(
+      `${stderrText}\n${job.logTail.slice(-20).join('\n')}`,
+    );
+    if (memoryFailure && !teCpuRetry && encoderFailure) {
       teCpuRetry = true;
       args.push('-TeCpu');
       log.write('# retry: VRAM capacity check failed, text encoder -> CPU\n');
