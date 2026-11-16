@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { onEvent, emit } from './service/bus.mjs';
 import { startServer, TOKEN } from './service/http.mjs';
 import { getSettings, patchSettings, opencodeModels } from './service/settings.mjs';
-import { engineStatus, listJobs, startJob, cancelJob, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
+import { engineStatus, listJobs, startJob, cancelJob, cancelAllJobs, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
 import { modelStatus, startDownloads, cancelDownload, useVariant } from './service/models.mjs';
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
@@ -666,7 +666,7 @@ ipcMain.handle('dialog:pickModel', async () => {
 ipcMain.handle('chat:send', async (e, { text, files, refMap }) => {
   return await chat.send(text, files || [], refMap || {});
 });
-ipcMain.handle('chat:stop', () => chat.stop());
+ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJobs() }));
 // Returns false (instead of always true) when the agent is mid-run, so the
 // renderer keeps the timeline instead of blanking a reply that never landed.
 ipcMain.handle('chat:clear', () => chat.clearHistory());

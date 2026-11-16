@@ -207,7 +207,7 @@ async function handle(req, res, url) {
     }
 
     case 'POST /api/chat/stop':
-      return json(res, 200, { stopped: chat.stop() });
+      return json(res, 200, { stopped: chat.stop(), canceled: engine.cancelAllJobs() });
 
     case 'POST /api/chat/clear':
       return json(res, 200, { ok: chat.clearHistory() });

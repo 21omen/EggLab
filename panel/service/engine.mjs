@@ -43,22 +43,18 @@ export function cleanupStaleEngines(force = false) {
   const now = Date.now();
   if (!force && now - lastSweep < 20000) return;
   lastSweep = now;
-  let dir = '';
+  // taskkill by image name: sd-cli.exe is the stable-diffusion.cpp CLI that
+  // EggLab ships and runs; a CIM/PowerShell path-filtered sweep proved
+  // unreliable inside the Electron process (it silently missed a survivor
+  // holding 2.8 GB). EggLab is single-instance, so nothing else of ours can be
+  // running; this is the deterministic equivalent.
+  // Fire-and-forget: taskkill exits non-zero when the process is already gone,
+  // which is the common case at the end of a successful render.
   try {
-    dir = String(engineConfig().engine || '');
-  } catch {}
-  if (!dir) return;
-  const quoted = dir.replace(/'/g, "''");
-  const script =
-    `Get-CimInstance Win32_Process -Filter "Name='sd-cli.exe'" | ` +
-    `Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith('${quoted}', [StringComparison]::OrdinalIgnoreCase) } | ` +
-    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }';
-  try {
-    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    spawn('taskkill', ['/F', '/IM', 'sd-cli.exe', '/T'], {
       windowsHide: true,
-      timeout: 15000,
       stdio: 'ignore',
-    });
+    }).unref?.();
   } catch {}
 }
 
@@ -260,6 +256,23 @@ export function cancelJob(id) {
   job.canceled = true;
   setPhase(job, 'canceling', 'Stopping…');
   return true;
+}
+
+/**
+ * Cancel every running or queued job.
+ *
+ * "Stop" in the chat kills the OpenCode process, but tool calls already in
+ * flight run inside the panel — the render would keep the GPU busy for minutes
+ * after the chat says "Stopped.". Stopping a turn must stop its work too.
+ */
+export function cancelAllJobs() {
+  let count = 0;
+  for (const job of [...jobs.values()]) {
+    if (job.status === 'running' || job.status === 'queued') {
+      if (cancelJob(job.id)) count++;
+    }
+  }
+  return count;
 }
 
 export function engineStatus() {
@@ -778,6 +791,9 @@ if (Array.isArray(images) && images.length) {
     // sure the whole engine tree for this job is gone before the next one.
     killTree(child && child.pid);
     cleanupStaleEngines(true);
+    // Second sweep after the OS has finished terminating the tree (cancels
+    // especially: the immediate sweep can race TerminateProcess).
+    setTimeout(() => cleanupStaleEngines(true), 2500).unref?.();
     update(job);
     emit('job:finished', { job: publicJob(job) });
     // Engine is free: start the next queued job, if any.
