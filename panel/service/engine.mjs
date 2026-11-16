@@ -73,30 +73,34 @@ export function killActiveEngine() {
 /* VRAM planning                                                       */
 /* ------------------------------------------------------------------ */
 
-let vramCache = -1;
+let vramCache = { total: 0, free: 0, at: 0 };
 /**
- * Total VRAM in GiB, when it can be detected (NVIDIA's nvidia-smi). Returns 0
- * for other vendors so callers simply keep the engine defaults.
+ * Total and free VRAM in GiB when detectable (NVIDIA's nvidia-smi), refreshed
+ * every 30 s. Other vendors return zeros and keep the engine defaults. Free
+ * memory matters: browsers/Electron apps routinely hold 2-3 GB, so a budget
+ * based on the card's total size over-commits.
  */
-function detectVramGb() {
-  if (vramCache >= 0) return vramCache;
-  vramCache = 0;
+function detectVram() {
+  if (vramCache.total && Date.now() - vramCache.at < 30000) return vramCache;
+  const info = { total: 0, free: 0, at: Date.now() };
   try {
     const out = execFileSync(
       'nvidia-smi',
-      ['--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+      ['--query-gpu=memory.total,memory.free', '--format=csv,noheader,nounits'],
       { windowsHide: true, timeout: 6000, encoding: 'utf8' },
     );
-    const mb = Math.max(
-      0,
-      ...String(out)
-        .split(/\r?\n/)
-        .map((line) => Number(line.trim()))
-        .filter((n) => Number.isFinite(n)),
-    );
-    if (mb > 0) vramCache = mb / 1024;
+    const first = String(out)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)[0] || '';
+    const [totalMb, freeMb] = first.split(',').map((n) => Number(n.trim()));
+    if (Number.isFinite(totalMb) && totalMb > 0) {
+      info.total = totalMb / 1024;
+      info.free = Number.isFinite(freeMb) ? freeMb / 1024 : 0;
+    }
   } catch {}
-  return vramCache;
+  vramCache = info;
+  return info;
 }
 
 /**
@@ -110,10 +114,10 @@ function detectVramGb() {
  * keeps far more detail than the guidance uses, and made a 4-reference edit
  * render on a 4060 Ti where full-size references failed.
  */
-function prepareReferenceImages(images, id) {
+function prepareReferenceImages(images, id, maxSideOverride = null) {
   if (!Array.isArray(images) || !images.length) return { files: [], temp: [] };
   const s = getSettings();
-  const maxSide = Math.max(256, Number(s.refMaxSide) || 768);
+  const maxSide = Math.max(256, Number(maxSideOverride || s.refMaxSide) || 768);
   const files = [];
   const temp = [];
   for (let i = 0; i < images.length; i++) {
@@ -288,6 +292,12 @@ export function engineStatus() {
       offload: s.offload,
     },
     engineRoot: s.engineRoot,
+    vram: (() => {
+      const v = detectVram();
+      return v.total
+        ? { total: Math.round(v.total * 10) / 10, free: Math.round(v.free * 10) / 10 }
+        : null;
+    })(),
   };
 }
 
@@ -479,16 +489,17 @@ export function startJob(input = {}) {
   if (params.workflow === 'turbo') args.push('-Turbo');
   if (s.offload === false) args.push('-NoOffload');
 
-  // Memory plan for 8-12 GB cards. `--offload-to-cpu` alone still lets the
-  // model manager put whole modules on the device and then discover mid-graph
-  // that a segment does not fit ("failed during weight preparation"). Keeping
-  // params in RAM and giving the engine an explicit device budget lets it plan
-  // and stream segments that actually fit: a 4-reference 1024x1280 edit went
-  // from failing to 250s on a 4060 Ti with this plan (and with the text
-  // encoder still on the GPU, so prompt encoding stays fast).
-  const vramGb = detectVramGb();
-  if (s.offload !== false && vramGb && vramGb <= 12) {
-    args.push('-MaxVram', String(Math.max(4, Math.floor(vramGb - 1))));
+  // Memory plan for 8-12 GB cards. `--max-vram -1` asks the engine to snapshot
+  // FREE VRAM at startup and keep ~1 GiB headroom, so plans stay honest even
+  // while a browser holds 2-3 GB. A fixed (total-1) budget over-commits and
+  // makes a segment fail 70 MB short (observed). Params stay in RAM; the text
+  // encoder keeps using the GPU (17-30 s vs ~600 s on CPU).
+  const vram = detectVram();
+  if (s.offload !== false && vram.total && vram.total <= 12) {
+    args.push('-MaxVram', '-1');
+    // References are VAE-encoded; tiling keeps those peaks small on cards that
+    // must share VRAM with the diffusion graph.
+    if (images.length) args.push('-VaeTiling');
   }
 
   // The text encoder (Qwen3VL 8B, ~6 GB) competes with the diffusion model for
@@ -500,6 +511,7 @@ export function startJob(input = {}) {
   // (verified on a 4060 Ti 8 GB).
   let teCpuRetry = false;
   let sizeRetry = false;
+  let refRetry = false;
   let imageListFile = null;
 if (Array.isArray(images) && images.length) {
   imageListFile = path.join(TMP_DIR, `${id}-images.txt`);
@@ -534,6 +546,19 @@ if (Array.isArray(images) && images.length) {
   // The spawn lives in launchNow() below: if the engine is busy this job is
   // queued and starts only when the running one finishes.
   let child = null;
+  const vramNow = detectVram();
+  if (
+    vramNow.total &&
+    vramNow.total <= 12 &&
+    vramNow.free &&
+    vramNow.free < 3 &&
+    (images.length || width * height > 1000000)
+  ) {
+    emit('chat', {
+      action: 'notice',
+      text: `Low VRAM: only ${vramNow.free.toFixed(1)} GB free. Close browsers or other GPU apps for large edits — EggLab will split or shrink the render if it runs out.`,
+    });
+  }
   remember(job);
   update(job);
 
@@ -640,7 +665,38 @@ if (Array.isArray(images) && images.length) {
       return;
     }
 
-    // Stage 2 fallback: text encoder to CPU (slow prompt encoding, but fits
+    // Stage 2 fallback: smaller references. Reference tokens are a large part
+    // of the conditioning graph, and halving their side (~4x fewer pixels) is
+    // much faster to retry than moving the encoder to the CPU.
+    if (memoryFailure && !refRetry && images.length) {
+      const smaller = prepareReferenceImages(images, id, 512);
+      if (smaller.files.join('\n') !== preparedRefs.files.join('\n')) {
+        refRetry = true;
+        for (const file of preparedRefs.temp) {
+          try {
+            fs.unlinkSync(file);
+          } catch {}
+        }
+        preparedRefs.files = smaller.files;
+        preparedRefs.temp = smaller.temp;
+        try {
+          if (imageListFile) fs.writeFileSync(imageListFile, `${smaller.files.join('\n')}\n`, 'utf8');
+        } catch {}
+        log.write('# retry: VRAM capacity check failed, references -> 512px\n');
+        job.logTail.push('--- VRAM was full: retrying with 512px references ---');
+        job.error = null;
+        job.child = null;
+        job.phase = 'starting';
+        job.detail = 'Retrying with 512px references (VRAM was full)';
+        stderrText = '';
+        buffer = '';
+        update(job);
+        launchNow();
+        return;
+      }
+    }
+
+    // Stage 3 fallback: text encoder to CPU (slow prompt encoding, but fits
     // the tightest memory state).
     if (memoryFailure && !teCpuRetry) {
       teCpuRetry = true;

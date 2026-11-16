@@ -64,9 +64,15 @@ param(
   # the prompt on small cards; it can also be forced from the command line.
   [switch]$TeCpu,
 
-  # Device budget in GiB (0 = engine default). The panel passes total VRAM - 1
-  # on 8-12 GB cards; weights stay in RAM and stream in segments that fit.
+  # Device budget in GiB (0 = engine default; a NEGATIVE value tells the engine
+  # to snapshot free VRAM and keep that many GiB headroom). The panel passes -1
+  # on 8-12 GB cards so plans account for browsers/other apps.
   [int]$MaxVram = 0,
+
+  # Tile VAE encode/decode. The panel enables it for reference edits on small
+  # cards; keeps reference-encoding peaks from competing with the diffusion
+  # graph.
+  [switch]$VaeTiling,
 
   # Explicit config.json location. The packaged install keeps config.json in
   # the per-user data folder while egglab.ps1 ships in resources\, so the
@@ -219,9 +225,13 @@ if ($Cpu) { $sdArgs += @('--backend', 'cpu') }
 else {
   if (-not $NoOffload) { $sdArgs += '--offload-to-cpu' }
   if ($TeCpu) { $sdArgs += @('--backend', 'te=cpu') }
-  if ($MaxVram -gt 0) {
+  if ($MaxVram -ne 0) {
+    # Positive caps the budget; negative means "free VRAM minus that many GiB"
+    # (the engine snapshots free memory at startup, so browsers are accounted
+    # for). Either way parameters stay in RAM and stream in fitting segments.
     $sdArgs += @('--params-backend', 'cpu', '--max-vram', [string]$MaxVram)
   }
+  if ($VaeTiling) { $sdArgs += '--vae-tiling' }
 }
 # Editing needs the text + reference-image KV cache. On 8 GB VRAM the f16 cache
 # does not fit (it silently falls back to ~2x slower no-cache sampling), so use
