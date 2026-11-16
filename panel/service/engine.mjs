@@ -341,6 +341,14 @@ export function startJob(input = {}) {
   ];
   if (params.workflow === 'turbo') args.push('-Turbo');
   if (s.offload === false) args.push('-NoOffload');
+
+  // The text encoder (Qwen3VL 8B, ~6 GB) competes with the diffusion model for
+  // VRAM. On 8 GB cards the Vulkan backend sometimes puts the whole encoder on
+  // the device and then fails its own workspace capacity check while encoding
+  // the prompt ("qwen3vl segment 1/1 (graph) failed during workspace capacity
+  // check"). If that happens, retry once with the encoder on CPU — it costs a
+  // few seconds of prompt encoding but fits (verified on a 4060 Ti 8 GB).
+  let teCpuRetry = false;
   let imageListFile = null;
 if (Array.isArray(images) && images.length) {
   imageListFile = path.join(TMP_DIR, `${id}-images.txt`);
@@ -439,9 +447,35 @@ if (Array.isArray(images) && images.length) {
   }, 1000);
 
   const finish = (code) => {
-    clearInterval(ticker);
     if (buffer.trim()) onLine(buffer);
     const exists = fs.existsSync(outPath);
+
+    // Memory-pressure failures are recoverable: retry once with the text
+    // encoder pinned to the CPU. Everything else (and a second attempt) ends
+    // the job as an error.
+    const memoryFailure =
+      !job.canceled &&
+      !(code === 0 && exists) &&
+      /capacity check|cannot make enough memory available|out of memory|failed during workspace/i.test(
+        `${stderrText}\n${job.logTail.slice(-20).join('\n')}`,
+      );
+    if (memoryFailure && !teCpuRetry) {
+      teCpuRetry = true;
+      args.push('-TeCpu');
+      log.write('# retry: VRAM capacity check failed, text encoder -> CPU\n');
+      job.logTail.push('--- VRAM was full: retrying with the text encoder on CPU ---');
+      job.error = null;
+      job.child = null;
+      job.phase = 'starting';
+      job.detail = 'VRAM full — retrying with the text encoder on CPU';
+      stderrText = '';
+      buffer = '';
+      update(job);
+      launchNow();
+      return;
+    }
+
+    clearInterval(ticker);
     job.endedAt = Date.now();
     job.child = null;
 
@@ -514,7 +548,7 @@ if (Array.isArray(images) && images.length) {
     engineBusy = true;
     job.status = 'running';
     job.phase = 'starting';
-    job.detail = 'Preparing';
+    job.detail = teCpuRetry ? 'Text encoder on CPU (VRAM was full)' : 'Preparing';
     job.startedAt = Date.now();
     child = spawn('powershell.exe', args, {
       cwd: s.engineRoot,

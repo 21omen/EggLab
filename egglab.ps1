@@ -59,6 +59,11 @@ param(
   [switch]$Turbo,
   [switch]$Open,
 
+  # Keep the text encoder (Qwen3VL 8B, ~6 GB) in RAM. The panel adds this
+  # automatically when the engine hits a VRAM capacity check while encoding
+  # the prompt on small cards; it can also be forced from the command line.
+  [switch]$TeCpu,
+
   # Explicit config.json location. The packaged install keeps config.json in
   # the per-user data folder while egglab.ps1 ships in resources\, so the
   # panel passes this; default remains the file next to this script (dev).
@@ -207,7 +212,10 @@ $sdArgs += @(
 )
 if ($Turbo) { $sdArgs += @('--sigmas', 'qwen-image-2.1-turbo') }
 if ($Cpu) { $sdArgs += @('--backend', 'cpu') }
-elseif (-not $NoOffload) { $sdArgs += '--offload-to-cpu' }
+else {
+  if (-not $NoOffload) { $sdArgs += '--offload-to-cpu' }
+  if ($TeCpu) { $sdArgs += @('--backend', 'te=cpu') }
+}
 # Editing needs the text + reference-image KV cache. On 8 GB VRAM the f16 cache
 # does not fit (it silently falls back to ~2x slower no-cache sampling), so use
 # the 8-bit cache, which does fit and keeps prefix caching enabled.
