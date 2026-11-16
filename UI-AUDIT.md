@@ -44,6 +44,14 @@ one variant is installed.
    installed-file check. Live app verification: current model switched to
    `qwen-image-2.1-Q4_K_M.gguf`, generation completed in 20 s at 512×512.
 
+7. **No way to add a variant once a model was installed.**
+   With FP8 present, the Models row only offered installed variants, so a user
+   could not download Q4_K_M at all. The row now has a second, compact
+   variant picker (missing downloadable variants only) and an **Install**
+   button. Wiring verified: selecting Q4_K_M and pressing Install calls the
+   downloader with `diffusion` + `q4km-beta` (the test transfer was canceled
+   immediately).
+
 ## Verified end-to-end this round
 
 - Q4_K_M T2I through the panel API: `done`, output written, 20 s at 512×512

@@ -1772,6 +1772,38 @@ function paintModelRow(row, entry) {
     ok.className = 'model-note';
     ok.textContent = 'in use';
     actions.appendChild(ok);
+
+    // A user with FP8 installed still needs a way to add Q4_K_M (or another
+    // quantisation) without deleting the working model first. The old UI only
+    // listed installed variants once the entry existed.
+    const missing = entry.variants.filter((v) => v.downloadable && !v.installed);
+    if (missing.length) {
+      const addSelect = document.createElement('select');
+      addSelect.className = 'mini';
+      addSelect.style.maxWidth = '150px';
+      addSelect.title = 'Download another model variant';
+      for (const v of missing) {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
+        addSelect.appendChild(opt);
+      }
+      const add = document.createElement('button');
+      add.className = 'mini';
+      add.textContent = 'Install';
+      add.title = 'Download this variant';
+      add.onclick = async () => {
+        add.disabled = true;
+        try {
+          await api.downloadModels([entry.id], addSelect.value);
+          toast(`Downloading ${entry.label}…`);
+        } catch (err) {
+          toast(friendly(err), 'error');
+          add.disabled = false;
+        }
+      };
+      actions.append(addSelect, add);
+    }
   }
 }
 
