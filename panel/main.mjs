@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { onEvent, emit } from './service/bus.mjs';
 import { startServer, TOKEN } from './service/http.mjs';
 import { getSettings, patchSettings, opencodeModels } from './service/settings.mjs';
-import { engineStatus, listJobs, startJob, cancelJob } from './service/engine.mjs';
+import { engineStatus, listJobs, startJob, cancelJob, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
 import { modelStatus, startDownloads, cancelDownload, useVariant } from './service/models.mjs';
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
@@ -505,6 +505,11 @@ if (!gotLock) {
 
     createWindow();
     trace('window created');
+    // Leftover engine processes from a crashed/killed job hold VRAM and make
+    // the next render fail at a random stage. Sweep ours before anything runs.
+    try {
+      cleanupStaleEngines(true);
+    } catch {}
     try {
       trace(`auto-update ${updater.initUpdater() ? 'armed' : 'unavailable (dev build)'}`);
     } catch (err) {
@@ -525,6 +530,10 @@ if (!gotLock) {
     app.on('will-quit', () => {
       try {
         globalShortcut.unregisterAll();
+      } catch {}
+      // Do not leave a render process holding 6 GB of VRAM after EggLab exits.
+      try {
+        killActiveEngine();
       } catch {}
     });
   }).catch((err) => {

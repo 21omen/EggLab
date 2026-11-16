@@ -122,11 +122,14 @@ panel/knowledge (skills, references, templates)
 
 ## Troubleshooting
 
-**“qwen3vl … failed during workspace capacity check” (8 GB cards).** The diffusion
-model (6.6 GB) and the text encoder (6 GB) compete for VRAM. If the GPU runs out while
-encoding a prompt, EggLab automatically retries the render with the text encoder in RAM
-(the job detail says “Text encoder on CPU”) — the render completes, prompt encoding is
-just a little slower. For scripting you can force that mode with `egglab.ps1 -TeCpu`.
+**“qwen3vl … failed during workspace capacity check” / “failed during weight preparation” (8 GB cards).** The diffusion model (6.6 GB), the text encoder (6 GB) and multi-reference edits all compete for VRAM. EggLab now:
+- retries a failed render with the text encoder in RAM (the job detail says “Text encoder on CPU”);
+- scales reference photos to 768 px on the long side before the engine sees them (Settings → Output → **Reference size**), because a 1080×1700 export becomes ~7300 latent tokens per reference and makes four-reference edits exceed an 8 GB card;
+- closes leftover engine processes at startup and after every render — a stray `sd-cli` holding 3 GB of VRAM used to make later jobs fail at random stages.
+
+If a render still hits the wall, EggLab automatically retries it at up to 1024×1280 with the same
+aspect ratio (the job reports the reduced size); if it still fails, lower the output size or
+reference size manually.
 
 **Chat says the OpenCode data is outdated.** OpenCode keeps all sessions in one shared
 SQLite database and newer clients upgrade its schema. EggLab picks the newest installed

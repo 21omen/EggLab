@@ -1586,6 +1586,7 @@ function syncUI() {
   $('#inHeight').value = s.height;
   $('#inSeed').value = s.seed;
   $('#inBatch').value = s.batch;
+  $('#inRefMax').value = s.refMaxSide || 768;
   $('#chkLockSeed').checked = Boolean(s.lockSeed);
   $('#chkOffload').checked = Boolean(s.offload);
   $('#chkTransparent').checked = Boolean(s.transparent);
@@ -2366,6 +2367,7 @@ function bind() {
   });
   on('#inSeed', 'change', (v) => queuePatch({ seed: Number.isFinite(Number(v)) ? Number(v) : -1 }));
   on('#inBatch', 'change', (v) => queuePatch({ batch: clampInt(v, 1, 4) }));
+  on('#inRefMax', 'change', (v) => queuePatch({ refMaxSide: clampInt(v, 256, 2048) }));
   on('#chkLockSeed', 'change', (v) => queuePatch({ lockSeed: v }));
   on('#chkOffload', 'change', (v) => queuePatch({ offload: v }));
   on('#pcPort', 'change', (v) => queuePatch({ photocraft: { controlPort: clampInt(v, 1, 65535) } }));

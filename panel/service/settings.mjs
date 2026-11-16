@@ -69,6 +69,11 @@ const PHOTO_DIR = detectPhotoCraft();
 export const DEFAULTS = {
   // First-run wizard: shown until the user finishes (or dismisses) it.
   setup: { completed: false, at: null },
+  // Longest side (px) of reference images sent to the engine. Qwen edits keep
+  // identity/style from these; 768 px is already more guidance than the model
+  // uses, while a 1080x1700 export turns into ~7300 latent tokens and makes
+  // multi-reference edits exceed an 8 GB card's memory during sampling.
+  refMaxSide: 768,
   // Packaged installs keep config.json (engine/model locations, written by
   // the installer or the first-run wizard) in the user data folder; dev keeps
   // reading it from the repo root next to egglab.ps1.

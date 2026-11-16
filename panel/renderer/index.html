@@ -150,10 +150,12 @@
                   <label class="field">Height <input type="number" id="inHeight" step="32" min="256" max="2048" /></label>
                   <label class="field">Seed <input type="number" id="inSeed" step="1" /></label>
                   <label class="field">Batch <input type="number" id="inBatch" min="1" max="4" step="1" /></label>
+                  <label class="field">Reference size <input type="number" id="inRefMax" step="32" min="256" max="2048" /></label>
                 </div>
                 <label class="row"><input type="checkbox" id="chkLockSeed" /> Keep the same seed for variations</label>
                 <label class="row"><input type="checkbox" id="chkOffload" /> Offload weights to CPU (required on 8 GB)</label>
                 <p class="note">Sizes snap to multiples of 32. Stay at or below 1024 on the long side for predictable timings.</p>
+                <p class="note">Reference size is the longest side sent to the engine for edit photos; 768 keeps multi-reference edits stable on 8 GB cards.</p>
               </section>
 
               <section class="card">

@@ -64,6 +64,10 @@ param(
   # the prompt on small cards; it can also be forced from the command line.
   [switch]$TeCpu,
 
+  # Device budget in GiB (0 = engine default). The panel passes total VRAM - 1
+  # on 8-12 GB cards; weights stay in RAM and stream in segments that fit.
+  [int]$MaxVram = 0,
+
   # Explicit config.json location. The packaged install keeps config.json in
   # the per-user data folder while egglab.ps1 ships in resources\, so the
   # panel passes this; default remains the file next to this script (dev).
@@ -215,6 +219,9 @@ if ($Cpu) { $sdArgs += @('--backend', 'cpu') }
 else {
   if (-not $NoOffload) { $sdArgs += '--offload-to-cpu' }
   if ($TeCpu) { $sdArgs += @('--backend', 'te=cpu') }
+  if ($MaxVram -gt 0) {
+    $sdArgs += @('--params-backend', 'cpu', '--max-vram', [string]$MaxVram)
+  }
 }
 # Editing needs the text + reference-image KV cache. On 8 GB VRAM the f16 cache
 # does not fit (it silently falls back to ~2x slower no-cache sampling), so use

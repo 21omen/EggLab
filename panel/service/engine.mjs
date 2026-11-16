@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { nativeImage } from 'electron';
 import { emit } from './bus.mjs';
 import { engineConfig, getSettings, patchSettings, workflowParams } from './settings.mjs';
 import { alphaStats } from './imagecheck.mjs';
@@ -13,6 +14,138 @@ const jobs = new Map();
 let engineBusy = false;
 const launchQueue = [];
 const order = [];
+
+/* ------------------------------------------------------------------ */
+/* engine process hygiene                                              */
+/* ------------------------------------------------------------------ */
+
+/** Kill a process and its children. Safe when it already exited. */
+function killTree(pid) {
+  if (!pid) return;
+  try {
+    spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+  } catch {}
+}
+
+let lastSweep = 0;
+
+/**
+ * Kill leftover sd-cli processes that belong to THIS engine folder.
+ *
+ * stable-diffusion.cpp can leave its process alive after writing the output
+ * (seen live: a job finished, the process kept 3.4 GB of VRAM, and every later
+ * render failed with "capacity check" at a random stage). A single stray holds
+ * enough VRAM on an 8 GB card to break the next ten jobs, so sweep before each
+ * launch and once at startup. Filtering by executable path keeps an unrelated
+ * sd-cli (another checkout/tool) untouched.
+ */
+export function cleanupStaleEngines(force = false) {
+  const now = Date.now();
+  if (!force && now - lastSweep < 20000) return;
+  lastSweep = now;
+  let dir = '';
+  try {
+    dir = String(engineConfig().engine || '');
+  } catch {}
+  if (!dir) return;
+  const quoted = dir.replace(/'/g, "''");
+  const script =
+    `Get-CimInstance Win32_Process -Filter "Name='sd-cli.exe'" | ` +
+    `Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith('${quoted}', [StringComparison]::OrdinalIgnoreCase) } | ` +
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }';
+  try {
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      timeout: 15000,
+      stdio: 'ignore',
+    });
+  } catch {}
+}
+
+/** Kill whatever engine process a running job owns (called on app quit). */
+export function killActiveEngine() {
+  for (const job of jobs.values()) {
+    if (job.child?.pid) killTree(job.child.pid);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* VRAM planning                                                       */
+/* ------------------------------------------------------------------ */
+
+let vramCache = -1;
+/**
+ * Total VRAM in GiB, when it can be detected (NVIDIA's nvidia-smi). Returns 0
+ * for other vendors so callers simply keep the engine defaults.
+ */
+function detectVramGb() {
+  if (vramCache >= 0) return vramCache;
+  vramCache = 0;
+  try {
+    const out = execFileSync(
+      'nvidia-smi',
+      ['--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+      { windowsHide: true, timeout: 6000, encoding: 'utf8' },
+    );
+    const mb = Math.max(
+      0,
+      ...String(out)
+        .split(/\r?\n/)
+        .map((line) => Number(line.trim()))
+        .filter((n) => Number.isFinite(n)),
+    );
+    if (mb > 0) vramCache = mb / 1024;
+  } catch {}
+  return vramCache;
+}
+
+/**
+ * Downscale reference images before handing them to the engine.
+ *
+ * Qwen edits keep identity/style from references, and the engine preprocesses
+ * them at native size — a 1080x1700 photo becomes ~7300 latent tokens. With
+ * four references the diffusion graph then believes a single segment needs
+ * more VRAM than an 8 GB card has, and fails in "weight preparation" after the
+ * prompt has already been encoded (minutes wasted). 768 px on the long side
+ * keeps far more detail than the guidance uses, and made a 4-reference edit
+ * render on a 4060 Ti where full-size references failed.
+ */
+function prepareReferenceImages(images, id) {
+  if (!Array.isArray(images) || !images.length) return { files: [], temp: [] };
+  const s = getSettings();
+  const maxSide = Math.max(256, Number(s.refMaxSide) || 768);
+  const files = [];
+  const temp = [];
+  for (let i = 0; i < images.length; i++) {
+    const src = images[i];
+    try {
+      const img = nativeImage.createFromPath(src);
+      if (img.isEmpty()) {
+        files.push(src);
+        continue;
+      }
+      const { width, height } = img.getSize();
+      const side = Math.max(width, height);
+      if (!side || side <= maxSide) {
+        files.push(src);
+        continue;
+      }
+      const scale = maxSide / side;
+      const resized = img.resize({
+        width: Math.max(16, Math.round(width * scale)),
+        height: Math.max(16, Math.round(height * scale)),
+        quality: 'best',
+      });
+      const file = path.join(TMP_DIR, `${id}-ref${i + 1}.png`);
+      fs.writeFileSync(file, resized.toPNG());
+      files.push(file);
+      temp.push(file);
+    } catch {
+      files.push(src);
+    }
+  }
+  return { files, temp };
+}
 
 export function transparentPrompt(prompt) {
   const text = String(prompt || '').trim().replace(/\.+$/, '');
@@ -42,6 +175,7 @@ function publicJob(job) {
     workflow: job.workflow,
     width: job.width,
     height: job.height,
+    sizeCapped: job.sizeCapped || null,
     steps: job.steps,
     cfg: job.cfg,
     seed: job.seed,
@@ -273,6 +407,9 @@ export function startJob(input = {}) {
   const cfgScale = Number(input.cfg || params.cfg);
 
   const id = uid('job');
+  // Scale references before the engine sees them (see prepareReferenceImages):
+  // full-size photos from PhotoCraft exports otherwise blow up the edit graph.
+  const preparedRefs = prepareReferenceImages(images, id);
   const promptUsed = transparent ? transparentPrompt(prompt) : prompt;
   const promptFile = path.join(TMP_DIR, `${id}.prompt.txt`);
   fs.writeFileSync(promptFile, promptUsed, 'utf8');
@@ -342,17 +479,31 @@ export function startJob(input = {}) {
   if (params.workflow === 'turbo') args.push('-Turbo');
   if (s.offload === false) args.push('-NoOffload');
 
+  // Memory plan for 8-12 GB cards. `--offload-to-cpu` alone still lets the
+  // model manager put whole modules on the device and then discover mid-graph
+  // that a segment does not fit ("failed during weight preparation"). Keeping
+  // params in RAM and giving the engine an explicit device budget lets it plan
+  // and stream segments that actually fit: a 4-reference 1024x1280 edit went
+  // from failing to 250s on a 4060 Ti with this plan (and with the text
+  // encoder still on the GPU, so prompt encoding stays fast).
+  const vramGb = detectVramGb();
+  if (s.offload !== false && vramGb && vramGb <= 12) {
+    args.push('-MaxVram', String(Math.max(4, Math.floor(vramGb - 1))));
+  }
+
   // The text encoder (Qwen3VL 8B, ~6 GB) competes with the diffusion model for
   // VRAM. On 8 GB cards the Vulkan backend sometimes puts the whole encoder on
   // the device and then fails its own workspace capacity check while encoding
   // the prompt ("qwen3vl segment 1/1 (graph) failed during workspace capacity
-  // check"). If that happens, retry once with the encoder on CPU — it costs a
-  // few seconds of prompt encoding but fits (verified on a 4060 Ti 8 GB).
+  // check"). If that happens after the size fallback, retry once with the
+  // encoder on CPU - it costs a few seconds of prompt encoding but fits
+  // (verified on a 4060 Ti 8 GB).
   let teCpuRetry = false;
+  let sizeRetry = false;
   let imageListFile = null;
 if (Array.isArray(images) && images.length) {
   imageListFile = path.join(TMP_DIR, `${id}-images.txt`);
-  fs.writeFileSync(imageListFile, images.join('\n') + '\n', 'utf8');
+  fs.writeFileSync(imageListFile, preparedRefs.files.join('\n') + '\n', 'utf8');
   args.push('-ImageFile', imageListFile);
 }
   // Local-edit knobs, all optional: without them this is the same reference
@@ -456,9 +607,41 @@ if (Array.isArray(images) && images.length) {
     const memoryFailure =
       !job.canceled &&
       !(code === 0 && exists) &&
-      /capacity check|cannot make enough memory available|out of memory|failed during workspace/i.test(
+      /capacity check|cannot make enough memory available|out of memory|failed during (workspace|weight preparation)|allocated capacity/i.test(
         `${stderrText}\n${job.logTail.slice(-20).join('\n')}`,
       );
+    // Stage 1 fallback: a smaller canvas. Edit memory grows with the target
+    // area, and 1024x1280 (same aspect) is the largest verified 4-reference
+    // size on an 8 GB card. This retry is fast because the GPU still encodes
+    // the prompt.
+    const areaCap = 1024 * 1280;
+    if (memoryFailure && !sizeRetry && job.width * job.height > areaCap) {
+      sizeRetry = true;
+      const scale = Math.sqrt(areaCap / (job.width * job.height));
+      const nextW = Math.max(512, round32(job.width * scale));
+      const nextH = Math.max(512, round32(job.height * scale));
+      const wi = args.indexOf('-Width');
+      const hi = args.indexOf('-Height');
+      if (wi >= 0) args[wi + 1] = String(nextW);
+      if (hi >= 0) args[hi + 1] = String(nextH);
+      job.sizeCapped = `${job.width}x${job.height} -> ${nextW}x${nextH} (VRAM)`;
+      job.width = nextW;
+      job.height = nextH;
+      log.write(`# retry: VRAM capacity check failed, size -> ${nextW}x${nextH}\n`);
+      job.logTail.push(`--- VRAM was full: retrying at ${nextW}x${nextH} ---`);
+      job.error = null;
+      job.child = null;
+      job.phase = 'starting';
+      job.detail = `Retrying at ${nextW}x${nextH} (VRAM was full)`;
+      stderrText = '';
+      buffer = '';
+      update(job);
+      launchNow();
+      return;
+    }
+
+    // Stage 2 fallback: text encoder to CPU (slow prompt encoding, but fits
+    // the tightest memory state).
     if (memoryFailure && !teCpuRetry) {
       teCpuRetry = true;
       args.push('-TeCpu');
@@ -523,6 +706,16 @@ if (Array.isArray(images) && images.length) {
     try {
       if (imageListFile) fs.unlinkSync(imageListFile);
     } catch {}
+    // Reference copies made for this job (originals are never touched).
+    for (const file of preparedRefs.temp) {
+      try {
+        fs.unlinkSync(file);
+      } catch {}
+    }
+    // A successful sd-cli can still leave its process alive holding VRAM; make
+    // sure the whole engine tree for this job is gone before the next one.
+    killTree(child && child.pid);
+    cleanupStaleEngines(true);
     update(job);
     emit('job:finished', { job: publicJob(job) });
     // Engine is free: start the next queued job, if any.
@@ -550,6 +743,10 @@ if (Array.isArray(images) && images.length) {
     job.phase = 'starting';
     job.detail = teCpuRetry ? 'Text encoder on CPU (VRAM was full)' : 'Preparing';
     job.startedAt = Date.now();
+    job.expectedMs = expectedSeconds(job) * 1000;
+    // A stray sd-cli from an earlier run holds VRAM and turns this job into a
+    // random capacity failure. Sweep ours first (throttled internally).
+    cleanupStaleEngines();
     child = spawn('powershell.exe', args, {
       cwd: s.engineRoot,
       windowsHide: true,
