@@ -14,6 +14,10 @@ const jobs = new Map();
 let engineBusy = false;
 const launchQueue = [];
 const order = [];
+// After a chat stop, in-flight MCP tool calls can still arrive (the HTTP
+// request is already on the wire even though OpenCode was killed) and would
+// start a fresh render the user just canceled. Reject new jobs briefly.
+let stopGuardUntil = 0;
 
 /* ------------------------------------------------------------------ */
 /* engine process hygiene                                              */
@@ -266,6 +270,7 @@ export function cancelJob(id) {
  * after the chat says "Stopped.". Stopping a turn must stop its work too.
  */
 export function cancelAllJobs() {
+  stopGuardUntil = Date.now() + 6000;
   let count = 0;
   for (const job of [...jobs.values()]) {
     if (job.status === 'running' || job.status === 'queued') {
@@ -353,6 +358,11 @@ function imageDims(p) {
 }
 
 export function startJob(input = {}) {
+  if (Date.now() < stopGuardUntil) {
+    const err = new Error('The previous turn was stopped. Send a new message to start another render.');
+    err.code = 'STOPPED';
+    throw err;
+  }
   const s = getSettings();
   const cfg = engineConfig();
   const params = workflowParams(input.workflow || s.workflow);
