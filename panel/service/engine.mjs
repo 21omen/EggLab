@@ -14,6 +14,11 @@ const jobs = new Map();
 let engineBusy = false;
 const launchQueue = [];
 const order = [];
+// When a job finishes, the OS can take a moment to release its VRAM/RAM.
+// Starting a render with a different diffusion file immediately caused a
+// one-off exit 1 during weight preparation; launchNow() waits out this window.
+let lastFinishedAt = 0;
+let lastFinishedModel = '';
 // After a chat stop, in-flight MCP tool calls can still arrive (the HTTP
 // request is already on the wire even though OpenCode was killed) and would
 // start a fresh render the user just canceled. Reject new jobs briefly.
@@ -750,6 +755,8 @@ if (Array.isArray(images) && images.length) {
 
     clearInterval(ticker);
     job.endedAt = Date.now();
+    lastFinishedAt = job.endedAt;
+    lastFinishedModel = job.model || lastFinishedModel;
     job.child = null;
 
     if (job.canceled) {
@@ -811,7 +818,8 @@ if (Array.isArray(images) && images.length) {
     setTimeout(() => cleanupStaleEngines(true), 2500).unref?.();
     update(job);
     emit('job:finished', { job: publicJob(job) });
-    // Engine is free: start the next queued job, if any.
+    // Engine is free: start the next queued job, if any. launchNow() checks
+    // the settle window when the next job uses a different model.
     engineBusy = false;
     const next = launchQueue.shift();
     if (next) next.launch();
@@ -829,6 +837,30 @@ if (Array.isArray(images) && images.length) {
       try { fs.unlinkSync(promptFile); } catch {}
       update(job);
       emit('job:finished', { job: publicJob(job) });
+      return;
+    }
+    // Windows can still be tearing down the previous sd-cli when a new model
+    // is requested right after a render. Starting FP8 immediately after Q4
+    // produced an exit 1 during weight preparation that succeeded on retry.
+    // Hold the engine for a couple of seconds when the model changes.
+    const switching = job.model && lastFinishedModel && job.model !== lastFinishedModel;
+    const sinceFinish = lastFinishedAt ? Date.now() - lastFinishedAt : Number.POSITIVE_INFINITY;
+    if (switching && sinceFinish < 2500) {
+      job.status = 'queued';
+      job.phase = 'queued';
+      job.detail = 'Waiting for the previous model to unload.';
+      update(job);
+      engineBusy = true;
+      setTimeout(() => {
+        if (job.canceled) {
+          engineBusy = false;
+          const after = launchQueue.shift();
+          if (after) after.launch();
+          return;
+        }
+        engineBusy = false;
+        launchNow();
+      }, 2500 - sinceFinish).unref?.();
       return;
     }
     engineBusy = true;

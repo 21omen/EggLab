@@ -1,4 +1,4 @@
-# UI / function audit — 0.3.6
+# UI / function audit — 0.3.7
 
 Scope: the live panel (CDP + HTTP API), model drawer, download pipeline, job
 logs and the chat/stop path. This round focused on the model area because the
@@ -53,6 +53,13 @@ one variant is installed.
    selecting Q4_K_M and pressing Install calls the downloader with
    `diffusion` + `q4km-beta` (the test transfer was canceled immediately).
 
+8. **First render after a model switch could fail once.**
+   Switching Q4_K_M → FP8 and rendering immediately exited 1 during weight
+   preparation; the identical job succeeded on retry. The next launch now
+   waits up to 2.5 s when the diffusion file changes, so the old engine has
+   time to release VRAM/RAM. Rapid Q4 ↔ FP8 cycles are 5/5 clean, and a job
+   canceled during the settle window does not wedge the queue.
+
 ## Verified end-to-end this round
 
 - Q4_K_M T2I through the panel API: `done`, output written, 20 s at 512×512
@@ -69,7 +76,7 @@ one variant is installed.
   bridge present.
 - Existing stop behavior (cancel running job, reject in-flight agent jobs,
   kill engine, release VRAM) is unchanged; no session/chat code was touched.
-- Auto-update path is unchanged; 0.3.6 uses the same verified installer flow.
+- Auto-update path is unchanged; 0.3.7 uses the same verified installer flow.
 
 ## Known limitations (documented, not fixed)
 

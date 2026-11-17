@@ -101,6 +101,11 @@ Other flags checked:
    created with and shows a small FP8 / Q4_K_M / Q5_K_M tag. Switched model →
    manual job and agent (`egglab_generate`) job both loaded the new file in
    their engine logs; switching back also applied to the next manual job.
+6. **Model-switch settle window**: the first render after a switch waits up to
+   2.5 s for the previous engine to release VRAM/RAM. Without it, FP8 could
+   exit 1 during weight preparation immediately after a Q4 render, then
+   succeed on retry. Rapid Q4↔FP8 cycles are now 5/5 clean, including a cancel
+   during the settle window.
 
 ## Future opportunities (not shipped)
 

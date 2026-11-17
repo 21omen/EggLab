@@ -136,6 +136,8 @@ no longer offered.
 Every job records the diffusion file it actually loaded, and the job card shows
 a small model tag (FP8 / Q4_K_M / Q5_K_M). Manual renders and agent renders use
 the same engine config, so switching the model in Settings applies to both.
+A 2.5 s settle window protects the first render after a switch from racing the
+previous engine's teardown.
 
 Measured engine/backend/flag results and sources are in
 [PERFORMANCE-RESEARCH.md](PERFORMANCE-RESEARCH.md). The UI/function fixes from
