@@ -50,7 +50,7 @@ Classify the **operation** before selecting a tool. The Qwen model is unified, b
 6. **Multi-reference**: assign `<image1>` canvas and `<image2>+` donor roles before writing. Do not send every image as a generic donor.
 7. **Transparency**: new subject → `egglab_generate transparent=true`; photo extraction/edit → `egglab_edit transparent=true` (or PhotoCraft mask + edit). Validate alpha with `egglab_check_alpha`.
 
-Load the Qwen 2.1 feature research for any Qwen generation/editing decision. Load the seamless-local-edit research when a region/mask edit must not show a seam. The photo's annotations and the separate mask layer are **existing PhotoCraft capabilities**; use them as-is.
+Load the Qwen 2.1 feature research for any Qwen generation/editing decision. Load the seamless-local-edit research when a region/mask edit must not show a seam. The photo's annotations and the separate mask layer are **existing PhotoCraft capabilities**; use them as-is. Never select a tool from the skill name alone: inspect the exposed MCP description and the live PhotoCraft state/schema first.
 
 ## Loading rules
 - `qa-delivery` for every artifact production/review.

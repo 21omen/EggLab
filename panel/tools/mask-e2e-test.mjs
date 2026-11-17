@@ -76,9 +76,9 @@ try {
   if (!src || !msk) throw new Error('scratch layers missing');
   await api('POST', '/api/photocraft/command', { id: 'layer.select', params: { layer: src.id } });
   const res = await api('POST', '/api/photocraft/edit-active', {
-    prompt: 'Replace the masked area with a clean blue circle. Preserve everything outside the mask.',
+    prompt: 'A large solid blue circle fills the masked area. Preserve everything outside the mask.',
     maskLayer: 'MaskTest',
-    strength: 0.45,
+    strength: 0.9,
     workflow: 'turbo',
     width: w,
     height: h,

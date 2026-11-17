@@ -66,9 +66,12 @@ knowledge layer, with one integration addition required by the spec's
   `preprocess mask[0]: 512x512` and the job completed in 18 s. Placement in dev
   was blocked by the dev out-dir not being inside the packaged PhotoCraft
   automation root; this is an environment path mismatch, not the mask path.
-- Packaged end-to-end placement: to be verified in the release build with a
-  scratch PhotoCraft document; update this line with the result after the
-  packaged test.
+- Packaged end-to-end placement verified on 0.3.11 with a scratch PhotoCraft
+  document: a 512x512 source + separate `MaskTest` layer ran with
+  `mode:"mask"`, job `done`, output placed at the source bounds; the scratch
+  document was discarded and the original project reactivated. At strength 0.9
+  the masked rectangle changed while the outside gradient stayed intact.
+  Test: `panel/tools/mask-e2e-test.mjs` (manual; requires PhotoCraft).
 - Full visual/LLM execution of the 24 benchmark and 16 upgrade briefs still
   requires a configured provider and human review; CI has no model credentials.
 
