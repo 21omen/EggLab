@@ -20,3 +20,22 @@ Track both context efficiency and actual outcome quality. A missing relevant ski
 - Every benchmark test loads required skill(s) or explicitly identifies why no skill is needed.
 - No regression in required original command/workflow coverage.
 - Human review accepts visual quality and task-specific QA.
+
+## Automated gate
+
+`npm run test:agent` (also run by `.github/workflows/agent-gate.yml` on every
+panel push/PR and by the release workflow before building) validates:
+
+- all 24 cases parse, have unique IDs and required fields;
+- every `must_load` / `conditional` skill exists in `skills/`;
+- every `egglab_*` reference in the prompt, router, manifest and evals maps to
+  a registered MCP tool;
+- the root OpenCode prompt points at the canonical `panel/AGENT.md`;
+- MCP/turn timeouts exceed the 60-minute `download_models` wait;
+- the MCP download tool reports failures as failures (via a fake panel), and
+  recent-project limits are forwarded.
+
+The gate is deterministic and needs no GPU, model provider or Photocraft. Full
+visual/LLM evaluation of the 24 briefs still requires a configured provider and
+human review; run those before a substantial prompt/skill change.
+

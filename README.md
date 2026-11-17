@@ -96,6 +96,7 @@ deleting models.
 cd panel
 npm install
 npm start          # dev panel (uses the repo checkout layout)
+npm run test:agent # agent/tool/config regression gate (no GPU)
 npm run dist       # one-click installer in ..\dist
 ```
 

@@ -123,8 +123,10 @@ export const DEFAULTS = {
     customProviders: ['inferx'],
     // Declare image input for the selected custom-provider model.
     vision: true,
-    // One turn may hold a render plus several tool round trips.
-    timeoutSec: 1800,
+    // One turn may hold a render plus several tool round trips. Must exceed
+    // download_models' 60-minute wait, so a large model download does not get
+    // killed by the turn timeout first.
+    timeoutSec: 4200,
     // A healthy run emits its first event in seconds. opencode's own retry is
     // hard-coded to 5 attempts (~68s) and is not configurable, so a silent run
     // is the panel's job to detect and restart.
@@ -174,6 +176,9 @@ const REMOVED_OPENCODE_KEYS = [
 function sanitize(target) {
   if (target?.opencode) {
     for (const key of REMOVED_OPENCODE_KEYS) delete target.opencode[key];
+    // The old default was 30 minutes, shorter than download_models' 60-minute
+    // wait. Raise it once for configs that still carry the old default.
+    if (Number(target.opencode.timeoutSec) === 1800) target.opencode.timeoutSec = 4200;
   }
   // `lockSeed` was written as the string "on" by an older build.
   if (target && target.lockSeed === 'on') target.lockSeed = true;

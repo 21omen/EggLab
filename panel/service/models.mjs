@@ -140,7 +140,17 @@ export function modelStatus() {
       try {
         size = fs.statSync(full).size;
       } catch {}
-      const dl = stored[entry.id];
+      const live = downloads.get(entry.id);
+      let dl = live || stored[entry.id] || null;
+      // A persisted "running"/"queued" record with no live download means the
+      // app died mid-transfer. Surface it as an error instead of silently
+      // hiding it (the MCP download tool used to report success for this).
+      if (dl && !live && (dl.status === 'running' || dl.status === 'queued')) {
+        dl = { ...dl, status: 'error', error: 'Download interrupted. Press Retry.' };
+      }
+      // Terminal states are noise when the file is already on disk; a stale
+      // error must not make every later download_models call look failed.
+      if (dl && (dl.status === 'done' || (dl.status === 'error' && size > 0))) dl = null;
       return {
         id: entry.id,
         label: entry.label,
@@ -169,7 +179,7 @@ export function modelStatus() {
             downloadable: Boolean(v.url),
           };
         }),
-        download: dl && dl.status === 'running' ? dl : null,
+        download: dl ? publicState({ ...dl, id: entry.id }) : null,
       };
     }),
   };
@@ -218,6 +228,7 @@ function persist() {
       total: dl.total,
       error: dl.error || null,
       file: dl.file,
+      variant: dl.variant || null,
       updated: Date.now(),
     };
   }
@@ -241,15 +252,15 @@ function publicState(dl) {
   };
 }
 
-async function downloadOne(entry, variant) {
+async function downloadOne(entry, variant, existing = null) {
   const cfg = engineConfig();
   const dest = path.join(cfg.models, variant.file);
   const part = `${dest}.part`;
   fs.mkdirSync(cfg.models, { recursive: true });
 
-  const dl = {
+  const dl = existing || {
     id: entry.id,
-    status: 'running',
+    status: 'queued',
     received: 0,
     total: 0,
     speed: 0,
@@ -257,7 +268,19 @@ async function downloadOne(entry, variant) {
     variant: variant.id,
     abort: new AbortController(),
   };
+  // A queued download may have been canceled while waiting behind another.
+  if (dl.abort?.signal.aborted) {
+    const err = new Error('Canceled');
+    err.name = 'AbortError';
+    throw err;
+  }
+  dl.status = 'running';
+  dl.error = null;
+  dl.speed = 0;
+  dl.total = 0;
   downloads.set(entry.id, dl);
+  persist();
+  emit('model', { id: entry.id, download: publicState(dl) });
 
   // Resume a leftover .part (cancelled or interrupted download) instead of
   // starting the multi-GB transfer over. huggingface.co honours Range.
@@ -367,12 +390,34 @@ export function startDownloads(ids, variantId = null) {
     const variant = entry.variants.find((v) => v.id === variantId) || entry.variants[0];
     if (!variant) continue;
     if (!variant.url) continue;
-    if (downloads.get(id)?.status === 'running') continue;
+    // Already on disk: do not re-download a multi-GB file because the agent
+    // asked for it again. Delete/repair explicitly if the file is corrupt.
+    try {
+      if (fs.statSync(path.join(engineConfig().models, variant.file)).size > 0) continue;
+    } catch {}
+    if (['running', 'queued'].includes(downloads.get(id)?.status)) continue;
+    // Register the job synchronously, before the queue runs. The MCP
+    // download_models tool polls /api/models immediately after POST; without
+    // this, it saw no active download and reported success while the file was
+    // still missing.
+    const dl = {
+      id,
+      status: 'queued',
+      received: 0,
+      total: 0,
+      speed: 0,
+      file: variant.file,
+      variant: variant.id,
+      error: null,
+      abort: new AbortController(),
+    };
+    downloads.set(id, dl);
     started.push(id);
+    emit('model', { id, download: publicState(dl) });
+    persist();
     queue = queue
-      .then(() => downloadOne(entry, variant))
+      .then(() => downloadOne(entry, variant, dl))
       .catch((err) => {
-        const dl = downloads.get(id) || { id, received: 0, total: 0 };
         dl.status = 'error';
         dl.error = err.name === 'AbortError' ? 'Canceled' : err.message;
         downloads.set(id, dl);
@@ -380,13 +425,21 @@ export function startDownloads(ids, variantId = null) {
         persist();
       });
   }
-  return { started, queue: publicState(downloads.get(started[0]) || {}) };
+  return { started, queue: started.length ? publicState(downloads.get(started[0])) : null };
 }
 
 export function cancelDownload(id) {
   const dl = downloads.get(id);
   if (!dl) return false;
   dl.abort?.abort();
+  // A queued transfer has not reached fetch() yet; settle it now so the UI and
+  // the MCP status do not show "queued" forever.
+  if (dl.status === 'queued') {
+    dl.status = 'error';
+    dl.error = 'Canceled';
+    emit('model', { id, download: publicState(dl) });
+    persist();
+  }
   return true;
 }
 
@@ -395,7 +448,8 @@ export function retryDownload(id) {
   // the user pick Q4_K_M / Q5_K_M / FP8, and a retry used to quietly download
   // a different file.
   const failed = downloads.get(id);
-  return startDownloads([id], failed?.variant || null);
+  const stored = failed ? null : readJson(STATE_FILE, {})[id];
+  return startDownloads([id], failed?.variant || stored?.variant || null);
 }
 
 export function publicDownloads() {

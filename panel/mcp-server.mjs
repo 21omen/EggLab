@@ -634,27 +634,47 @@ async function callTool(name, args = {}) {
       return await api('GET', '/api/models');
 
     case 'download_models': {
-      const ids = Array.isArray(args.ids) ? args.ids : [];
+      const ids = [...new Set(Array.isArray(args.ids) ? args.ids : [])];
       if (!ids.length) throw new Error('ids is required');
       await api('POST', '/api/models/download', { ids, variant: args.variant });
       const deadline = Date.now() + 3_600_000;
       for (;;) {
         const status = await api('GET', '/api/models');
-        const active = status.entries.filter((e) => e.download && e.download.status === 'running');
-        const failed = status.entries.filter((e) => e.download && e.download.status === 'error');
+        const requested = ids
+          .map((id) => status.entries.find((e) => e.id === id))
+          .filter(Boolean);
+        const unknown = ids.filter((id) => !requested.some((e) => e.id === id));
+        const active = requested.filter(
+          (e) => e.download && (e.download.status === 'running' || e.download.status === 'queued'),
+        );
+        const failed = requested.filter((e) => e.download && e.download.status === 'error');
+        const missing = requested.filter((e) => !e.exists);
+        const snapshot = requested.map((e) => ({
+          id: e.id,
+          file: e.file,
+          exists: e.exists,
+          size: e.sizeText,
+          download: e.download?.status || null,
+          error: e.download?.error || undefined,
+        }));
         if (!active.length) {
+          if (unknown.length) {
+            return { ok: false, error: `Unknown model id(s): ${unknown.join(', ')}`, models: snapshot };
+          }
+          if (!missing.length) return { ok: true, models: snapshot };
+          const reason =
+            failed[0]?.download?.error ||
+            `Download did not complete: ${missing.map((e) => e.file).join(', ')}`;
+          return { ok: false, error: reason, models: snapshot };
+        }
+        if (Date.now() > deadline) {
           return {
-            ok: failed.length === 0,
-            models: status.entries.map((e) => ({
-              id: e.id,
-              file: e.file,
-              exists: e.exists,
-              size: e.sizeText,
-              error: e.download?.error || undefined,
-            })),
+            ok: false,
+            pending: true,
+            error: 'Download still running after 60 minutes. Check the Models panel and retry if needed.',
+            models: snapshot,
           };
         }
-        if (Date.now() > deadline) throw new Error('Download timed out');
         await sleep(2000);
       }
     }
@@ -792,7 +812,14 @@ async function callTool(name, args = {}) {
       return await api('POST', '/api/photocraft/project/open', { path: args.path });
 
     case 'photocraft_recent_projects':
-      return await api('GET', '/api/photocraft/project/recent');
+      return await api(
+        'GET',
+        `/api/photocraft/project/recent${
+          Number.isFinite(Number(args.limit)) && Number(args.limit) > 0
+            ? `?limit=${encodeURIComponent(args.limit)}`
+            : ''
+        }`,
+      );
 
     default:
       throw new Error(`Unknown tool ${name}`);

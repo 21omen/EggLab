@@ -204,7 +204,7 @@ export function buildWorkspace({ url, token }) {
           EGGLAB_TOKEN: token,
           ...(PACKAGED ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         },
-        timeout: 1800000,
+        timeout: 4200000,
       },
       // The user's global config carries Blender, Context7, GitHub grep,
       // Google search and OpenClaw. Every one of them injects its whole tool

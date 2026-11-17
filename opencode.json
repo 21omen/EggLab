@@ -5,7 +5,7 @@
       "type": "local",
       "command": ["node", "./panel/mcp-server.mjs"],
       "enabled": true,
-      "timeout": 1800000
+      "timeout": 4200000
     }
   },
   "agent": {
@@ -13,7 +13,7 @@
       "description": "EggLab design agent for PhotoCraft",
       "mode": "primary",
       "model": "inferx/deepseek-v4.1-flash-1017-basic",
-      "prompt": "{file:./AGENT.md}",
+      "prompt": "{file:./panel/AGENT.md}",
       "tools": {
         "bash": false,
         "edit": false,

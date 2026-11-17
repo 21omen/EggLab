@@ -279,7 +279,11 @@ async function handle(req, res, url) {
       return json(res, 200, { path: pc.projectPathFor(body.name, body) });
 
     case 'GET /api/photocraft/project/recent':
-      return json(res, 200, { projects: pc.recentProjects(Number(body?.limit) || 20) });
+      return json(res, 200, {
+        projects: pc.recentProjects(
+          Number(url.searchParams.get('limit')) || Number(body?.limit) || 20,
+        ),
+      });
 
     case 'POST /api/photocraft/edit-active':
       return json(res, 200, { ...(await editActive(body)), save: await pc.autosave('edited a layer') });

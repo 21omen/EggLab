@@ -1685,6 +1685,12 @@ function renderModels() {
     box.innerHTML = '<p class="note">Model status unavailable.</p>';
     return;
   }
+  // A failed download that the user repaired outside the app (or a finished
+  // transfer whose models refresh raced its event) must not stay red forever.
+  for (const entry of data.entries) {
+    const dl = S.modelDl.get(entry.id);
+    if (dl && entry.exists && !entry.download) S.modelDl.delete(entry.id);
+  }
   box.innerHTML = '';
   for (const entry of data.entries) {
     const row = document.createElement('div');
@@ -1692,7 +1698,7 @@ function renderModels() {
     row.dataset.model = entry.id;
     box.appendChild(row);
     paintModelRow(row, entry);
-    const dl = S.modelDl.get(entry.id);
+    const dl = S.modelDl.get(entry.id) || entry.download;
     if (dl) paintDownload(row, entry, dl);
   }
 }
@@ -1846,6 +1852,18 @@ function paintDownload(row, entry, dl) {
     note.className = 'model-note';
     bar.style.width = `${dl.percent || 0}%`;
     note.textContent = `${dl.receivedText || ''} / ${dl.totalText || ''} · ${dl.speedText || ''}`;
+    if (!wrap.querySelector('.dl-cancel')) {
+      const cancel = document.createElement('button');
+      cancel.className = 'mini dl-cancel';
+      cancel.textContent = 'Cancel';
+      cancel.style.marginTop = '4px';
+      cancel.onclick = () => api.cancelDownload(entry?.id || dl.id);
+      wrap.appendChild(cancel);
+    }
+  } else if (dl.status === 'queued') {
+    note.className = 'model-note';
+    bar.style.width = '0%';
+    note.textContent = 'Waiting for another download…';
     if (!wrap.querySelector('.dl-cancel')) {
       const cancel = document.createElement('button');
       cancel.className = 'mini dl-cancel';

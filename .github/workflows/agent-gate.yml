@@ -1,0 +1,39 @@
+name: agent-gate
+
+on:
+  push:
+    paths:
+      - "panel/**"
+      - "opencode.json"
+      - ".github/workflows/agent-gate.yml"
+  pull_request:
+    paths:
+      - "panel/**"
+      - "opencode.json"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: panel
+    env:
+      # The gate is static + MCP contract only; Electron itself is not needed.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: panel/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Agent regression + MCP contract gate
+        run: npm run test:agent
