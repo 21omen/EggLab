@@ -390,6 +390,10 @@ if ((!history || !Array.isArray(history.items)) && threadId === NO_DOC_KEY && !f
 }
 if (!history || !Array.isArray(history.items)) history = { items: [] };
 let active = null;
+// A turn can be alive between retry attempts when there is no child process.
+// Stop and busy checks must cover that gap, not only the streaming child.
+let turnRunning = false;
+let turnStopped = false;
 // Timestamp of the turn currently running / most recently run. Main uses it to
 // tell a project saved DURING a run from one that simply happened to be open.
 let lastRunAt = null;
@@ -469,7 +473,7 @@ export function useDocument(key, title = null) {
   // A running turn appends to `history` and saves it under `threadId` when it
   // ends. Changing the thread underneath it would file the answer — and the
   // session id it mints — under another chat, so the switch waits.
-  if (active) {
+  if (active || turnRunning) {
     throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');
   }
   saveHistory();
@@ -490,7 +494,7 @@ export function useThread(id) {
     sessions.setCurrent(threadId);
     return { key: docKey, threadId, changed: false };
   }
-  if (active) {
+  if (active || turnRunning) {
     throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');
   }
   saveHistory();
@@ -512,7 +516,7 @@ export function useThread(id) {
  * transcript — there was no way to start over and keep the history.)
  */
 export function newThread() {
-  if (active) {
+  if (active || turnRunning) {
     throw new Error('The agent is still working. Press stop before starting a new chat.');
   }
   saveHistory();
@@ -553,7 +557,7 @@ export async function deleteThread(key) {
   const target = String(key || threadId);
   // The thread on screen is mid-turn: removing it would drop the reply (and
   // the file it is written to) out from under the running agent.
-  if (target === threadId && active) {
+  if (target === threadId && (active || turnRunning)) {
     throw new Error('The agent is still working here. Wait for it to finish or press stop before deleting the chat.');
   }
   const removed = await sessions.deleteSession(target);
@@ -795,7 +799,7 @@ export function getHistory() {
 
 /** True while an agent run is streaming; document switches must wait. */
 export function isBusy() {
-  return Boolean(active);
+  return Boolean(active || turnRunning);
 }
 
 /** When the current or most recent agent turn began. */
@@ -806,7 +810,7 @@ export function lastRunStartedAt() {
 export function clearHistory() {
   // Clearing mid-run would detach the streaming reply from the timeline and
   // the save at the end would write an empty file over it.
-  if (active) return false;
+  if (active || turnRunning) return false;
   history.items = [];
   saveHistory();
   // Clear only THIS thread: siblings on the same document keep their
@@ -918,25 +922,29 @@ function toolSummary(part) {
 
 export function stop() {
   const current = active;
-  if (!current) return false;
-  current.stopped = true;
-  try {
-    spawn('taskkill', ['/pid', String(current.child.pid), '/t', '/f'], { windowsHide: true });
-  } catch {
+  const stoppingTurn = turnRunning;
+  if (!current && !stoppingTurn) return false;
+  turnStopped = true;
+  if (current) {
+    current.stopped = true;
     try {
-      current.child.kill();
-    } catch {}
-  }
-  // If the CLI/server tree survives taskkill (or exits but never emits its
-  // final event), settle the turn so the UI cannot stay "working" forever.
-  // Jobs are canceled separately by chat:stop / /api/chat/stop.
-  setTimeout(() => {
-    if (active === current) {
+      spawn('taskkill', ['/pid', String(current.child.pid), '/t', '/f'], { windowsHide: true });
+    } catch {
       try {
-        current.finish?.(-1);
+        current.child.kill();
       } catch {}
     }
-  }, 3000).unref?.();
+    // If the CLI/server tree survives taskkill (or exits but never emits its
+    // final event), settle the turn so the UI cannot stay "working" forever.
+    // Jobs are canceled separately by chat:stop / /api/chat/stop.
+    setTimeout(() => {
+      if (active === current) {
+        try {
+          current.finish?.(-1);
+        } catch {}
+      }
+    }, 3000).unref?.();
+  }
   return true;
 }
 
@@ -948,7 +956,7 @@ export function stop() {
 export async function send(text, files = [], refMap = {}) {
   const message = String(text || '').trim();
   if (!message) throw new Error('Type a message first.');
-  if (active) throw new Error('The agent is still working. Wait or press stop.');
+  if (active || turnRunning) throw new Error('The agent is still working. Wait or press stop.');
 
   const s = getSettings();
   const cleanFiles = files.filter(Boolean);
@@ -1221,14 +1229,19 @@ export async function send(text, files = [], refMap = {}) {
   const waitWithHeartbeat = async (ms, note) => {
     const end = Date.now() + ms;
     while (Date.now() < end) {
+      if (turnStopped) return false;
       heartbeat(note);
       await new Promise((resolve) => setTimeout(resolve, Math.min(heartbeatMs, end - Date.now())));
     }
+    return !turnStopped;
   };
 
+  turnRunning = true;
+  turnStopped = false;
   let result = await runOnce(model);
   let attempts = 0;
   while (
+    !turnStopped &&
     attempts < maxRetries &&
     (atCapacity(result) || transient(result) || stalled(result)) &&
     !didWork(result) &&
@@ -1240,9 +1253,11 @@ export async function send(text, files = [], refMap = {}) {
     const waitMs = backoff + jitter;
     const why = atCapacity(result) ? 'at capacity' : stalled(result) ? 'did not respond' : 'lost the connection';
     heartbeat(`${model} ${why} — retry ${attempts}/${maxRetries} in ${Math.round(waitMs / 1000)}s`);
-    await waitWithHeartbeat(waitMs, `${model} ${why} — retrying (${attempts}/${maxRetries})`);
+    if (!(await waitWithHeartbeat(waitMs, `${model} ${why} — retrying (${attempts}/${maxRetries})`))) break;
     result = await runOnce(model);
   }
+  if (turnStopped) result.stopped = true;
+  turnRunning = false;
 
   if (stalled(result) && !result.error) {
     result.error = `${model} stopped responding — no response from the model`;

@@ -246,11 +246,11 @@ check(
   '60 minutes',
 );
 const chatSource = read('service/chat.mjs');
-check(
-  'OpenCode v2 uses a private server',
-  /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource),
-);
+check('OpenCode v2 uses a private server', /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource));
 check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
+check('Stop covers the retry gap', /let turnRunning/.test(chatSource) && /turnStopped/.test(chatSource));
+check('Retry wait aborts on Stop', /if \(turnStopped\) return false/.test(chatSource));
+check('Busy includes the retry gap', /Boolean\(active \|\| turnRunning\)/.test(chatSource));
 const mainSource = read('main.mjs');
 const httpSource = read('service/http.mjs');
 const modelsSource = read('service/models.mjs');

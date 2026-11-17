@@ -78,18 +78,23 @@ one variant is installed.
   kill engine, release VRAM) is unchanged; no session/chat code was touched.
 - Auto-update path is unchanged; 0.3.7 uses the same verified installer flow.
 
-## Stop regression — 0.3.12
+## Stop regression — 0.3.12–0.3.13
 
 **Cause:** OpenCode v2 defaults to a shared background service. Killing the CLI
 child on Stop could leave the turn and its MCP server running in that service;
-the panel could also wait forever if the CLI never emitted its exit event. The
-agent therefore looked like it was still working after Stop.
+the panel could also wait forever if the CLI never emitted its exit event. In
+addition, a turn can be alive **between retry attempts** with no child process:
+`active` was null, so Stop returned false and the retry loop kept starting new
+runs. The agent therefore looked like it was still working after Stop.
 
 **Fix:**
 - v2 runs with `--standalone`, so each turn owns a private server under the
   child; `taskkill /T` now kills the whole turn/MCP tree.
 - Stop has a 3-second settle watchdog that resolves the turn and clears the UI
   even if a process stubbornly survives.
+- A turn-level `turnRunning`/`turnStopped` state covers the retry/backoff gap:
+  Stop aborts the retry wait, blocks a second send/new chat/thread switch, and
+  `isBusy()` stays true while the turn is alive even with no child process.
 - Stream/error handlers ignore late data after the turn is settled.
 - Stop also cancels model downloads started by the agent (`source:"agent"`),
   while manual downloads keep running.
