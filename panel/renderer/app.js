@@ -1875,8 +1875,11 @@ function paintDownload(row, entry, dl) {
   } else if (dl.status === 'error') {
     wrap.querySelector('.dl-cancel')?.remove();
     bar.style.width = '0%';
-    note.className = 'model-err';
-    note.textContent = dl.error || 'Download failed';
+    // A user-initiated cancel is a terminal download state, not a failure.
+    // Keep it neutral so it does not read like a broken render.
+    const canceled = /^canceled$/i.test(String(dl.error || ''));
+    note.className = canceled ? 'model-note' : 'model-err';
+    note.textContent = canceled ? 'Canceled' : dl.error || 'Download failed';
     const retry = document.createElement('button');
     retry.className = 'mini primary dl-retry';
     retry.textContent = 'Retry';
@@ -2359,7 +2362,10 @@ function bind() {
     $('#drawer').setAttribute('aria-hidden', 'false');
     $('#scrim').classList.add('on');
     // Refresh the OpenCode model list each time the drawer opens (cached for a
-    // few seconds) and keep it in sync while it stays open.
+    // few seconds) and keep it in sync while it stays open. Also re-read engine
+    // models: a canceled/failed download may have been repaired or installed
+    // outside this window while the drawer was closed.
+    refreshModels();
     refreshProviders();
     startProviderSync();
   };

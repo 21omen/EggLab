@@ -80,3 +80,11 @@ empty GET body instead of the query string.
 
 **Verification:** contract test asserts `limit=7` reaches the server; live API
 returned exactly 1 and 3 projects for `limit=1` and `limit=3`.
+
+## UI follow-up
+
+A canceled download is a terminal state, not a failure. It now renders as a
+neutral **“Canceled”** with **Retry** instead of a red error, and opening the
+Models drawer re-reads model state from disk so a canceled record cannot stick
+after the file is repaired or restored.
+
