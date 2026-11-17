@@ -11,7 +11,7 @@ import * as sessions from './sessions.mjs';
 import * as setup from './setup.mjs';
 import * as updater from './updater.mjs';
 import { alphaStats, describeAlpha } from './imagecheck.mjs';
-import { featherEdges, regionMask } from './pngfeather.mjs';
+import { featherEdges, regionMask, layerMask } from './pngfeather.mjs';
 import { getSettings, patchSettings } from './settings.mjs';
 import { LOG_DIR, TMP_DIR, stamp, clamp } from './paths.mjs';
 import { emit } from './bus.mjs';
@@ -351,9 +351,52 @@ async function editActive(body) {
   let source = exported.path;
   let pasteBounds = null; // where the result lands; null = use the layer bounds
   let swapOriginal = false; // result covers the whole layer, so hide the old one
+  let usedMaskLayer = null;
   const local = {};
 
-  if (Array.isArray(body.region) && body.region.length === 4) {
+  // A separately painted mask layer in PhotoCraft. The active layer is the
+  // canvas; the named layer supplies the editable region. This is the
+  // user-painted equivalent of the synthetic regionMask below and uses the
+  // same engine path (--init-img --mask --strength), so no new UI is involved.
+  if (body.maskLayer) {
+    const name = String(body.maskLayer).trim();
+    if (!name) throw new Error('mask_layer must be a layer name.');
+    if (!layer?.bounds) throw new Error('A mask-layer edit needs an active layer with pixel bounds.');
+    if (!size?.width || !size?.height) throw new Error('Could not read the active layer pixels.');
+    if (String(layer.name || '').toLowerCase() === name.toLowerCase()) {
+      throw new Error('The mask layer must be a separate layer, not the active canvas.');
+    }
+    const maskExport = await pc.exportLayerByName(name);
+    if (!maskExport?.path || !maskExport.layer?.bounds) {
+      throw new Error(`Mask layer "${name}" has no pixel bounds.`);
+    }
+    const [mx, my] = maskExport.layer.bounds;
+    const [lx, ly] = layer.bounds;
+    const maskFile = path.join(
+      TMP_DIR,
+      `pc-user-mask-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`,
+    );
+    layerMask(
+      maskExport.path,
+      maskFile,
+      size.width,
+      size.height,
+      [mx - lx, my - ly],
+      Boolean(body.maskInvert),
+    );
+    local.initImg = exported.path;
+    local.mask = maskFile;
+    local.strength = clamp(
+      Number.isFinite(Number(body.strength)) ? Number(body.strength) : 0.4,
+      0.05,
+      1,
+    );
+    if (Number.isFinite(Number(body.imgCfg))) local.imgCfg = Number(body.imgCfg);
+    pasteBounds = layer.bounds;
+    swapOriginal = true;
+    usedMaskLayer = name;
+
+  } else if (Array.isArray(body.region) && body.region.length === 4) {
     if (!layer?.bounds) throw new Error('A region edit needs a layer with pixel bounds.');
     const [lx, ly] = layer.bounds;
     if (!size?.width || !size?.height) throw new Error('Could not read the layer pixels.');
@@ -486,7 +529,8 @@ async function editActive(body) {
     ok: true,
     job: done,
     region,
-    mode: local.mask ? 'inpaint' : region ? 'crop' : 'full',
+    mode: usedMaskLayer ? 'mask' : local.mask ? 'inpaint' : region ? 'crop' : 'full',
+    maskLayer: usedMaskLayer,
     feather: feathered,
     mask: local.mask || null,
     alpha: done.alpha || null,

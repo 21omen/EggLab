@@ -120,7 +120,9 @@
 2. **Painted annotations** — brush a region (e.g. white); prompt names the mark: *"add a diver to the area marked in white"*.
 3. **Separate mask** — pass the untouched original **plus a mask image** as two inputs; the model repaints only the masked region. This is the channel that preserves the complete input (circles/brushes obscure what they cover).
 
-**Why the agent can't use channels 1–2 directly:** no tool paints marks onto an image first. **Workaround (reachable):** the agent can *compose* the annotated input itself — but EggLab exposes no image-drawing tool either, so in practice the agent must use **channel 3** (`region` + `mode:"inpaint"`), which is exactly what `photocraft_edit_active` implements.
+**Why the agent can't use channels 1–2 directly:** no tool paints marks onto an image first. **Workaround (reachable):** the agent can *compose* the annotated input itself — but EggLab exposes no image-drawing tool either, so in practice the agent must use **channel 3** (`region` + `mode:"inpaint"`) for a rectangle it defines.
+
+> **Update 2026-11-17:** PhotoCraft already provides the drawing/annotation layer and a separate painted-mask layer. The agent does not need to draw anything itself: it uses the user's existing marks via `photocraft_edit_active`, or passes the separate mask layer with `mask_layer`. This is why the old "painted-annotation = NO" row below is now **REACH via PhotoCraft UI**, not via a model-drawing tool. The mask data path is documented in `reference-editing/SKILL.md`.
 
 **Critical divergence — "2.1 cannot inpaint" is FALSE locally:**
 - In **diffusers** this is true: `QwenImage21Pipeline.__call__` has no `mask_image` ([HF docs](https://huggingface.co/docs/diffusers/api/pipelines/qwenimage21) [V]).
@@ -277,7 +279,8 @@ From the [Aliyun Model Studio API reference](https://help.aliyun.com/en/model-st
 | Negative prompt | ❌ | ❌ never passed | **NO** |
 | Scheduler (beta/bong_tangent/…) | ❌ | ❌ only `--sampling-method` | **NO** |
 | CFG > 1 recipes from Reddit | `settings {cfg}` **does** accept it | ✅ `-Cfg` | **REACH but discouraged** — activates negative path we can't populate; official spec is CFG 1 |
-| Painted-annotation / circle local edit (F4/F5) | ❌ no drawing tool | ❌ | **NO** (inpaint mode is the equivalent) |
+| Painted-annotation / circle local edit (F4/F5) | `photocraft_edit_active` on the user's marked active layer | PhotoCraft annotation UI (already exists); prompt removes marks | **REACH via PhotoCraft UI** |
+| Separate painted mask layer | `photocraft_edit_active mask_layer:"name"` (+ `mask_invert`) | PhotoCraft mask layer + `--init-img --mask --strength` | **REACH via PhotoCraft UI** |
 | Outpaint LoRA | ❌ | ❌ LoRA not downloaded | **NO** |
 | ControlNet / IP-Adapter / ADetailer / upscale modes | ❌ | ❌ no models present | **NO** |
 | Hosted `prompt_extend` / APE | ❌ local only | — | **NO** (agent emulates §6 instead) |

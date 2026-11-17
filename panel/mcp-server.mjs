@@ -209,7 +209,7 @@ const tools = [
   {
     name: 'generate',
     description:
-      'Generate an image with Qwen-Image-2.1 and wait for the PNG. Three uses: a full scene/backdrop (text-to-image, describe the whole frame, leave empty space where type will go), a transparent asset (transparent=true, native RGBA cut-out for a product, person, prop, icon or graphic element), or a background plate for compositing. Returns path, seed, duration and — for transparent jobs — measured alpha stats (verdict cutout/opaque, percentages, subject bounds, edge contact). Never assume a transparent render worked; read alpha. Steps/CFG come from the panel settings (quality for final art, turbo for tests).',
+      'Generate a NEW image with Qwen-Image-2.1 and wait for the PNG. Use this only when no source image is the canvas. Three uses: a full scene/backdrop (text-to-image, describe the whole frame, leave empty space where type will go), a transparent asset (transparent=true, native RGBA for a product/person/prop/icon), or a background plate for compositing. If the user supplies a photo to change, use edit; if they drew circles/marks on a photo, use photocraft_edit_active; if they painted a separate mask layer, use photocraft_edit_active with mask_layer. Returns path, seed, duration and - for transparent jobs - measured alpha stats. Never assume a transparent render worked; read alpha. Steps/CFG come from panel settings.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -228,7 +228,7 @@ const tools = [
   {
     name: 'edit',
     description:
-      'Edit one or more reference images with Qwen-Image-2.1. Two modes: (A) change THIS picture — remove/replace/recolour/retouch/relight — write a short imperative plus one blanket preserve clause, one logical change per pass; (B) a NEW picture of this subject — place the person/product into a designed scene, build a poster or campaign frame — construct the scene actively and lock identity to the reference. Multi-reference: <image1> is the canvas whose framing survives, <image2>+ are donors; tag every input and state each role. One image: no tags. Use use_active_layer=true to edit the selected PhotoCraft layer, or prefer photocraft_edit_active with region for local work. Set transparent=true when the deliverable is a cut-out.',
+      'Edit one or more source images with Qwen-Image-2.1 (full-image instruction edit). (A) Change THIS picture: remove/replace/recolour/retouch/relight with a short imperative plus one blanket preserve clause. (B) A NEW picture of this subject: place the person/product into a designed scene, build a poster or campaign frame, and lock identity to the reference. Multi-reference: <image1> is the canvas whose framing survives, <image2>+ are donors; tag every input and state its role. One image: no tags. Use use_active_layer=true to edit the selected PhotoCraft layer. For a marked photo or a separately painted mask layer, prefer photocraft_edit_active (region or mask_layer) instead of this tool; never pass a mask layer as a donor reference. Set transparent=true for a cut-out.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -288,7 +288,7 @@ const tools = [
   },
   {
     name: 'photocraft_layers',
-    description: 'Layer tree of the active document: ids, names, bounds, visibility, active layer.',
+    description: 'Layer tree of the active document: ids, names, bounds, visibility, active layer. Use this to find a user-painted mask layer by name before photocraft_edit_active; the mask must be a separate layer from the canvas.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -380,7 +380,7 @@ const tools = [
   {
     name: 'photocraft_edit_active',
     description:
-      'Edit the layer selected in PhotoCraft: exports it, runs the edit, places the result back at the same bounds and hides the original. Pass region:[x,y,w,h] (document pixels) for a LOCAL edit — only that rectangle is edited and the rest of the layer is untouched. Use a region whenever the change is one object, one label or one area; the model is far more reliable on a tight crop. A region edit must never come back with a visible rectangle: mode:"crop" (default) feathers the patch back in over `feather` px (raise it if you can see an edge), mode:"inpaint" repaints the whole layer through a soft mask so no seam can exist — use it on flat areas such as sky, walls and skin. Read all four borders of the region before you report the edit done.',
+      'Edit the layer selected in PhotoCraft: exports it, runs the edit, places the result back at the same bounds and hides the original. The active layer is the canvas. Three local sources: (1) region:[x,y,w,h] for a rectangle (mode crop/inpaint); (2) marks the user drew on the active photo - describe each mark and tell the model to remove the annotation; (3) mask_layer for a separate painted layer, where white/alpha = editable and black/transparent = keep, with mask_invert if the convention is reversed. A region/mask edit must never come back with a visible rectangle; read all borders before reporting done. Never pass a mask layer as a donor reference.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -389,6 +389,15 @@ const tools = [
           type: 'array',
           items: { type: 'number' },
           description: '[x, y, width, height] in document pixels. Omit to edit the whole layer.',
+        },
+        mask_layer: {
+          type: 'string',
+          description:
+            'Name of a separate layer containing the user-painted mask. White/alpha = editable, black/transparent = keep. The active layer is the canvas. Use photocraft_layers to find the exact name. Do not pass the mask as a donor image.',
+        },
+        mask_invert: {
+          type: 'boolean',
+          description: 'Invert the mask convention (use when black marks the editable area).',
         },
         mode: {
           type: 'string',
@@ -403,7 +412,7 @@ const tools = [
         },
         strength: {
           type: 'number',
-          description: 'mode:"inpaint" only — denoising strength 0.05..1 (default 0.4). Low preserves the source; retouch and tonal passes want 0.25-0.5.',
+          description: 'mode:"inpaint" or mask_layer - denoising strength 0.05..1 (default 0.4). Low preserves the source; retouch and tonal passes want 0.25-0.5.',
         },
         workflow: { type: 'string', enum: ['quality', 'turbo'] },
         steps: { type: 'integer' },
@@ -739,6 +748,8 @@ async function callTool(name, args = {}) {
       return await api('POST', '/api/photocraft/edit-active', {
         prompt: args.prompt,
         region: args.region,
+        maskLayer: args.mask_layer,
+        maskInvert: args.mask_invert,
         mode: args.mode,
         feather: args.feather,
         strength: args.strength,
@@ -853,7 +864,7 @@ async function handle(msg) {
       capabilities: { tools: {} },
       serverInfo: { name: 'egglab', version: '0.1.0' },
       instructions:
-        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Start with egglab_status (compact). Decompose the piece into assets: generate transparent cut-outs for subjects (egglab_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egglab_edit), and local fixes with egglab_photocraft_edit_active region:[x,y,w,h]. A region edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas (sky, wall, skin) or raise feather (48 -> 96 -> 160) if you can see an edge, and always read all four borders of the region before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egglab_photocraft_audit, save, export. egglab_check_alpha measures any PNG. Look up unknown engine commands with egglab_photocraft_commands. Knowledge loads on demand: use egglab_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
+        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Start with egglab_status (compact). Decompose the piece into assets: generate transparent cut-outs for subjects (egglab_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egglab_edit), and local fixes with egglab_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egglab_photocraft_audit, save, export. egglab_check_alpha measures any PNG. Look up unknown engine commands with egglab_photocraft_commands. Knowledge loads on demand: use egglab_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
     });
   }
   if (method === 'ping') return ok(id, {});

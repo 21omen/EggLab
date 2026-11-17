@@ -1,6 +1,6 @@
 package:
   name: egglab-agent
-  version: 2.1.0
+  version: 2.2.0
   default_entrypoint: AGENT.md
   router: ROUTER.md
   schema: egglab-knowledge-manifest-v1
@@ -27,22 +27,22 @@ skills:
     references: [references/asset-planning/asset-stack.md]
   - name: image-generation
     path: skills/image-generation/SKILL.md
-    description: New assets/scenes, prompt construction, runtime-aware rendering and iteration.
-    triggers: [text_to_image, new_asset, new_scene, background_plate, atmosphere_plate]
+    description: New assets/scenes, prompt construction, runtime-aware rendering, multi-reference generation, typography, storyboard/panorama concepts and iteration.
+    triggers: [text_to_image, new_asset, new_scene, background_plate, atmosphere_plate, poster, packaging, storyboard, panorama, character_sheet]
     required_for: [image_generation]
-    references: [references/engine/qwen-image-2.1-legacy-facts.md, references/image-generation/prompt-blueprint.md]
+    references: [references/engine/qwen-image-2.1-legacy-facts.md, references/image-generation/prompt-blueprint.md, references/research/local/qwen-image-2.1-features.md]
   - name: reference-editing
     path: skills/reference-editing/SKILL.md
-    description: Image edits, reference roles, identity/product preservation, scoped changes and seam checks.
-    triggers: [image_edit, reference_compositing, identity_preservation, relight, retouch, object_removal]
+    description: Instruction edits, marked-photo and separate-mask local edits, sketch guidance, multi-reference roles, identity/product preservation, scoped changes and seam checks.
+    triggers: [image_edit, instruction_edit, annotated_edit, mask_edit, sketch_edit, reference_compositing, multi_reference, identity_preservation, relight, retouch, object_removal, product_placement, virtual_try_on, material_transfer]
     required_for: [source_image_edit, reference_composite]
-    references: [references/reference-editing/reference-mapping.md, references/reference-editing/local-edit-and-seam-control.md]
+    references: [references/reference-editing/reference-mapping.md, references/reference-editing/local-edit-and-seam-control.md, references/research/local/qwen-image-2.1-features.md, references/research/local/qwen-seamless-local-edit.md]
   - name: transparency
     path: skills/transparency/SKILL.md
-    description: True alpha, subject extraction, transparent edits, alpha validation and mask fallbacks.
-    triggers: [alpha, transparent_png, cutout, subject_extraction, sticker]
+    description: True alpha generation/edit, subject extraction, transparent edits, alpha validation, edge checks for compositing and mask fallbacks.
+    triggers: [alpha, transparent_png, cutout, subject_extraction, transparent_edit, rgba_edit, sticker]
     required_for: [transparent_asset]
-    references: [references/transparency/alpha-workflow.md]
+    references: [references/transparency/alpha-workflow.md, references/research/local/qwen-image-2.1-features.md]
   - name: photocraft-production
     path: skills/photocraft-production/SKILL.md
     description: PhotoCraft documents, typography, vectors, layers, masks, adjustments, audit, save and export.

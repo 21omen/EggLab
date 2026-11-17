@@ -1,0 +1,138 @@
+version: 1
+# Agent-upgrade regression cases. These are contracts for routing and prompt
+# behavior: the gate checks the task -> tool -> skill chain and required prompt
+# evidence. Full visual/LLM execution still needs a provider and human review.
+cases:
+  - id: upgrade_t2i_product
+    category: task_classification
+    brief: Generate a cinematic product image from this brief.
+    task: text_to_image
+    primary_skill: image-generation
+    supporting_skills: [qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [subject, lighting, composition]
+    prompt_must_not_include: [image1]
+  - id: upgrade_instruction_jacket
+    category: task_classification
+    brief: Change the jacket in this photo to the jacket in the second image.
+    task: instruction_edit
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: edit
+    prompt_must_include: ["<image1>", "<image2>", preserve, identity]
+  - id: upgrade_marked_circle
+    category: annotation
+    brief: Replace the object inside the circle I drew on the photo.
+    task: marked_edit
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: photocraft_edit_active
+    prompt_must_include: [annotation, remove, preserve]
+    notes: Use the active marked layer; do not ask the user to redraw.
+  - id: upgrade_separate_mask
+    category: separate_mask
+    brief: Replace only the area I painted in the separate mask layer.
+    task: mask_edit
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: photocraft_edit_active
+    tool_args: { mask_layer: "Mask" }
+    prompt_must_include: [mask, editable, preserve]
+    notes: Mask is region guidance, never a donor reference.
+  - id: upgrade_sketch_render
+    category: sketch
+    brief: Turn this rough building sketch into a photorealistic architectural render.
+    task: sketch_edit
+    primary_skill: reference-editing
+    supporting_skills: [image-generation, qa-delivery]
+    expected_tool: edit
+    prompt_must_include: [sketch, composition, preserve]
+  - id: upgrade_transparent_cutout
+    category: transparency
+    brief: Create a transparent PNG cutout of this product.
+    task: transparent_generate
+    primary_skill: transparency
+    supporting_skills: [qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [transparent, alpha, subject]
+  - id: upgrade_group_portrait
+    category: multi_reference
+    brief: Use these portraits to create a group photograph.
+    task: multi_reference
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: edit
+    prompt_must_include: ["<image1>", "<image2>", identity, order]
+  - id: upgrade_lighting_transfer
+    category: multi_reference
+    brief: Transfer the lighting from this reference but keep the subject and geometry.
+    task: multi_reference
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: edit
+    prompt_must_include: ["<image1>", "<image2>", lighting, geometry]
+  - id: upgrade_storyboard
+    category: storyboard
+    brief: Create a storyboard using this character reference.
+    task: storyboard
+    primary_skill: image-generation
+    supporting_skills: [reference-editing, qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [panel, continuity, character]
+  - id: upgrade_poster_exact_text
+    category: typography
+    brief: Design a poster with the exact text I supplied.
+    task: typography
+    primary_skill: image-generation
+    supporting_skills: [photocraft-production, qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [exact, text, hierarchy]
+  - id: upgrade_annotated_multiple
+    category: annotation
+    brief: Red circle changes the hair, blue circle removes the watch, green paint replaces the sleeve.
+    task: marked_edit
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: photocraft_edit_active
+    prompt_must_include: [annotation, red, blue, green, remove, preserve]
+  - id: upgrade_mask_second_base
+    category: separate_mask
+    brief: Use the same painted mask with a different base image and keep the mask associated with the new canvas.
+    task: mask_edit
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: photocraft_edit_active
+    tool_args: { mask_layer: "Mask" }
+    prompt_must_include: [mask, canvas, preserve]
+  - id: upgrade_transparent_edit
+    category: transparency
+    brief: Edit this transparent layer while keeping its alpha channel.
+    task: transparent_edit
+    primary_skill: transparency
+    supporting_skills: [reference-editing, qa-delivery]
+    expected_tool: edit
+    prompt_must_include: [alpha, preserve, transparent]
+  - id: upgrade_material_transfer
+    category: multi_reference
+    brief: Apply the brushed aluminium finish from the second image to this object without changing its shape.
+    task: multi_reference
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: edit
+    prompt_must_include: ["<image1>", "<image2>", material, shape]
+  - id: upgrade_product_placement
+    category: multi_reference
+    brief: Place the product from the second image into this scene with matching light and shadow.
+    task: multi_reference
+    primary_skill: reference-editing
+    supporting_skills: [qa-delivery]
+    expected_tool: edit
+    prompt_must_include: ["<image1>", "<image2>", perspective, shadow]
+  - id: upgrade_panorama
+    category: panorama
+    brief: Develop a wide environment concept from this reference.
+    task: panorama
+    primary_skill: image-generation
+    supporting_skills: [reference-editing, qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [wide, horizon, consistency]

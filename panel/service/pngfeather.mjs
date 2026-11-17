@@ -211,6 +211,43 @@ export function regionMask(file, width, height, rect, featherPx) {
   return f;
 }
 
+/**
+ * Convert a user-painted PhotoCraft mask layer into a full-canvas inpaint mask.
+ *
+ * The exported layer may be opaque black/white (luminance selects the region)
+ * or a transparent layer with white brush strokes (alpha selects the region).
+ * Multiply luminance by alpha so both conventions work. The result is written
+ * as an opaque black/white PNG at the active layer's pixel size, with the mask
+ * layer positioned by its document bounds. `invert` flips the convention.
+ */
+export function layerMask(srcFile, dstFile, width, height, bounds, invert = false) {
+  const src = decodePng(srcFile);
+  const [ox, oy] = (bounds || []).map((v) => Math.round(Number(v) || 0));
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255; // opaque black keep-area
+  for (let y = 0; y < src.height; y++) {
+    const dy = oy + y;
+    if (dy < 0 || dy >= height) continue;
+    for (let x = 0; x < src.width; x++) {
+      const dx = ox + x;
+      if (dx < 0 || dx >= width) continue;
+      const s = (y * src.width + x) * 4;
+      const alpha = src.data[s + 3] / 255;
+      // Unpainted/transparent pixels are always keep-area, even when inverting:
+      // inversion applies to the painted black/white mask, not to transparency.
+      if (alpha <= 0.004) continue;
+      const lum =
+        (src.data[s] * 0.299 + src.data[s + 1] * 0.587 + src.data[s + 2] * 0.114) / 255;
+      let v = Math.round(255 * lum * alpha);
+      if (invert) v = 255 - v;
+      const d = (dy * width + dx) * 4;
+      rgba[d] = rgba[d + 1] = rgba[d + 2] = v;
+    }
+  }
+  encodePng(dstFile, width, height, rgba);
+  return { width, height, source: { width: src.width, height: src.height }, bounds: [ox, oy] };
+}
+
 export function featherEdges(src, dst, px) {
   const { width, height, data } = decodePng(src);
   const wanted = Math.max(1, Math.round(Number(px) || 0));

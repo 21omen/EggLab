@@ -26,16 +26,24 @@ Track both context efficiency and actual outcome quality. A missing relevant ski
 `npm run test:agent` (also run by `.github/workflows/agent-gate.yml` on every
 panel push/PR and by the release workflow before building) validates:
 
-- all 24 cases parse, have unique IDs and required fields;
-- every `must_load` / `conditional` skill exists in `skills/`;
-- every `egglab_*` reference in the prompt, router, manifest and evals maps to
-  a registered MCP tool;
+- all 24 original benchmark cases plus the agent-upgrade routing cases;
+- unique IDs and required fields;
+- every `must_load` / `conditional` / `primary_skill` / `supporting_skills`
+  skill exists in `skills/`;
+- every `egglab_*` reference in the prompt, router, manifest, evals and MCP
+  instructions maps to a registered MCP tool;
+- each upgrade case's task → expected tool chain (generate / edit /
+  photocraft_edit_active) and its required prompt evidence, including
+  `mask_layer` for separate-mask cases;
 - the root OpenCode prompt points at the canonical `panel/AGENT.md`;
 - MCP/turn timeouts exceed the 60-minute `download_models` wait;
 - the MCP download tool reports failures as failures (via a fake panel), and
-  recent-project limits are forwarded.
+  recent-project limits are forwarded;
+- the user-painted mask layer is normalized to the active canvas, including
+  luminance, alpha and invert conventions.
 
-The gate is deterministic and needs no GPU, model provider or Photocraft. Full
-visual/LLM evaluation of the 24 briefs still requires a configured provider and
-human review; run those before a substantial prompt/skill change.
+The gate is deterministic and needs no GPU, model provider or PhotoCraft. Full
+visual/LLM evaluation of the 24 benchmark briefs and 16 upgrade briefs still
+requires a configured provider and human review; run those before a substantial
+prompt/skill change.
 
