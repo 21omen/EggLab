@@ -35,10 +35,11 @@ the legacy `install.ps1` bootstrap.
    The wizard extracts into a fresh versioned folder, switches the configured
    executable, then cleans old folders best-effort.
 
-7. **Installer free-space check was too low.**
-   Raised from 1.5 GB to 3 GB for the app + CUDA engine + staging/extraction
-   peak. Uninstall now also kills `sd-cli.exe`/`sd-server.exe` before removing
-   the engine, so a running render cannot lock files.
+7. **Installer free-space check was too low for a fresh engine install, and
+   too high for updates.**
+   It now requires ~3 GB when the engine must be staged and ~1.5 GB when an
+   engine is already present. Uninstall also kills `sd-cli.exe`/`sd-server.exe`
+   before removing the engine, so a running render cannot lock files.
 
 8. **No model-download disk-space check.**
    The downloader now checks free space for the remaining bytes plus 512 MB
