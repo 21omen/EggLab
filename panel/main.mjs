@@ -6,7 +6,7 @@ import { onEvent, emit } from './service/bus.mjs';
 import { startServer, TOKEN } from './service/http.mjs';
 import { getSettings, patchSettings, opencodeModels } from './service/settings.mjs';
 import { engineStatus, listJobs, startJob, cancelJob, cancelAllJobs, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
-import { modelStatus, startDownloads, cancelDownload, retryDownload, useVariant } from './service/models.mjs';
+import { modelStatus, startDownloads, cancelDownload, cancelAgentDownloads, retryDownload, useVariant } from './service/models.mjs';
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
 import * as sessions from './service/sessions.mjs';
@@ -667,7 +667,7 @@ ipcMain.handle('dialog:pickModel', async () => {
 ipcMain.handle('chat:send', async (e, { text, files, refMap }) => {
   return await chat.send(text, files || [], refMap || {});
 });
-ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJobs() }));
+ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJobs(), downloads: cancelAgentDownloads() }));
 // Returns false (instead of always true) when the agent is mid-run, so the
 // renderer keeps the timeline instead of blanking a reply that never landed.
 ipcMain.handle('chat:clear', () => chat.clearHistory());

@@ -246,6 +246,18 @@ check(
   '60 minutes',
 );
 const chatSource = read('service/chat.mjs');
+check(
+  'OpenCode v2 uses a private server',
+  /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource),
+);
+check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
+const mainSource = read('main.mjs');
+const httpSource = read('service/http.mjs');
+const modelsSource = read('service/models.mjs');
+check('IPC Stop cancels agent downloads', /cancelAgentDownloads\(\)/.test(mainSource));
+check('HTTP Stop cancels agent downloads', /cancelAgentDownloads\(\)/.test(httpSource));
+check('agent downloads are tagged', /source:\s*'agent'/.test(read('mcp-server.mjs')));
+check('agent download cancel helper exists', /export function cancelAgentDownloads/.test(modelsSource));
 const mcpTimeoutMatch = chatSource.match(/mcp:\s*\{[\s\S]*?timeout:\s*([0-9_]+)/);
 const generatedTimeout = mcpTimeoutMatch ? Number(mcpTimeoutMatch[1].replace(/_/g, '')) : 0;
 check('generated MCP timeout', generatedTimeout >= 3_900_000, `${generatedTimeout} ms`);

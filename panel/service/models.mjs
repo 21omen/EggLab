@@ -240,6 +240,7 @@ function persist() {
       error: dl.error || null,
       file: dl.file,
       variant: dl.variant || null,
+      source: dl.source || 'manual',
       updated: Date.now(),
     };
   }
@@ -277,6 +278,7 @@ async function downloadOne(entry, variant, existing = null) {
     speed: 0,
     file: variant.file,
     variant: variant.id,
+    source: 'manual',
     abort: new AbortController(),
   };
   // A queued download may have been canceled while waiting behind another.
@@ -392,7 +394,7 @@ async function downloadOne(entry, variant, existing = null) {
   persist();
 }
 
-export function startDownloads(ids, variantId = null) {
+export function startDownloads(ids, variantId = null, source = 'manual') {
   const entries = registry();
   const started = [];
   for (const id of ids) {
@@ -419,6 +421,7 @@ export function startDownloads(ids, variantId = null) {
       speed: 0,
       file: variant.file,
       variant: variant.id,
+      source,
       error: null,
       abort: new AbortController(),
     };
@@ -454,13 +457,28 @@ export function cancelDownload(id) {
   return true;
 }
 
+/** Cancel model downloads started by an agent turn (not manual downloads). */
+export function cancelAgentDownloads() {
+  let count = 0;
+  for (const dl of [...downloads.values()]) {
+    if (dl.source === 'agent' && (dl.status === 'running' || dl.status === 'queued')) {
+      if (cancelDownload(dl.id)) count++;
+    }
+  }
+  return count;
+}
+
 export function retryDownload(id) {
   // Retry the variant that failed, not entry.variants[0]: the Models row lets
   // the user pick Q4_K_M / Q5_K_M / FP8, and a retry used to quietly download
   // a different file.
   const failed = downloads.get(id);
   const stored = failed ? null : readJson(STATE_FILE, {})[id];
-  return startDownloads([id], failed?.variant || stored?.variant || null);
+  return startDownloads(
+    [id],
+    failed?.variant || stored?.variant || null,
+    failed?.source || stored?.source || 'manual',
+  );
 }
 
 export function publicDownloads() {

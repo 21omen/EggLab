@@ -917,15 +917,26 @@ function toolSummary(part) {
 }
 
 export function stop() {
-  if (!active) return false;
-  active.stopped = true;
+  const current = active;
+  if (!current) return false;
+  current.stopped = true;
   try {
-    spawn('taskkill', ['/pid', String(active.child.pid), '/t', '/f'], { windowsHide: true });
+    spawn('taskkill', ['/pid', String(current.child.pid), '/t', '/f'], { windowsHide: true });
   } catch {
     try {
-      active.child.kill();
+      current.child.kill();
     } catch {}
   }
+  // If the CLI/server tree survives taskkill (or exits but never emits its
+  // final event), settle the turn so the UI cannot stay "working" forever.
+  // Jobs are canceled separately by chat:stop / /api/chat/stop.
+  setTimeout(() => {
+    if (active === current) {
+      try {
+        current.finish?.(-1);
+      } catch {}
+    }
+  }, 3000).unref?.();
   return true;
 }
 
@@ -987,7 +998,13 @@ export async function send(text, files = [], refMap = {}) {
       // Resolved once per run: the binary generation decides the flag set.
       const oc = resolveOpenCode();
       const major = oc.version?.[0] ?? 1;
-      const args = ['run', '--format', 'json'];
+      const args = ['run'];
+      // v2 otherwise attaches to the shared background OpenCode service. Killing
+      // the CLI child then leaves the turn running inside that service (and its
+      // MCP server), so Stop looks ineffective. A private server lives under the
+      // child and dies with taskkill /T.
+      if (major >= 2) args.push('--standalone');
+      args.push('--format', 'json');
       // v1 selects the project directory with --dir; v2 removed the flag and
       // uses the working directory instead (set to AGENT_DIR below).
       if (major < 2) args.push('--dir', AGENT_DIR);
@@ -1007,7 +1024,7 @@ export async function send(text, files = [], refMap = {}) {
         // shell since Node's CVE-2024-27980 hardening.
         shell: oc.shell,
       });
-      active = { child, text: '', tools: [], stderr: '', stopped: false };
+      active = { child, text: '', tools: [], stderr: '', stopped: false, finish: null };
       const parts = new Map();
       let buffer = '';
       let seq = 0;
@@ -1024,6 +1041,7 @@ export async function send(text, files = [], refMap = {}) {
       };
 
       const onEvent = (ev) => {
+        if (!active) return;
         if (ev.sessionID) {
           if (bound.sessionId !== ev.sessionID) {
             bound.sessionId = ev.sessionID;
@@ -1090,6 +1108,7 @@ export async function send(text, files = [], refMap = {}) {
       }, firstByteMs);
 
       child.stdout.on('data', (chunk) => {
+        if (!active) return;
         gotFirst = true;
         clearTimeout(firstTimer);
         if (!toolRunning) armIdle();
@@ -1108,7 +1127,7 @@ export async function send(text, files = [], refMap = {}) {
       });
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
-        active.stderr += chunk;
+        if (active) active.stderr += chunk;
       });
 
       let finished = false;
@@ -1140,8 +1159,10 @@ export async function send(text, files = [], refMap = {}) {
         active = null;
         resolve(result);
       };
+      active.finish = finish;
       child.on('exit', (code) => finish(code ?? 0));
       child.on('error', (err) => {
+        if (!active) return;
         active.error = err.message;
         finish(1);
       });

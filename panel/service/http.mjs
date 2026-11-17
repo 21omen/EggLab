@@ -150,7 +150,7 @@ async function handle(req, res, url) {
 
     case 'POST /api/models/download': {
       const ids = Array.isArray(body.ids) ? body.ids : [body.id].filter(Boolean);
-      return json(res, 200, models.startDownloads(ids, body.variant || null));
+      return json(res, 200, models.startDownloads(ids, body.variant || null, body.source || 'manual'));
     }
 
     case 'POST /api/models/download/cancel':
@@ -217,7 +217,11 @@ async function handle(req, res, url) {
     }
 
     case 'POST /api/chat/stop':
-      return json(res, 200, { stopped: chat.stop(), canceled: engine.cancelAllJobs() });
+      return json(res, 200, {
+        stopped: chat.stop(),
+        canceled: engine.cancelAllJobs(),
+        downloads: models.cancelAgentDownloads(),
+      });
 
     case 'POST /api/chat/clear':
       return json(res, 200, { ok: chat.clearHistory() });

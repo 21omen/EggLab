@@ -646,7 +646,7 @@ async function callTool(name, args = {}) {
       const ids = [...new Set(Array.isArray(args.ids) ? args.ids : [])];
       if (!ids.length) throw new Error('ids is required');
       const variantId = args.variant || null;
-      await api('POST', '/api/models/download', { ids, variant: variantId });
+      await api('POST', '/api/models/download', { ids, variant: variantId, source: 'agent' });
       const deadline = Date.now() + 3_600_000;
       for (;;) {
         const status = await api('GET', '/api/models');

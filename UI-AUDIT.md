@@ -78,6 +78,30 @@ one variant is installed.
   kill engine, release VRAM) is unchanged; no session/chat code was touched.
 - Auto-update path is unchanged; 0.3.7 uses the same verified installer flow.
 
+## Stop regression — 0.3.12
+
+**Cause:** OpenCode v2 defaults to a shared background service. Killing the CLI
+child on Stop could leave the turn and its MCP server running in that service;
+the panel could also wait forever if the CLI never emitted its exit event. The
+agent therefore looked like it was still working after Stop.
+
+**Fix:**
+- v2 runs with `--standalone`, so each turn owns a private server under the
+  child; `taskkill /T` now kills the whole turn/MCP tree.
+- Stop has a 3-second settle watchdog that resolves the turn and clears the UI
+  even if a process stubbornly survives.
+- Stream/error handlers ignore late data after the turn is settled.
+- Stop also cancels model downloads started by the agent (`source:"agent"`),
+  while manual downloads keep running.
+
+**Verified:** clean-thread agent render → Stop canceled the running job, chat
+resolved with “Stopped.”, UI busy cleared, no new jobs after 12–20 s, no
+`sd-cli.exe`, VRAM released. Agent-started model download → Stop canceled it
+(`downloads:1`, error `Canceled`); manual downloads are unaffected.
+
+The original `AGENT-UPGRADE` behavior is unchanged; this only fixes the stop
+path.
+
 ## Known limitations (documented, not fixed)
 
 - **No backend switch in the UI.** The installer picks CUDA on NVIDIA; the
