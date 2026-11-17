@@ -101,8 +101,10 @@ runs. The agent therefore looked like it was still working after Stop.
 
 **Verified:** clean-thread agent render → Stop canceled the running job, chat
 resolved with “Stopped.”, UI busy cleared, no new jobs after 12–20 s, no
-`sd-cli.exe`, VRAM released. Agent-started model download → Stop canceled it
-(`downloads:1`, error `Canceled`); manual downloads are unaffected.
+`sd-cli.exe`, VRAM released. Packaged 0.3.13 clean-thread render reproduced the
+same result; the test thread was removed and the previous chat restored.
+Agent-started model download → Stop canceled it (`downloads:1`, error
+`Canceled`); manual downloads are unaffected.
 
 The original `AGENT-UPGRADE` behavior is unchanged; this only fixes the stop
 path.
