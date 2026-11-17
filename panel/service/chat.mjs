@@ -1005,6 +1005,12 @@ export async function send(text, files = [], refMap = {}) {
     new Promise((resolve) => {
       // Resolved once per run: the binary generation decides the flag set.
       const oc = resolveOpenCode();
+      // Stop can land between a retry wait and this spawn; never start a run
+      // after the turn has been stopped.
+      if (turnStopped) {
+        resolve({ code: 1, text: '', tools: [], error: null, stderr: '', stopped: true });
+        return;
+      }
       const major = oc.version?.[0] ?? 1;
       const args = ['run'];
       // v2 otherwise attaches to the shared background OpenCode service. Killing
@@ -1254,6 +1260,7 @@ export async function send(text, files = [], refMap = {}) {
     const why = atCapacity(result) ? 'at capacity' : stalled(result) ? 'did not respond' : 'lost the connection';
     heartbeat(`${model} ${why} — retry ${attempts}/${maxRetries} in ${Math.round(waitMs / 1000)}s`);
     if (!(await waitWithHeartbeat(waitMs, `${model} ${why} — retrying (${attempts}/${maxRetries})`))) break;
+    if (turnStopped) break;
     result = await runOnce(model);
   }
   if (turnStopped) result.stopped = true;
