@@ -2,7 +2,8 @@
 <#
   EggLab installer/bootstrap.
 
-  - Downloads the standalone stable-diffusion.cpp CUDA engine (no Python, no ComfyUI).
+  - Downloads the pinned stable-diffusion.cpp engine (CUDA/Vulkan/CPU auto-detected)
+    through the same hashed downloader used by the installer. No Python, no ComfyUI.
   - Checks the Qwen-Image-2.1 model files and prints download links for anything missing.
   - Writes config.json with the engine/model locations.
 
@@ -21,17 +22,17 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $cfgPath = Join-Path $root 'config.json'
 
-$release = 'master-1028-37bc88b'
-$commit = ($release -split '-')[-1]
-# The Windows asset is named after the commit, not the release tag.
-$engineZipUrl = "https://github.com/leejet/stable-diffusion.cpp/releases/download/$release/sd-master-$commit-bin-win-cuda12-x64.zip"
-$cudartZipUrl = "https://github.com/leejet/stable-diffusion.cpp/releases/download/$release/cudart-sd-bin-win-cu12-x64.zip"
+# Default to the checkout layout used by dev and the sibling Models folder when
+# present; otherwise use the same per-user locations as the packaged app.
+$defaultEngine = Join-Path $root 'engine\sd'
+$siblingModels = Join-Path (Split-Path -Parent $root) 'Models'
+$defaultModels = if (Test-Path $siblingModels) { $siblingModels } else { Join-Path $env:LOCALAPPDATA 'EggLab\models' }
 
 if (Test-Path $cfgPath) { $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json }
 else {
   $cfg = [pscustomobject]@{
-    engine = 'D:\EggLab\engine\sd'
-    models = 'D:\EggLab\models'
+    engine = $defaultEngine
+    models = $defaultModels
     diffusion = 'qwen-image-2.1-UC-fp8.safetensors'
     vae = 'qwen_image_2.1_vae_bf16.safetensors'
     llm = 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf'
@@ -43,6 +44,17 @@ else {
 
 if ($EnginePath) { $cfg.engine = $EnginePath }
 if ($ModelsPath) { $cfg.models = $ModelsPath }
+if ([string]::IsNullOrWhiteSpace([string]$cfg.engine)) { $cfg.engine = $defaultEngine }
+if ([string]::IsNullOrWhiteSpace([string]$cfg.models)) { $cfg.models = $defaultModels }
+# An old config may point at a drive that no longer exists (e.g. a removable
+# D:\EggLab install). Fall back instead of failing while creating folders.
+try {
+  if (-not (Test-Path ([IO.Path]::GetPathRoot($cfg.engine)))) { $cfg.engine = $defaultEngine }
+  if (-not (Test-Path ([IO.Path]::GetPathRoot($cfg.models)))) { $cfg.models = $defaultModels }
+} catch {
+  $cfg.engine = $defaultEngine
+  $cfg.models = $defaultModels
+}
 
 # Upgrade configs written before Turbo support existed.
 if (-not $cfg.turbo -or -not $cfg.turbo.lora) {
@@ -57,27 +69,26 @@ if (-not $cfg.turbo -or -not $cfg.turbo.lora) {
 New-Item -ItemType Directory -Force -Path $cfg.engine | Out-Null
 New-Item -ItemType Directory -Force -Path $cfg.models | Out-Null
 
-function Get-File([string]$url, [string]$dest) {
-  if (Test-Path $dest) { Remove-Item $dest -Force }
-  Write-Host "Downloading $url" -ForegroundColor Cyan
-  try {
-    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-  } catch {
-    # Some hosts need the TLS revocation check relaxed; curl ships with Windows 10+.
-    curl.exe -L --ssl-no-revoke --retry 3 -o $dest $url
-    if (-not (Test-Path $dest)) { throw "Download failed: $url" }
-  }
+# The installer and the first-run wizard share one hashed, auto-backend engine
+# downloader. Do not pin a second engine release here: the old duplicate block
+# drifted to a different build and could install CUDA-only on non-NVIDIA PCs.
+$engineInstaller = Join-Path $root 'panel\build\engine-install.ps1'
+if (-not (Test-Path $engineInstaller)) {
+  throw "Engine installer not found at $engineInstaller. Run this from the EggLab checkout."
 }
-
+$engineParent = Split-Path -Parent $cfg.engine
+if ((Split-Path -Leaf $cfg.engine) -ne 'sd') {
+  $engineParent = [IO.Path]::GetFullPath($cfg.engine)
+  $cfg.engine = Join-Path $engineParent 'sd'
+}
 $engineExe = Join-Path $cfg.engine 'sd-cli.exe'
 if ($Force -or -not (Test-Path $engineExe)) {
-  $tmp = Join-Path $env:TEMP ('egglab-engine-' + [guid]::NewGuid().ToString('N') + '.zip')
-  $tmp2 = Join-Path $env:TEMP ('egglab-cudart-' + [guid]::NewGuid().ToString('N') + '.zip')
-  Get-File $engineZipUrl $tmp
-  Get-File $cudartZipUrl $tmp2
-  Expand-Archive -Path $tmp -DestinationPath $cfg.engine -Force
-  Expand-Archive -Path $tmp2 -DestinationPath $cfg.engine -Force
-  Remove-Item $tmp, $tmp2 -Force -ErrorAction SilentlyContinue
+  $engineArgs = @{ EngineDir = $engineParent; Variant = 'auto' }
+  if ($Force) { $engineArgs.Force = $true }
+  & $engineInstaller @engineArgs
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $engineExe)) {
+    throw "Engine install failed. Check the output above and retry."
+  }
   Write-Host "Engine installed to $($cfg.engine)" -ForegroundColor Green
 } else {
   Write-Host "Engine already installed: $engineExe" -ForegroundColor DarkGray

@@ -328,12 +328,31 @@ async function downloadOne(entry, variant, existing = null) {
   if (res.status === 206) {
     append = offset > 0;
     const range = String(res.headers.get('content-range') || '');
-    const total = range.match(/\/(\d+)\s*$/);
-    dl.total = total ? Number(total[1]) : offset + (Number(res.headers.get('content-length')) || 0);
+    const totalMatch = range.match(/\/(\d+)\s*$/);
+    dl.total = totalMatch ? Number(totalMatch[1]) : offset + (Number(res.headers.get('content-length')) || 0);
   } else {
     // The server ignored Range: restart from zero and truncate the part file.
     dl.received = 0;
     dl.total = Number(res.headers.get('content-length')) || 0;
+  }
+
+  // Fail before a multi-GB transfer if the target disk cannot hold the
+  // remaining bytes. Setup/model downloads otherwise die halfway with a
+  // generic HTTP/write error.
+  try {
+    if (dl.total && typeof fs.statfsSync === 'function') {
+      const st = fs.statfsSync(cfg.models);
+      const free = Number(st.bavail) * Number(st.bsize);
+      const need = Math.max(0, dl.total - (append ? offset : 0));
+      if (Number.isFinite(free) && free > 0 && need + 512 * 1024 * 1024 > free) {
+        throw new Error(
+          `Not enough disk space in ${cfg.models}: need ${humanBytes(need)} plus headroom, ${humanBytes(free)} free.`,
+        );
+      }
+    }
+  } catch (err) {
+    if (/^Not enough disk space/.test(err.message)) throw err;
+    // statfs unavailable or the folder is not ready: let the transfer decide.
   }
 
   const out = fs.createWriteStream(part, append ? { flags: 'a' } : undefined);

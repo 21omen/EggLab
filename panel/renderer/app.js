@@ -2686,7 +2686,9 @@ function renderSetup() {
   const engineLog = (en.log || []).slice(-5).join('\n');
   const ocPhase =
     oc.phase === 'downloading'
-      ? `Downloading… ${ocPercent}%`
+      ? oc.total
+        ? `Downloading… ${ocPercent}%`
+        : 'Downloading…'
       : oc.phase === 'extracting'
         ? 'Extracting…'
         : '';

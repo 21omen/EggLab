@@ -23,6 +23,7 @@ import {
   TMP_DIR,
   humanBytes,
   readJson,
+  writeJson,
 } from './paths.mjs';
 import {
   clearOpenCodeCache,
@@ -54,6 +55,9 @@ function engineInfo() {
 function opencodeFound() {
   const oc = resolveOpenCode();
   if (!oc || !oc.cmd || oc.cmd === 'opencode') return null;
+  // The setup wizard pins OpenCode v2 because v1 cannot read the v2 session
+  // schema. Unknown-version shims are not trusted as ready; install v2.
+  if (!oc.version || oc.version[0] < 2) return null;
   try {
     if (!fs.existsSync(oc.cmd)) return null;
   } catch {
@@ -97,6 +101,7 @@ export async function setupStatus() {
     opencode: {
       found: Boolean(oc),
       exe: oc?.cmd || '',
+      version: oc?.version ? oc.version.join('.') : null,
       running: state.opencode.running,
       phase: state.opencode.phase,
       received: state.opencode.received,
@@ -227,6 +232,14 @@ export async function installEngine(variant = 'auto', force = false) {
       emit('setup', { step: 'engine', status: 'error', error: state.engine.error });
     } else {
       state.engine.error = null;
+      // setup.installEngine always installs to ENGINE_DIR. If config.json still
+      // points at an old/missing custom engine folder, the app would keep
+      // reporting "engine missing" after a successful download. Re-point it.
+      const cfg = engineConfig();
+      if (cfg.raw) {
+        cfg.raw.engine = path.join(ENGINE_DIR, 'sd');
+        writeJson(cfg.path, cfg.raw);
+      }
       emit('setup', { step: 'engine', status: 'done' });
     }
     emit('models', { status: modelStatus() });
@@ -263,6 +276,69 @@ function spawnWait(cmd, args, options = {}) {
   });
 }
 
+/** Curl fallback for GitHub release assets, with resume and a stall guard. */
+function curlDownload(url, dest, resume) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-L',
+      '--fail',
+      '--ssl-no-revoke',
+      '--retry',
+      '5',
+      '--retry-all-errors',
+      '--connect-timeout',
+      '20',
+      '--speed-limit',
+      '1024',
+      '--speed-time',
+      '60',
+    ];
+    if (resume) args.push('-C', '-');
+    args.push('-o', dest, '--', url);
+    const child = spawn('curl.exe', args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      if (stderr.length > 8000) stderr = stderr.slice(-4000);
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else {
+        const last = stderr.trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+        reject(new Error(`curl exited ${code}${last ? `: ${last}` : ''}`));
+      }
+    });
+  });
+}
+
+async function downloadWithCurl(url, part, dest, onProgress) {
+  let lastError = null;
+  for (const resume of [true, false]) {
+    try {
+      let offset = 0;
+      try {
+        offset = fs.statSync(part).size;
+      } catch {}
+      onProgress?.(offset, 0);
+      await curlDownload(url, part, resume && offset > 0);
+      const size = fs.statSync(part).size;
+      if (!size) throw new Error('Downloaded file is empty.');
+      fs.renameSync(part, dest);
+      onProgress?.(size, size);
+      return dest;
+    } catch (err) {
+      lastError = err;
+      if (resume) {
+        try {
+          fs.rmSync(part, { force: true });
+        } catch {}
+      }
+    }
+  }
+  throw lastError || new Error('Download failed.');
+}
+
 /** Download with `.part` resume; reports progress through `onProgress`. */
 async function downloadFile(url, dest, onProgress) {
   const part = `${dest}.part`;
@@ -273,49 +349,74 @@ async function downloadFile(url, dest, onProgress) {
   } catch {}
   const headers = { 'user-agent': 'EggLab/0.1' };
   if (offset > 0) headers.range = `bytes=${offset}-`;
-  const res = await fetch(url, { redirect: 'follow', headers });
-  if (res.status === 416) {
-    try {
-      fs.rmSync(part, { force: true });
-    } catch {}
-    throw new Error('The partial download does not match the remote file. Press install again.');
+  // Abort a stalled transfer instead of leaving the setup wizard spinning
+  // forever. The .part file is kept, so the next click resumes.
+  const controller = new AbortController();
+  let idleTimer = null;
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), 120000);
+  };
+  armIdle();
+  let res;
+  try {
+    res = await fetch(url, { redirect: 'follow', headers, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(idleTimer);
+    if (err?.name === 'AbortError') {
+      throw new Error('Download stalled. Press install again to resume from the partial file.');
+    }
+    // GitHub release assets reset Node/Chromium TLS on some networks; curl with
+    // --ssl-no-revoke is the same transport the updater and engine use.
+    return await downloadWithCurl(url, part, dest, onProgress);
   }
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
-  let append = false;
-  let total = 0;
-  if (res.status === 206) {
-    append = offset > 0;
-    const found = String(res.headers.get('content-range') || '').match(/\/(\d+)\s*$/);
-    total = found ? Number(found[1]) : offset + (Number(res.headers.get('content-length')) || 0);
-  } else {
-    total = Number(res.headers.get('content-length')) || 0;
-  }
-  let received = append ? offset : 0;
-  onProgress?.(received, total);
+  try {
+    if (res.status === 416) {
+      try {
+        fs.rmSync(part, { force: true });
+      } catch {}
+      throw new Error('The partial download does not match the remote file. Press install again.');
+    }
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
+    let append = false;
+    let total = 0;
+    if (res.status === 206) {
+      append = offset > 0;
+      const found = String(res.headers.get('content-range') || '').match(/\/(\d+)\s*$/);
+      total = found ? Number(found[1]) : offset + (Number(res.headers.get('content-length')) || 0);
+    } else {
+      total = Number(res.headers.get('content-length')) || 0;
+    }
+    let received = append ? offset : 0;
+    onProgress?.(received, total);
 
-  const out = fs.createWriteStream(part, append ? { flags: 'a' } : undefined);
-  const reader = res.body.getReader();
-  let lastEmit = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!out.write(Buffer.from(value))) {
-      await new Promise((resolve) => out.once('drain', resolve));
+    const out = fs.createWriteStream(part, append ? { flags: 'a' } : undefined);
+    const reader = res.body.getReader();
+    let lastEmit = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      armIdle();
+      if (!out.write(Buffer.from(value))) {
+        await new Promise((resolve) => out.once('drain', resolve));
+      }
+      received += value.length;
+      const now = Date.now();
+      if (now - lastEmit > 300) {
+        lastEmit = now;
+        onProgress?.(received, total);
+      }
     }
-    received += value.length;
-    const now = Date.now();
-    if (now - lastEmit > 300) {
-      lastEmit = now;
-      onProgress?.(received, total);
+    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+    const finalSize = fs.statSync(part).size;
+    if (total && finalSize !== total) {
+      throw new Error(`Download incomplete (${humanBytes(finalSize)} of ${humanBytes(total)}).`);
     }
+    fs.renameSync(part, dest);
+    return dest;
+  } finally {
+    clearTimeout(idleTimer);
   }
-  await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
-  const finalSize = fs.statSync(part).size;
-  if (total && finalSize !== total) {
-    throw new Error(`Download incomplete (${humanBytes(finalSize)} of ${humanBytes(total)}).`);
-  }
-  fs.renameSync(part, dest);
-  return dest;
 }
 
 function findFile(dir, name) {
@@ -373,17 +474,34 @@ export async function installOpencode() {
 
     state.opencode.phase = 'extracting';
     emit('setup', { step: 'opencode', status: 'extracting' });
-    const dest = path.join(BIN_DIR, 'opencode');
-    fs.rmSync(dest, { recursive: true, force: true });
+    // Never delete a directory that a running OpenCode process may be using.
+    // Install into a fresh folder and switch the configured path; old versions
+    // are cleaned up best-effort after the switch.
+    const dest = path.join(
+      BIN_DIR,
+      `opencode-${OPENCODE_VERSION}-${Date.now().toString(36)}`,
+    );
+    fs.mkdirSync(dest, { recursive: true });
     await extractZip(zip, dest);
 
     const exe = findFile(dest, 'opencode.exe');
     if (!exe) throw new Error('opencode.exe was not found inside the downloaded archive.');
     const version = await openCodeVersion(exe);
     if (!version) throw new Error('The downloaded OpenCode binary did not start correctly.');
+    if (Number(String(version).match(/(\d+)\./)?.[1] || 0) < 2) {
+      throw new Error(`OpenCode ${version} is too old; EggLab requires v2 or newer.`);
+    }
 
     patchSettings({ opencode: { exe } });
     clearOpenCodeCache();
+    // Best effort: remove older extracts once the new one is selected.
+    try {
+      for (const name of fs.readdirSync(BIN_DIR)) {
+        if (/^opencode(?:-|$)/.test(name) && name !== path.basename(dest)) {
+          fs.rmSync(path.join(BIN_DIR, name), { recursive: true, force: true });
+        }
+      }
+    } catch {}
     state.opencode.phase = 'done';
     state.opencode.received = state.opencode.total;
     emit('setup', { step: 'opencode', status: 'done', exe, version });

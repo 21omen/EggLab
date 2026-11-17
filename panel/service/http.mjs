@@ -113,8 +113,15 @@ async function handle(req, res, url) {
     case 'GET /api/setup':
       return json(res, 200, await setup.setupStatus());
 
-    case 'POST /api/setup/detect':
-      return json(res, 200, await setup.refreshDetection());
+    case 'POST /api/setup/detect': {
+      const status = await setup.refreshDetection();
+      if (selfUrl) {
+        try {
+          chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+        } catch {}
+      }
+      return json(res, 200, status);
+    }
 
     case 'POST /api/setup/photocraft': {
       const status = await setup.setPhotoCraft(body.path);

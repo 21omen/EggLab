@@ -620,8 +620,15 @@ ipcMain.handle('models:use', (e, { id, file }) => useVariant(id, file));
 ipcMain.handle('setup:status', () => setup.setupStatus());
 ipcMain.handle('setup:action', async (e, { action, payload } = {}) => {
   switch (action) {
-    case 'detect':
-      return await setup.refreshDetection();
+    case 'detect': {
+      const status = await setup.refreshDetection();
+      if (serviceUrl) {
+        try {
+          chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+        } catch {}
+      }
+      return status;
+    }
     case 'photocraft': {
       const status = await setup.setPhotoCraft(payload?.path);
       if (serviceUrl) {

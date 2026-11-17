@@ -41,19 +41,19 @@
     Abort
   _egglab_osOk:
 
-    ; --- Requirement 2: ~1.5 GB free on the profile drive ------------------
-    ; The app, the engine (up to ~900 MB for CUDA) and the download staging all
-    ; land on this drive. The probe is deliberately best effort: only an
-    ; explicit "False" aborts, so a probe that cannot run never blocks anyone.
+    ; --- Requirement 2: ~3 GB free on the profile drive -------------------
+    ; The app, the engine (up to ~900 MB zipped / larger unpacked) and the
+    ; download/extract staging all land on this drive. 1.5 GB was too tight for
+    ; a CUDA install that stages and then moves the engine tree.
     StrCpy $EggLabDriveLetter $LOCALAPPDATA 1
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "(Get-PSDrive -Name $EggLabDriveLetter).Free -gt 1610612736"`
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "(Get-PSDrive -Name $EggLabDriveLetter).Free -gt 3221225472"`
     Pop $R8 ; exit code (unused)
     Pop $R7 ; probe output: True / False / empty on error
     StrCpy $R7 $R7 5
     StrCmp $R7 "False" _egglab_lowSpace
     Goto _egglab_spaceOk
   _egglab_lowSpace:
-    MessageBox MB_OK|MB_ICONSTOP "EggLab needs about 1.5 GB of free disk space on drive $EggLabDriveLetter:. Free some space and run the installer again." /SD IDOK
+    MessageBox MB_OK|MB_ICONSTOP "EggLab needs about 3 GB of free disk space on drive $EggLabDriveLetter:. Free some space and run the installer again." /SD IDOK
     Abort
   _egglab_spaceOk:
 
@@ -102,6 +102,12 @@ _egglab_engineDone:
   ; files"). Closing it here is safe: transcripts/settings are written as they
   ; change, and an update restarts the app right after.
   nsExec::Exec 'taskkill /IM "EggLab.exe" /T /F'
+  Pop $R9
+  ; The image engine can still be rendering during an uninstall and would lock
+  ; its DLLs/exe. Kill only our engine binaries before removing the folder.
+  nsExec::Exec 'taskkill /IM "sd-cli.exe" /T /F'
+  Pop $R9
+  nsExec::Exec 'taskkill /IM "sd-server.exe" /T /F'
   Pop $R9
   Sleep 600
   ; An upgrade runs the OLD uninstaller first with --updated: it must not
