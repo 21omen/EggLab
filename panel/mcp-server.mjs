@@ -636,7 +636,8 @@ async function callTool(name, args = {}) {
     case 'download_models': {
       const ids = [...new Set(Array.isArray(args.ids) ? args.ids : [])];
       if (!ids.length) throw new Error('ids is required');
-      await api('POST', '/api/models/download', { ids, variant: args.variant });
+      const variantId = args.variant || null;
+      await api('POST', '/api/models/download', { ids, variant: variantId });
       const deadline = Date.now() + 3_600_000;
       for (;;) {
         const status = await api('GET', '/api/models');
@@ -644,27 +645,37 @@ async function callTool(name, args = {}) {
           .map((id) => status.entries.find((e) => e.id === id))
           .filter(Boolean);
         const unknown = ids.filter((id) => !requested.some((e) => e.id === id));
+        const target = (e) =>
+          variantId ? e.variants?.find((v) => v.id === variantId) : e.variants?.[0];
+        const badVariant = requested.filter((e) => variantId && !target(e));
         const active = requested.filter(
           (e) => e.download && (e.download.status === 'running' || e.download.status === 'queued'),
         );
         const failed = requested.filter((e) => e.download && e.download.status === 'error');
-        const missing = requested.filter((e) => !e.exists);
-        const snapshot = requested.map((e) => ({
-          id: e.id,
-          file: e.file,
-          exists: e.exists,
-          size: e.sizeText,
-          download: e.download?.status || null,
-          error: e.download?.error || undefined,
-        }));
+        const missing = requested.filter((e) => !target(e)?.installed);
+        const snapshot = requested.map((e) => {
+          const v = target(e);
+          return {
+            id: e.id,
+            file: v?.file || e.file,
+            variant: v?.id || null,
+            exists: Boolean(v?.installed),
+            size: e.sizeText,
+            download: e.download?.status || null,
+            error: e.download?.error || undefined,
+          };
+        });
         if (!active.length) {
           if (unknown.length) {
             return { ok: false, error: `Unknown model id(s): ${unknown.join(', ')}`, models: snapshot };
           }
+          if (badVariant.length) {
+            return { ok: false, error: `Unknown variant: ${variantId}`, models: snapshot };
+          }
           if (!missing.length) return { ok: true, models: snapshot };
           const reason =
             failed[0]?.download?.error ||
-            `Download did not complete: ${missing.map((e) => e.file).join(', ')}`;
+            `Download did not complete: ${missing.map((e) => target(e)?.file || e.file).join(', ')}`;
           return { ok: false, error: reason, models: snapshot };
         }
         if (Date.now() > deadline) {

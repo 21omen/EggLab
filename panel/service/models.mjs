@@ -142,15 +142,26 @@ export function modelStatus() {
       } catch {}
       const live = downloads.get(entry.id);
       let dl = live || stored[entry.id] || null;
+      // Check the file belonging to the download, not the currently active
+      // checkpoint: downloading Q4_K_M while FP8 is installed must not look
+      // successful just because FP8 exists.
+      let dlExists = false;
+      if (dl?.file) {
+        try {
+          dlExists = fs.statSync(path.join(cfg.models, dl.file)).size > 0;
+        } catch {}
+      }
       // A persisted "running"/"queued" record with no live download means the
       // app died mid-transfer. Surface it as an error instead of silently
       // hiding it (the MCP download tool used to report success for this).
       if (dl && !live && (dl.status === 'running' || dl.status === 'queued')) {
-        dl = { ...dl, status: 'error', error: 'Download interrupted. Press Retry.' };
+        dl = dlExists
+          ? { ...dl, status: 'done' }
+          : { ...dl, status: 'error', error: 'Download interrupted. Press Retry.' };
       }
-      // Terminal states are noise when the file is already on disk; a stale
-      // error must not make every later download_models call look failed.
-      if (dl && (dl.status === 'done' || (dl.status === 'error' && size > 0))) dl = null;
+      // Terminal states are noise when that download's file is on disk; a
+      // stale error must not make every later download_models call look failed.
+      if (dl && (dl.status === 'done' || (dl.status === 'error' && dlExists))) dl = null;
       return {
         id: entry.id,
         label: entry.label,

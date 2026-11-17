@@ -31,9 +31,13 @@ const server = http.createServer((req, res) => {
           {
             id: 'diffusion',
             file: 'qwen-image-2.1-Q4_K_M.gguf',
-            exists: false,
-            sizeText: '',
-            download: { status: 'error', error: 'HTTP 500 from the model host' },
+            exists: true,
+            sizeText: '3.9 GB',
+            variants: [
+              { id: 'q4km-beta', file: 'qwen-image-2.1-Q4_K_M.gguf', installed: true },
+              { id: 'uc-fp8', file: 'qwen-image-2.1-UC-fp8.safetensors', installed: false },
+            ],
+            download: { status: 'error', error: 'HTTP 500 from the model host', file: 'qwen-image-2.1-UC-fp8.safetensors' },
           },
         ],
       });
@@ -44,9 +48,13 @@ const server = http.createServer((req, res) => {
           {
             id: 'diffusion',
             file: 'qwen-image-2.1-Q4_K_M.gguf',
-            exists: false,
-            sizeText: '',
-            download: { status: 'running', percent: 42 },
+            exists: true,
+            sizeText: '3.9 GB',
+            variants: [
+              { id: 'q4km-beta', file: 'qwen-image-2.1-Q4_K_M.gguf', installed: true },
+              { id: 'uc-fp8', file: 'qwen-image-2.1-UC-fp8.safetensors', installed: false },
+            ],
+            download: { status: 'running', percent: 42, file: 'qwen-image-2.1-UC-fp8.safetensors' },
           },
         ],
       });
@@ -58,6 +66,10 @@ const server = http.createServer((req, res) => {
           file: 'qwen-image-2.1-Q4_K_M.gguf',
           exists: true,
           sizeText: '3.9 GB',
+          variants: [
+            { id: 'q4km-beta', file: 'qwen-image-2.1-Q4_K_M.gguf', installed: true },
+            { id: 'uc-fp8', file: 'qwen-image-2.1-UC-fp8.safetensors', installed: true },
+          ],
           download: null,
         },
       ],
@@ -132,17 +144,17 @@ try {
 
   state.mode = 'fail';
   state.posts = 0;
-  const failed = await tool('download_models', { ids: ['diffusion'] });
+  const failed = await tool('download_models', { ids: ['diffusion'], variant: 'uc-fp8' });
   check('failed download reported as failure', failed.ok === false, failed.error || '');
   check('failed download actually POSTed', state.posts > 0);
 
   state.mode = 'ok';
-  const ready = await tool('download_models', { ids: ['diffusion'] });
+  const ready = await tool('download_models', { ids: ['diffusion'], variant: 'uc-fp8' });
   check('completed download reported as success', ready.ok === true);
 
   state.mode = 'running';
   state.modelCalls = 0;
-  const waited = await tool('download_models', { ids: ['diffusion'] });
+  const waited = await tool('download_models', { ids: ['diffusion'], variant: 'uc-fp8' });
   check('running download is waited for', waited.ok === true && state.modelCalls >= 2, `${state.modelCalls} status calls`);
 
   state.mode = 'ok';

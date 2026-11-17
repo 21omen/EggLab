@@ -15,11 +15,13 @@ was missing. Terminal errors were hidden too.
   error states (plus persisted errors when the file is missing).
 - Persisted running/queued records from a killed app are surfaced as
   `Download interrupted. Press Retry.` instead of disappearing.
-- `download_models` now checks that every requested entry actually exists; if
-  a download finished or failed while the file is missing, it returns
-  `ok: false` with the real reason. A 60-minute wait returns `pending: true`
-  instead of a bare timeout.
-- Stale terminal errors are suppressed once the file is on disk.
+- `download_models` now checks the **requested variant's** installed flag, not
+  the active checkpoint. Downloading Q4_K_M while FP8 is active can no longer
+  look successful just because FP8 exists. It also returns `ok: false` with the
+  real error when a transfer failed or the file is missing; a 60-minute wait
+  returns `pending: true` instead of a bare timeout.
+- Stale terminal errors are suppressed once that variant's file is on disk.
+- Installed variants are not re-downloaded by the MCP tool.
 
 **Verification:** `tools/mcp-contract-test.mjs` runs the real MCP server against
 a fake panel: failed download → `ok:false`, completed → `ok:true`, running →

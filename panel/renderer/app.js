@@ -1689,7 +1689,7 @@ function renderModels() {
   // transfer whose models refresh raced its event) must not stay red forever.
   for (const entry of data.entries) {
     const dl = S.modelDl.get(entry.id);
-    if (dl && entry.exists && !entry.download) S.modelDl.delete(entry.id);
+    if (dl && ['error', 'done'].includes(dl.status) && !entry.download) S.modelDl.delete(entry.id);
   }
   box.innerHTML = '';
   for (const entry of data.entries) {
