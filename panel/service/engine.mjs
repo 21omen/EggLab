@@ -176,6 +176,7 @@ function publicJob(job) {
     phase: job.phase,
     prompt: job.prompt,
     promptUsed: job.promptUsed,
+    model: job.model || null,
     workflow: job.workflow,
     width: job.width,
     height: job.height,
@@ -462,6 +463,10 @@ export function startJob(input = {}) {
     detail: 'Preparing',
     prompt,
     promptUsed,
+    // Which diffusion file this job actually loaded. Recorded per job so a
+    // model switch is visible in the job card and logs, for both manual and
+    // agent-started renders.
+    model: path.basename(cfg.diffusion),
     workflow: params.workflow,
     width,
     height,

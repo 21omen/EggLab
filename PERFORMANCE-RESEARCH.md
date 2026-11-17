@@ -94,6 +94,13 @@ Other flags checked:
    working model. The new variant appears in the picker; the user chooses.
 3. **Faster model experiments are reproducible** with
    `tools/bench-perf.mjs` (engines / backends / flags / models / edits).
+4. **Curated model menu**: only Uncensored FP8, Official Q4_K_M beta and
+   Uncensored Q5_K_M remain. BF16, Q8_0 and Q4_K_S were removed from the
+   registry and the download picker.
+5. **Per-job model provenance**: every job stores the diffusion file it was
+   created with and shows a small FP8 / Q4_K_M / Q5_K_M tag. Switched model →
+   manual job and agent (`egglab_generate`) job both loaded the new file in
+   their engine logs; switching back also applied to the next manual job.
 
 ## Future opportunities (not shipped)
 

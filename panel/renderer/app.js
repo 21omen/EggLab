@@ -872,6 +872,18 @@ function jobNode(job) {
   return node;
 }
 
+/** Short, human-readable name for a diffusion checkpoint. */
+function shortModel(file) {
+  const s = String(file || '');
+  if (/Q4_K_M/i.test(s)) return 'Q4_K_M';
+  if (/Q5_K_M/i.test(s)) return 'Q5_K_M';
+  if (/Q4_K_S/i.test(s)) return 'Q4_K_S';
+  if (/Q8/i.test(s)) return 'Q8';
+  if (/fp8/i.test(s)) return 'FP8';
+  if (/bf16/i.test(s)) return 'BF16';
+  return s.replace(/\.[^.]+$/, '').slice(0, 14);
+}
+
 function updateJobNode(node, job) {
   node.classList.toggle('running', job.status === 'running');
   node.classList.toggle('error', job.status === 'error');
@@ -908,6 +920,7 @@ function updateJobNode(node, job) {
   const title = node.querySelector('.job-title');
   const tagClass = job.status === 'error' ? 'err' : job.workflow === 'turbo' ? 'turbo' : '';
   title.innerHTML = `<span class="tag ${tagClass}">${esc(job.workflow || '')}</span>
+    ${job.model ? `<span class="tag model" title="${esc(job.model)}">${esc(shortModel(job.model))}</span>` : ''}
     <span>${job.width}×${job.height} · ${job.steps} steps${job.transparent ? ' · RGBA' : ''}</span>`;
   node.querySelector('.job-prompt').textContent = job.promptUsed || job.prompt || '';
 

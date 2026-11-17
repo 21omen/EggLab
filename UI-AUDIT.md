@@ -1,4 +1,4 @@
-# UI / function audit — 0.3.4
+# UI / function audit — 0.3.6
 
 Scope: the live panel (CDP + HTTP API), model drawer, download pipeline, job
 logs and the chat/stop path. This round focused on the model area because the
@@ -48,14 +48,20 @@ one variant is installed.
    With FP8 present, the Models row only offered installed variants, so a user
    could not download Q4_K_M at all. The row now has a second, compact
    variant picker (missing downloadable variants only) and an **Install**
-   button. Wiring verified: selecting Q4_K_M and pressing Install calls the
-   downloader with `diffusion` + `q4km-beta` (the test transfer was canceled
-   immediately).
+   button. The picker is limited to the three curated diffusion variants and
+   disappears entirely when all three are installed. Wiring verified:
+   selecting Q4_K_M and pressing Install calls the downloader with
+   `diffusion` + `q4km-beta` (the test transfer was canceled immediately).
 
 ## Verified end-to-end this round
 
 - Q4_K_M T2I through the panel API: `done`, output written, 20 s at 512×512
   (8-step Turbo).
+- Model-switch propagation: switched to Q4_K_M, ran a manual job and an agent
+  (`egglab_generate`) job; both engine logs showed
+  `loading diffusion model from ...qwen-image-2.1-Q4_K_M.gguf`. Switched back
+  to FP8 and a manual job loaded the FP8 file. Job cards now carry a small
+  FP8 / Q4_K_M / Q5_K_M tag, recorded from the actual job.
 - Non-ASCII prompt (`“EggLab” — 中文 test`) arrived byte-exact in the job
   object; Chinese glyphs appeared in the render, so the prompt path is not
   mangling UTF-8.
@@ -63,7 +69,7 @@ one variant is installed.
   bridge present.
 - Existing stop behavior (cancel running job, reject in-flight agent jobs,
   kill engine, release VRAM) is unchanged; no session/chat code was touched.
-- Auto-update path is unchanged; 0.3.4 uses the same verified installer flow.
+- Auto-update path is unchanged; 0.3.6 uses the same verified installer flow.
 
 ## Known limitations (documented, not fixed)
 

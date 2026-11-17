@@ -271,7 +271,7 @@ const tools = [
       type: 'object',
       properties: {
         ids: { type: 'array', items: { type: 'string', enum: ['diffusion', 'vae', 'llm', 'mmproj', 'turbo'] } },
-        variant: { type: 'string', description: 'Optional variant id, e.g. uc-bf16, q8, q4 for the diffusion model.' },
+        variant: { type: 'string', description: 'Optional diffusion variant id: q4km-beta, uc-q5km or uc-fp8.' },
       },
       required: ['ids'],
     },

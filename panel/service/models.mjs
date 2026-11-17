@@ -38,27 +38,6 @@ const DIFFUSION_VARIANTS = [
     url: `${UC_REPO}/qwen-image-2.1-UC-Q5_K_M.gguf`,
     note: 'Uncensored weights quantised to Q5_K_M. Smallest uncensored option.',
   },
-  {
-    id: 'uc-bf16',
-    label: 'Uncensored BF16 · 14.2 GB',
-    file: 'qwen-image-2.1-UC-BF16.gguf',
-    url: `${HF}/klvnyong/Qwen-Image-2.1-UC/resolve/main/diffusion_models/qwen-image-2.1-UC-BF16.gguf`,
-    note: 'Uncensored Qwen-Image-2.1 in GGUF. Best fidelity, needs offload on 8 GB.',
-  },
-  {
-    id: 'q8',
-    label: 'Official Q8_0 · 7.6 GB',
-    file: 'Qwen-Image-2.1-Q8_0.gguf',
-    url: `${HF}/off-grid-ai/Qwen-Image-2.1-GGUF/resolve/main/Qwen-Image-2.1-Q8_0.gguf`,
-    note: 'Official weights, tested with stable-diffusion.cpp. Good balance for 8 GB.',
-  },
-  {
-    id: 'q4',
-    label: 'Official Q4_K_S · 4.1 GB',
-    file: 'Qwen-Image-2.1-Q4_K_S.gguf',
-    url: `${HF}/off-grid-ai/Qwen-Image-2.1-GGUF/resolve/main/Qwen-Image-2.1-Q4_K_S.gguf`,
-    note: 'Smallest option, fastest to load, lower detail.',
-  },
 ];
 
 function registry() {

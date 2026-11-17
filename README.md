@@ -129,6 +129,14 @@ edits, because the diffusion weights are 2.9 GB smaller. It is the official
 (non-uncensored) checkpoint; install it alongside FP8 and switch only when you
 want the speed.
 
+The diffusion menu is kept to three curated variants: **Uncensored FP8**,
+**Official Q4_K_M (Beta)** and **Uncensored Q5_K_M**. BF16, Q8_0 and Q4_K_S are
+no longer offered.
+
+Every job records the diffusion file it actually loaded, and the job card shows
+a small model tag (FP8 / Q4_K_M / Q5_K_M). Manual renders and agent renders use
+the same engine config, so switching the model in Settings applies to both.
+
 Measured engine/backend/flag results and sources are in
 [PERFORMANCE-RESEARCH.md](PERFORMANCE-RESEARCH.md). The UI/function fixes from
 the same audit are in [UI-AUDIT.md](UI-AUDIT.md).
