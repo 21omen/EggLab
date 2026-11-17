@@ -324,6 +324,9 @@ async function downloadWithCurl(url, part, dest, onProgress) {
       await curlDownload(url, part, resume && offset > 0);
       const size = fs.statSync(part).size;
       if (!size) throw new Error('Downloaded file is empty.');
+      try {
+        fs.rmSync(dest, { force: true });
+      } catch {}
       fs.renameSync(part, dest);
       onProgress?.(size, size);
       return dest;
@@ -412,6 +415,9 @@ async function downloadFile(url, dest, onProgress) {
     if (total && finalSize !== total) {
       throw new Error(`Download incomplete (${humanBytes(finalSize)} of ${humanBytes(total)}).`);
     }
+    try {
+      fs.rmSync(dest, { force: true });
+    } catch {}
     fs.renameSync(part, dest);
     return dest;
   } finally {

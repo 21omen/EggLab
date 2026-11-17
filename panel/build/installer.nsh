@@ -41,19 +41,25 @@
     Abort
   _egglab_osOk:
 
-    ; --- Requirement 2: ~3 GB free on the profile drive -------------------
-    ; The app, the engine (up to ~900 MB zipped / larger unpacked) and the
-    ; download/extract staging all land on this drive. 1.5 GB was too tight for
-    ; a CUDA install that stages and then moves the engine tree.
+    ; --- Requirement 2: free space on the profile drive -------------------
+    ; A fresh install stages the engine (CUDA zip + extracted tree), so it
+    ; needs ~3 GB. An update with an existing engine only replaces the app and
+    ; needs ~1.5 GB; do not block small-disk updates unnecessarily.
     StrCpy $EggLabDriveLetter $LOCALAPPDATA 1
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "(Get-PSDrive -Name $EggLabDriveLetter).Free -gt 3221225472"`
+    StrCpy $R9 3221225472
+    IfFileExists "$LOCALAPPDATA\EggLab\engine\sd\sd-cli.exe" _egglab_spaceHaveEngine
+    Goto _egglab_spaceProbe
+  _egglab_spaceHaveEngine:
+    StrCpy $R9 1610612736
+  _egglab_spaceProbe:
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "(Get-PSDrive -Name $EggLabDriveLetter).Free -gt $R9"`
     Pop $R8 ; exit code (unused)
     Pop $R7 ; probe output: True / False / empty on error
     StrCpy $R7 $R7 5
     StrCmp $R7 "False" _egglab_lowSpace
     Goto _egglab_spaceOk
   _egglab_lowSpace:
-    MessageBox MB_OK|MB_ICONSTOP "EggLab needs about 3 GB of free disk space on drive $EggLabDriveLetter:. Free some space and run the installer again." /SD IDOK
+    MessageBox MB_OK|MB_ICONSTOP "EggLab needs more free disk space on drive $EggLabDriveLetter:. Free some space and run the installer again." /SD IDOK
     Abort
   _egglab_spaceOk:
 

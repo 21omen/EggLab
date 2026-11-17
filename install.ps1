@@ -95,8 +95,15 @@ if ($Force -or -not (Test-Path $engineExe)) {
 }
 
 # Model inventory. Links point at the repositories these exact files live in.
+$diffUrl = if ($cfg.diffusion -match 'Q4_K_M') {
+  'https://huggingface.co/unsloth/Qwen-Image-2.1-GGUF'
+} elseif ($cfg.diffusion -match 'Q5_K_M|UC-fp8|UC-BF16') {
+  'https://huggingface.co/KasugaiSakura/Qwen-Image-2.1-Uncensored-Abenzerps-GGUF'
+} else {
+  'https://huggingface.co/off-grid-ai/Qwen-Image-2.1-GGUF'
+}
 $models = @(
-  @{ name = $cfg.diffusion; size = '6.6 GB'; url = 'https://huggingface.co/KasugaiSakura/Qwen-Image-2.1-Uncensored-Abenzerps-GGUF'; note = 'Qwen-Image 2.1 uncensored diffusion model (fp8 / GGUF variants)' },
+  @{ name = $cfg.diffusion; size = '3.9-6.6 GB'; url = $diffUrl; note = 'Qwen-Image 2.1 diffusion model (fp8 / GGUF variants)' },
   @{ name = $cfg.vae;        size = '0.63 GB'; url = 'https://huggingface.co/Comfy-Org/Qwen-Image-2.1/tree/main/vae'; note = 'Qwen-Image 2.1 VAE (must be the 2.1 VAE)' },
   @{ name = $cfg.llm;        size = '6.3 GB'; url = 'https://huggingface.co/HauhauCS/Qwen3VL-8B-Uncensored-HauhauCS-Balanced'; note = 'Qwen3-VL-8B text encoder (GGUF)' },
   @{ name = $cfg.llmVision;  size = '1.1 GB'; url = 'https://huggingface.co/HauhauCS/Qwen3VL-8B-Uncensored-HauhauCS-Balanced'; note = 'Qwen3-VL vision projector (needed for image editing)' },

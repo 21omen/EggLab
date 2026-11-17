@@ -33,7 +33,7 @@ check('engine auto variant ladder', /Resolve-Variant/.test(engine) && /vulkan/.t
 
 // ---- NSIS installer ----------------------------------------------------
 const nsis = read('panel/build/installer.nsh');
-check('installer asks for ~3 GB free', /3221225472/.test(nsis) && /about 3 GB/.test(nsis));
+check('installer free-space handles fresh vs update', /3221225472/.test(nsis) && /1610612736/.test(nsis));
 check('installer runs shared engine installer', /engine-install\.ps1/.test(nsis));
 check('installer kills app before upgrade', /taskkill \/IM "EggLab\.exe"/.test(nsis));
 check('uninstall kills engine before removing files', /taskkill \/IM "sd-cli\.exe"/.test(nsis));
