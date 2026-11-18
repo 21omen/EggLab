@@ -2,7 +2,7 @@
 //
 // It does not call a model (CI has no provider credentials); it validates the
 // things that broke silently: the 24 benchmark cases, every skill they name,
-// every egglab_* tool they mention, the root OpenCode config, and the timeout
+// every egl_* tool they mention, the root OpenCode config, and the timeout
 // chain for long model downloads.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -239,13 +239,13 @@ const promptFiles = [
 ];
 for (const file of promptFiles) {
   const text = read(file);
-  const refs = [...new Set([...text.matchAll(/\begglab_([a-z0-9_]+)/g)].map((m) => m[1]))];
+  const refs = [...new Set([...text.matchAll(/\begl_([a-z0-9_]+)/g)].map((m) => m[1]))];
   for (const ref of refs) {
     check(`${file} tool ${ref}`, agentTools.has(ref));
   }
 }
 const instructionRefs = [
-  ...new Set([...toolSource.matchAll(/\begglab_([a-z0-9_]+)/g)].map((m) => m[1])),
+  ...new Set([...toolSource.matchAll(/\begl_([a-z0-9_]+)/g)].map((m) => m[1])),
 ];
 for (const ref of instructionRefs) check(`MCP instructions tool ${ref}`, toolNames.has(ref));
 
@@ -253,7 +253,7 @@ for (const ref of instructionRefs) check(`MCP instructions tool ${ref}`, toolNam
 const staleFiles = ['opencode.json', 'README.md', 'PERFORMANCE-RESEARCH.md', 'UI-AUDIT.md', 'panel/AGENT.md'];
 for (const file of staleFiles) {
   if (!exists(file, REPO)) continue;
-  check(`${file} has no egglab_ping`, !read(file, REPO).includes('egglab_ping'));
+  check(`${file} has no egl_ping`, !read(file, REPO).includes('egl_ping'));
 }
 check('root AGENT.md removed', !exists('AGENT.md', REPO));
 
@@ -265,20 +265,25 @@ try {
   check('root opencode.json parses', false, err.message);
 }
 if (rootConfig) {
-  const prompt = rootConfig?.agent?.egglab?.prompt || '';
+  const rootAgent = rootConfig?.agents?.egglab || {};
+  const prompt = rootAgent?.system || '';
   const m = prompt.match(/\{file:\.\/(.+?)\}/);
-  check('root prompt is a file reference', Boolean(m), prompt);
+  check('root system is a file reference', Boolean(m), prompt);
   if (m) check('root prompt file exists', exists(m[1], REPO), m[1]);
-  const timeout = Number(rootConfig?.mcp?.servers?.egglab?.timeout) || 0;
+  const timeout = Number(rootConfig?.mcp?.servers?.egl?.timeout) || 0;
   check('root MCP timeout', timeout >= 3_900_000, `${timeout} ms`);
-  check('root MCP is direct', rootConfig?.mcp?.servers?.egglab?.codemode === false);
-  check('root MCP uses the agent profile', rootConfig?.mcp?.servers?.egglab?.environment?.EGGLAB_TOOLSET === 'agent');
-  const rootTools = rootConfig?.agent?.egglab?.tools || {};
-  check('root agent has a hard allowlist', rootTools['*'] === false);
-  for (const name of agentTools) {
-    check(`root allowlist ${name}`, rootTools[`egglab_${name}`] === true);
-  }
-  check('root agent allows image read', rootTools.read === true);
+  check('root MCP is direct', rootConfig?.mcp?.servers?.egl?.codemode === false);
+  check('root MCP uses the agent profile', rootConfig?.mcp?.servers?.egl?.environment?.EGGLAB_TOOLSET === 'agent');
+  const rootPermissions = Array.isArray(rootAgent?.permissions) ? rootAgent.permissions : [];
+  check('root agent uses v2 permissions', rootPermissions.length >= 2, `${rootPermissions.length} rules`);
+  check(
+    'root permissions deny everything by default',
+    rootPermissions.some((r) => r.action === '*' && r.resource === '*' && r.effect === 'deny'),
+  );
+  check(
+    'root permissions allow only egl tools',
+    rootPermissions.some((r) => r.action === 'egl_*' && r.resource === '*' && r.effect === 'allow'),
+  );
 }
 
 // ---- generated config / download timeout chain ------------------------
@@ -308,13 +313,19 @@ check('generated config disables Code Mode', /codemode:\s*false/.test(chatSource
 check('generated config selects the agent profile', /EGGLAB_TOOLSET:\s*'agent'/.test(chatSource));
 check('generated config has no legacy egglab MCP entry', !/mcp:\s*\{\s*egglab:/.test(chatSource));
 check(
-  'generated allowlist maps every core tool',
-  /map\[`egglab_\$\{name\}`\] = true/.test(chatSource),
+  'generated config uses the unique egl server key',
+  /egl:\s*\{[\s\S]*?EGGLAB_TOOLSET:\s*'agent'/.test(chatSource),
 );
-check('generated config allows image read', /map\.read = true/.test(chatSource));
-for (const action of ['execute', 'glob', 'grep', 'list', 'skill', 'question', 'experimental_image_generate']) {
-  check(`generated config denies ${action}`, new RegExp(`${action}:\\s*'deny'`).test(chatSource));
-}
+check('generated config uses the v2 agents map', /agents:\s*\{/.test(chatSource));
+check('generated config uses a system file reference', /system:\s*'\{file:\.\/AGENT\.md\}'/.test(chatSource));
+check('generated config uses v2 permissions', /permissions:\s*agentPermissions\(\)/.test(chatSource));
+const permissionStart = chatSource.indexOf('function agentPermissions');
+const permissionEnd = chatSource.indexOf('\n}', permissionStart);
+const permissionBlock = chatSource.slice(permissionStart, permissionEnd);
+check('generated permissions deny everything by default', /action:\s*'\*',\s*resource:\s*'\*',\s*effect:\s*'deny'/.test(permissionBlock));
+check('generated permissions allow egl tools', /action:\s*'egl_\*'/.test(permissionBlock));
+check('generated permissions do not expose read', !/action:\s*'read'/.test(permissionBlock));
+check('generated config passes inspect roots', /EGGLAB_READ_ROOTS/.test(chatSource));
 check('OpenCode v2 uses a private server', /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource));
 check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
 check('Stop covers the retry gap', /let turnRunning/.test(chatSource) && /turnStopped/.test(chatSource));

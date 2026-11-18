@@ -62,6 +62,43 @@ function readKnowledge(requested) {
   return { ok: true, path: norm, bytes: stat.size, text: fs.readFileSync(abs, 'utf8') };
 }
 
+// Image inspection is an MCP tool, not OpenCode's generic `read`. That keeps
+// filesystem permission rules out of the creative agent while still letting it
+// see the pixels of its own renders. Paths are restricted to the live render,
+// scratch and project roots supplied by the panel.
+const IMAGE_MIMES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
+function readImage(requested) {
+  const abs = path.resolve(String(requested || ''));
+  let roots = [];
+  try {
+    roots = JSON.parse(process.env.EGGLAB_READ_ROOTS || '[]');
+  } catch {}
+  roots = roots.map((root) => path.resolve(String(root))).filter(Boolean);
+  if (roots.length) {
+    const inside = roots.some((root) => abs === root || abs.startsWith(`${root}${path.sep}`));
+    if (!inside) return null;
+  }
+  const mimeType = IMAGE_MIMES[path.extname(abs).toLowerCase()];
+  if (!mimeType) return null;
+  let stat;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile() || stat.size > 32 * 1024 * 1024) return null;
+  return {
+    __mcpContent: [
+      { type: 'text', text: JSON.stringify({ ok: true, path: abs, bytes: stat.size, mimeType }) },
+      { type: 'image', data: fs.readFileSync(abs).toString('base64'), mimeType },
+    ],
+  };
+}
 
 const BASE = process.env.EGGLAB_URL;
 const TOKEN = process.env.EGGLAB_TOKEN;
@@ -202,6 +239,18 @@ const tools = [
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Package-relative path with forward slashes.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'inspect',
+    description:
+      'Open a PNG/JPEG/WebP render, canvas preview or exported layer and return the actual pixels to the model. Pass the absolute path from an EggLab tool result. Use this whenever visual correctness matters: check composition, text, faces, seams, alpha edges and whether the requested change actually happened. Allowed paths are the EggLab output, tmp/canvas and project folders. This is not a text-file reader; use read_knowledge for documentation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to a PNG/JPEG/WebP returned by an EggLab tool.' },
       },
       required: ['path'],
     },
@@ -543,6 +592,7 @@ const tools = [
 const AGENT_TOOL_NAMES = Object.freeze([
   'status',
   'read_knowledge',
+  'inspect',
   'generate',
   'edit',
   'cancel',
@@ -607,6 +657,14 @@ async function callTool(name, args = {}) {
     case 'read_knowledge':
       return readKnowledge(args.path);
 
+    case 'inspect': {
+      const image = readImage(args.path);
+      if (!image) {
+        throw new Error('inspect: file is missing, outside the allowed render/project roots, or not a supported image');
+      }
+      return image;
+    }
+
     case 'generate': {
       const count = Math.min(4, Math.max(1, Number(args.count) || 1));
       const outputs = [];
@@ -644,7 +702,7 @@ async function callTool(name, args = {}) {
         images = [exported.path, ...images];
         layer = exported.layer || null;
       }
-      if (!images.length) throw new Error('egglab_edit needs images or use_active_layer=true.');
+      if (!images.length) throw new Error('egl_edit needs images or use_active_layer=true.');
       const { job } = await api('POST', '/api/jobs', {
     // Tags the job as agent-started: the panel refuses these when no chat
     // turn is active, so a tool call still in flight after Stop cannot render.
@@ -901,7 +959,7 @@ async function handle(msg) {
       capabilities: { tools: {} },
       serverInfo: { name: 'egglab', version: '0.1.0' },
       instructions:
-        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egglab_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egglab_status (compact). Decompose the piece into assets: generate transparent cut-outs for subjects (egglab_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egglab_edit), and local fixes with egglab_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egglab_photocraft_audit, save, export. egglab_check_alpha measures any PNG. Look up unknown engine commands with egglab_photocraft_commands. Knowledge loads on demand: use egglab_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
+        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egl_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egl_status (compact). After a render, canvas preview or layer export that must be judged visually, call egl_inspect with its absolute path; it returns the actual image. Use egl_read_knowledge only for the knowledge package. Decompose the piece into assets: generate transparent cut-outs for subjects (egl_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egl_edit), and local fixes with egl_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egl_photocraft_audit, save, export. egl_check_alpha measures any PNG. Look up unknown engine commands with egl_photocraft_commands. Knowledge loads on demand: use egl_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
     });
   }
   if (method === 'ping') return ok(id, {});
@@ -914,6 +972,9 @@ async function handle(msg) {
     try {
       const tCall = Date.now();
       const result = await callTool(name, args);
+      if (result?.__mcpContent) {
+        return ok(id, { content: result.__mcpContent, isError: false });
+      }
       const now = Date.now();
       const clock = {
         elapsed_s: Math.round((now - T0) / 1000),

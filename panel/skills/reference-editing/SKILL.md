@@ -10,19 +10,19 @@ Qwen-Image-2.1 is a unified generator/editor. Treat an edit as **"change this so
 
 | Request | Workflow | Primary tool |
 |---|---|---|
-| Change/replace/remove/relight/retouch an existing image | Instruction edit | `egglab_edit` (full image) or `egglab_photocraft_edit_active` (active layer) |
-| Photo has circles, arrows or brush marks drawn on it | Marked-photo edit | `egglab_photocraft_edit_active` |
-| A separate layer contains the painted mask | Separate-mask edit | `egglab_photocraft_edit_active` with `mask_layer` |
-| A sketch supplies shape/composition | Sketch-guided edit | `egglab_edit` with the sketch as a tagged reference |
-| Several images supply different attributes | Multi-reference edit | `egglab_edit` with explicit roles |
-| New scene using a person/product as identity anchor | Reference-driven generation | `egglab_edit` (not `generate`) |
-| Transparent cut-out or RGBA edit | Transparency workflow | `transparency` skill + `egglab_generate`/`egglab_edit` |
+| Change/replace/remove/relight/retouch an existing image | Instruction edit | `egl_edit` (full image) or `egl_photocraft_edit_active` (active layer) |
+| Photo has circles, arrows or brush marks drawn on it | Marked-photo edit | `egl_photocraft_edit_active` |
+| A separate layer contains the painted mask | Separate-mask edit | `egl_photocraft_edit_active` with `mask_layer` |
+| A sketch supplies shape/composition | Sketch-guided edit | `egl_edit` with the sketch as a tagged reference |
+| Several images supply different attributes | Multi-reference edit | `egl_edit` with explicit roles |
+| New scene using a person/product as identity anchor | Reference-driven generation | `egl_edit` (not `generate`) |
+| Transparent cut-out or RGBA edit | Transparency workflow | `transparency` skill + `egl_generate`/`egl_edit` |
 
-Do not route an edit through `egglab_generate`. `generate` has no source canvas and cannot preserve identity or untouched pixels.
+Do not route an edit through `egl_generate`. `generate` has no source canvas and cannot preserve identity or untouched pixels.
 
 ## 2. Inspect inputs and assign roles
 
-1. Call `egglab_photocraft_layers` when the work is in PhotoCraft. Identify the active canvas, annotation layer/layer marks, and any separate mask layer.
+1. Call `egl_photocraft_layers` when the work is in PhotoCraft. Identify the active canvas, annotation layer/layer marks, and any separate mask layer.
 2. Inventory every supplied image. Assign exactly one primary role:
    - **Canvas** — framing/composition survives; edits happen here.
    - **Identity donor** — face/person likeness.
@@ -67,14 +67,14 @@ PhotoCraft already lets the user draw directly on the reference photo. Those mar
 
 1. Inspect the active layer at native size. Identify each mark's colour/shape and the object or area it targets.
 2. Map each mark to one requested edit, in the user's order. Do not invent a semantic meaning for a colour unless the user assigned one.
-3. Use `egglab_photocraft_edit_active` with the photo as the active layer:
+3. Use `egl_photocraft_edit_active` with the photo as the active layer:
    - Whole marked photo: omit `region`; the exported active layer includes the marks.
    - One marked object: pass `region:[x,y,width,height]` in document pixels and use `mode:"crop"` or `"inpaint"` depending on the surface.
 4. In the prompt, name the marks and their targets, explicitly say the annotation must be removed from the final result, and protect unmarked areas.
 5. If the annotations are on a **separate layer** rather than the photo layer:
-   - Export a marked composite with `egglab_photocraft_export_flat` (do not pass the annotation layer alone as the canvas).
-   - Run `egglab_edit` with the flat marked image as `<image1>`.
-   - Place the result back with `egglab_photocraft_place` and keep the original layer as backup.
+   - Export a marked composite with `egl_photocraft_export_flat` (do not pass the annotation layer alone as the canvas).
+   - Run `egl_edit` with the flat marked image as `<image1>`.
+   - Place the result back with `egl_photocraft_place` and keep the original layer as backup.
    - Still tell the model to remove the marks.
 
 Multiple marks example:
@@ -92,9 +92,9 @@ Remove all annotation marks from the final image.
 
 Use this when the user painted a mask on a **separate layer** (for example `Mask`). The active layer remains the original canvas.
 
-1. `egglab_photocraft_layers` → find the exact mask layer name and the active source layer.
+1. `egl_photocraft_layers` → find the exact mask layer name and the active source layer.
 2. Activate the source/canvas layer (not the mask layer).
-3. Call `egglab_photocraft_edit_active` with:
+3. Call `egl_photocraft_edit_active` with:
    - `mask_layer: "Mask"` (the exact layer name).
    - `mask_invert: true` only when the mask uses black/opaque as the editable area and white/transparent as keep.
    - `strength` 0.25–0.5 for a gentle retouch, higher for a full replacement.

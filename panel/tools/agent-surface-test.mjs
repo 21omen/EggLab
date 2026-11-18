@@ -4,8 +4,7 @@
 // It cannot prove OpenCode actually sends those tools to the provider. This
 // test starts a clean `opencode run --standalone` turn, asks the model to
 // report its exact function list as JSON, and asserts:
-//   - every curated EggLab core tool is visible
-//   - `read` is visible (image inspection)
+//   - every curated EggLab core tool is visible, including `egl_inspect`
 //   - unrelated built-ins and other MCP servers are absent
 //
 // Usage: npm run test:surface
@@ -23,6 +22,7 @@ const PANEL = path.resolve(HERE, '..');
 const CORE = [
   'status',
   'read_knowledge',
+  'inspect',
   'generate',
   'edit',
   'cancel',
@@ -40,7 +40,7 @@ const CORE = [
   'photocraft_command',
   'photocraft_commands',
   'photocraft_batch',
-].map((name) => `egglab_${name}`);
+].map((name) => `egl_${name}`);
 
 const FORBIDDEN = [
   'experimental_image_generate',
@@ -180,10 +180,6 @@ for (const name of CORE) {
     console.error(`FAIL  missing core tool ${name}`);
     failures++;
   }
-}
-if (!visible.has('read')) {
-  console.error('FAIL  missing read tool (image inspection)');
-  failures++;
 }
 for (const name of FORBIDDEN) {
   if (visible.has(name)) {

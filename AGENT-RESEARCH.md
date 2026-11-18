@@ -2,7 +2,7 @@
 
 **Date:** 18 November 2026  
 **Measured build:** 0.3.16
-**Fix shipped:** 0.3.17 (see §7)
+**Fix shipped:** 0.3.18 (see §7)
 **Agent model:** `opencode-go/deepseek-v4.1-flash` (free tier)  
 **Scope:** agent quality for image generation, Qwen-Image 2.1 editing and
 PhotoCraft production. This report does **not** blame the image model first; it
@@ -403,69 +403,90 @@ P0 was implemented in 0.3.17; see §7.
 
 ---
 
-## 7. Implementation in 0.3.17
+## 7. Implementation in 0.3.17–0.3.18
 
 The P0 tool-surface fix is now in the app, not just this report.
 
 ### What changed
 
-- `service/chat.mjs` generates **`mcp.servers.egglab`** with
+- `service/chat.mjs` generates **`mcp.servers.egl`** with
   **`codemode: false`** and `EGGLAB_TOOLSET=agent`. The legacy `mcp.egglab`
   shape is gone, so OpenCode cannot silently drop the direct-tool setting.
-- The generated agent gets a **hard allowlist** (`"*": false` plus 19 exact
-  `egglab_*` names and `read`) and permission denies for `execute`, `glob`,
-  `grep`, `list`, `edit`, `bash`, `skill`, `question`, `task`, `todowrite`,
-  `webfetch`, `websearch` and `experimental_image_generate`.
+- The server key is deliberately **`egl`**, not `egglab`. A user-wide OpenCode
+  config already defines an `egglab` server for Omelette/ComfyUI/music; reusing
+  that name made both servers appear in this agent. The unique key gives every
+  product tool an `egl_*` name and keeps the other domain out.
+- 0.3.18 migrated the agent config from v1 `agent`/`prompt`/`permission` to
+  v2 **`agents`/`system`/`permissions`**. This was not cosmetic: OpenCode 2.x
+  ignores the v1 `permission` map and the v1 `tools` allowlist on the v2
+  `agents` shape. The v2 rules are now the single tool gate: **deny `*` then
+  allow `egl_*`**. That hides OpenCode built-ins and other MCP servers, including
+  the Omelette `egglab_egg_*` tools.
+- Image inspection is now the MCP tool **`egl_inspect`**, not OpenCode's generic
+  `read`. It returns the actual PNG/JPEG/WebP as an image content block, and
+  only from the panel's output, tmp/canvas and project folders. This avoids the
+  broken `external_directory` permission path entirely and keeps filesystem
+  access out of the creative agent.
 - `mcp-server.mjs` filters `tools/list` and rejects `tools/call` outside the
   agent profile. The full 27-tool registry remains available when
   `EGGLAB_TOOLSET` is unset, for developers and tests.
-- **19 core tools:** status, read_knowledge, generate, edit, cancel,
+- **20 core tools:** status, read_knowledge, inspect, generate, edit, cancel,
   check_alpha, photocraft_launch/new_document/layers/place/canvas/
   edit_active/audit/save/export_flat/export_layers/command/commands/batch.
 - **8 hidden admin tools:** settings, models, download_models, photocraft_open,
   photocraft_recent_projects, photocraft_project, photocraft_export_layer,
   photocraft_export_layers_by_mentions.
-- `AGENT.md` now opens with a direct tool card and explicitly forbids generic
-  shell/file/web/experimental tools and the OpenCode `skill` tool. `ROUTER.md`
-  and the image-generation/photocraft-production skills were updated to stop
-  referencing hidden tools.
+- `AGENT.md` now opens with a direct tool card, tells the model to call
+  `egl_inspect` on renders, and explicitly forbids generic shell/file/web/
+  experimental tools and the OpenCode `skill` tool. `ROUTER.md` and the
+  image-generation/photocraft-production skills were updated to stop referencing
+  hidden tools.
 - `tools/agent-regression.mjs` now checks that the MCP profile and generated
-  allowlist match, that Code Mode is off, that the agent profile is selected,
+  permissions match, that Code Mode is off, that the agent profile is selected,
   that hidden admin tools stay hidden, and that the root dev config follows the
   same shape.
 
 ### Measured result
 
-A clean meta-test against the generated workspace now reports **21 tools**:
+A clean meta-test against the packaged workspace reports **20 curated `egl_*`
+tools**. The only extra is OpenCode's built-in `skill` tool, which survives
+visibility filtering but is **permission-denied** (`Permission denied: skill`)
+and explicitly forbidden in the prompt. `read`, `experimental_image_generate`,
+`execute`, `glob`, `grep`, `question`, Context7, gh_grep and the Omelette
+`egglab_egg_*` server are not visible.
 
-| Visible | Count |
-|---|---|
-| EggLab core | 19 |
-| `read` (image inspection) | 1 |
-| OpenCode `skill` (built-in; denied by permission and forbidden in prompt) | 1 |
+A real task — “Use egl_generate now to create a 512×512 turbo image of a green
+circle on white” — completed with exactly one tool call, `egl_generate`, and no
+generic detour.
 
-`experimental_image_generate`, `execute`, `glob`, `grep`, `question`, Context7,
-gh_grep and the Omelette `egg_*` server are **not visible**.
+A live 24-check suite against the packaged app then passed **24/24** on
+`opencode-go/hy4-flash-free` (the model the user selected):
 
-A real task — “Use egglab_generate now to create a 512×512 turbo image of a
-green circle on white” — completed in **55 s** with exactly one tool call,
-`egglab_generate`, and no `read`/`glob`/experimental detour. The previous
-agent failed or stopped on the same kind of request.
+- **surface** — 20/20 curated tools visible; only the denied `skill` built-in
+  extra; no `read`/experimental/execute/glob/grep leakage;
+- **knowledge** — `egl_read_knowledge` loaded `reference-editing` and returned
+  the `mask_layer` / `mask_invert` / annotation rules without rendering;
+- **generate + inspect** — `egl_generate` completed, then `egl_inspect`
+  returned the actual PNG and the model correctly described it;
+- **edit** — `egl_edit` changed the generated source, then `egl_inspect`
+  returned the result;
+- **stop** — Stop acknowledged, the active render job settled to `canceled`,
+  the turn ended as `Stopped.`, and no job was left running.
 
 ### Token reality check
 
 | Surface | JSON size | Approx. tokens |
 |---|---|---|
-| Full 27-tool registry | 17,149 chars | ~4,287 |
-| Agent core 19 tools | 14,556 chars | ~3,639 |
+| Full 28-tool registry | 17,796 chars | ~4,449 |
+| Agent core 20 tools | 15,203 chars | ~3,801 |
 
 Direct core tools are **not cheaper** than Code Mode's ~2,000-token partial
-catalog; they cost roughly 1.6k more per request. The win is that the model can
-actually see the tools it is told to use, and the allowlist removes the much
-larger unrelated surface (Context7, gh_grep, OpenCode file/shell/web tools and
-`experimental_image_generate`). **“Too many tools” was a real design problem,
-but token count alone was not what made the agent look dumb; hidden core tools
-and visible wrong tools were.**
+catalog; they cost roughly 1.8k more per request. The win is that the model can
+actually see the tools it is told to use, and the permission gate removes the
+much larger unrelated surface (Context7, gh_grep, OpenCode file/shell/web tools
+and `experimental_image_generate`). **“Too many tools” was a real design
+problem, but token count alone was not what made the agent look dumb; hidden
+core tools and visible wrong tools were.**
 
 ---
 

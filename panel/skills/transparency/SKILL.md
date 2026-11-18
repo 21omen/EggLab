@@ -10,10 +10,10 @@ Qwen-Image-2.1 has native RGBA generation/editing. Use it rather than a white-ba
 
 | Task | Route |
 |---|---|
-| New subject/object cut-out | `egglab_generate` with `transparent: true` (quality for edges) |
-| Extract a subject from a photo | `egglab_edit` with `transparent: true`, or PhotoCraft selection/mask + reference edit |
-| Edit an existing transparent asset | `egglab_edit` with `transparent: true`; preserve alpha |
-| Reusable layer for compositing | Transparent generation/edit + `egglab_check_alpha` |
+| New subject/object cut-out | `egl_generate` with `transparent: true` (quality for edges) |
+| Extract a subject from a photo | `egl_edit` with `transparent: true`, or PhotoCraft selection/mask + reference edit |
+| Edit an existing transparent asset | `egl_edit` with `transparent: true`; preserve alpha |
+| Reusable layer for compositing | Transparent generation/edit + `egl_check_alpha` |
 | White-background render that only looks transparent | Not an alpha asset; re-render with transparent mode |
 
 ## 2. Native RGBA generation
@@ -44,7 +44,7 @@ Official Qwen alpha prompt shape (the panel wraps this):
 ## 5. Validation
 
 1. Read the tool's alpha verdict/percentages/bounds/edge-touch fields.
-2. Run `egglab_check_alpha` on the actual exported PNG.
+2. Run `egl_check_alpha` on the actual exported PNG.
 3. Confirm the file format preserves alpha (PNG/WebP; JPEG does not).
 4. Inspect edges at 100%: fringe, halo, matte, cut hair/fur, transparent holes, semitransparent glass.
 5. Compare the subject bounds with the intended placement; check no unintended crop.

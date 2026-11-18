@@ -42,21 +42,21 @@ Route the job to the smallest sufficient knowledge set. This is a **single-agent
 
 Classify the **operation** before selecting a tool. The Qwen model is unified, but the EggLab tool path is not interchangeable:
 
-1. **Text-to-image**: new frame, no source canvas. Use `egglab_generate`.
-2. **Instruction edit**: existing source is the canvas. Use `egglab_edit` (full image) or `egglab_photocraft_edit_active` (active layer). Do not use `egglab_generate`.
-3. **Marked photo**: user drew circles/brush marks directly on the photo. Use `egglab_photocraft_edit_active`; inspect the active layer, name each mark, tell the model to remove the annotation and preserve unmarked areas. If marks are on a separate layer, export the flat marked composite and use `egglab_edit`, then place the result back. Do not ask the user to redraw.
-4. **Separate mask**: user painted a mask on its own layer. Activate the source canvas, call `egglab_photocraft_edit_active` with `mask_layer` (exact name from `egglab_photocraft_layers`) and `mask_invert` only if black marks the editable area. The mask is a region selector, never a donor image. Do not add or request a new mask UI.
+1. **Text-to-image**: new frame, no source canvas. Use `egl_generate`.
+2. **Instruction edit**: existing source is the canvas. Use `egl_edit` (full image) or `egl_photocraft_edit_active` (active layer). Do not use `egl_generate`.
+3. **Marked photo**: user drew circles/brush marks directly on the photo. Use `egl_photocraft_edit_active`; inspect the active layer, name each mark, tell the model to remove the annotation and preserve unmarked areas. If marks are on a separate layer, export the flat marked composite and use `egl_edit`, then place the result back. Do not ask the user to redraw.
+4. **Separate mask**: user painted a mask on its own layer. Activate the source canvas, call `egl_photocraft_edit_active` with `mask_layer` (exact name from `egl_photocraft_layers`) and `mask_invert` only if black marks the editable area. The mask is a region selector, never a donor image. Do not add or request a new mask UI.
 5. **Sketch**: separate sketch = structure/composition guidance. Tag it as a reference, state the adherence level, and do not promise ControlNet-level tracing.
 6. **Multi-reference**: assign `<image1>` canvas and `<image2>+` donor roles before writing. Do not send every image as a generic donor.
-7. **Transparency**: new subject → `egglab_generate transparent=true`; photo extraction/edit → `egglab_edit transparent=true` (or PhotoCraft mask + edit). Validate alpha with `egglab_check_alpha`.
+7. **Transparency**: new subject → `egl_generate transparent=true`; photo extraction/edit → `egl_edit transparent=true` (or PhotoCraft mask + edit). Validate alpha with `egl_check_alpha`.
 
-Load the Qwen 2.1 feature research for any Qwen generation/editing decision. Load the seamless-local-edit research when a region/mask edit must not show a seam. The photo's annotations and the separate mask layer are **existing PhotoCraft capabilities**; use them as-is. Tools are exposed directly with full descriptions in `AGENT.md` §0; select by operation and confirm live PhotoCraft state with `egglab_photocraft_layers`/`egglab_status` before acting. Do not use a generic file, shell, web or experimental image tool.
+Load the Qwen 2.1 feature research for any Qwen generation/editing decision. Load the seamless-local-edit research when a region/mask edit must not show a seam. The photo's annotations and the separate mask layer are **existing PhotoCraft capabilities**; use them as-is. Tools are exposed directly with full descriptions in `AGENT.md` §0; select by operation and confirm live PhotoCraft state with `egl_photocraft_layers`/`egl_status` before acting. Do not use a generic file, shell, web or experimental image tool.
 
 ## Loading rules
 - `qa-delivery` for every artifact production/review.
 - `design-direction` for new visual concepts and subjective design critique; optional for a narrow technical fix.
 - `asset-planning` when multiple visual assets or production methods are involved.
-- `image-generation` only when `egglab_generate` is needed for a new frame; load `references/research/local/qwen-image-2.1-features.md`.
+- `image-generation` only when `egl_generate` is needed for a new frame; load `references/research/local/qwen-image-2.1-features.md`.
 - `reference-editing` when source imagery is modified, used as identity/product reference, carries user marks, uses a separate mask, or supplies a sketch; load both Qwen research documents.
 - `transparency` only for alpha/cut-out work; load the Qwen feature research and `references/transparency/alpha-workflow.md`.
 - `photocraft-production` for document, type, shape, layer, mask, audit, save or export operations.
@@ -87,4 +87,4 @@ If same-level rules conflict, prefer the narrower current-task rule and record i
 - “Replace what I circled on this photo”: reference-editing, qa-delivery; inspect the marked active layer, use `photocraft_edit_active`, name the mark, remove the annotation, preserve unmarked areas. No new drawing UI.
 - “Change only the area I painted on the mask layer”: reference-editing, qa-delivery; find the mask layer with `photocraft_layers`, activate the canvas, use `photocraft_edit_active` `mask_layer`; mask is region guidance, not a donor.
 - “Turn this sketch into a render”: reference-editing + image-generation as needed; state sketch adherence, do not claim strict geometric control.
-- “Cut this product out with transparency”: transparency, qa-delivery; `transparent=true`, verify real alpha with `egglab_check_alpha`.
+- “Cut this product out with transparency”: transparency, qa-delivery; `transparent=true`, verify real alpha with `egl_check_alpha`.

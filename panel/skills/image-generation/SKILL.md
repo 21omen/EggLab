@@ -8,22 +8,22 @@ Use this skill only when the deliverable is a **new image** and no supplied imag
 
 ## 1. Runtime and model check
 
-- Call `egglab_status`; check engine readiness, active model file and current workflow.
+- Call `egl_status`; check engine readiness, active model file and current workflow.
 - Read the active model label. Base Qwen-Image-2.1 and the Turbo LoRA/checkpoint are different operating modes; never assume Turbo because the model family is Qwen.
-- `egglab_status` reports missing model files. Model installation and downloads belong to the panel/setup flow; the production agent has no download tool. If a file is missing, stop and report it.
+- `egl_status` reports missing model files. Model installation and downloads belong to the panel/setup flow; the production agent has no download tool. If a file is missing, stop and report it.
 - Treat historical Qwen facts as research, not runtime guarantees. Verify live resolution, steps and capabilities.
 
 ## 2. Task classification
 
 | Request | Route |
 |---|---|
-| New scene/backdrop/plate from text | `egglab_generate` |
-| New scene anchored to a person/product/photo | `egglab_edit` (reference-driven generation) |
+| New scene/backdrop/plate from text | `egl_generate` |
+| New scene anchored to a person/product/photo | `egl_edit` (reference-driven generation) |
 | Change/remove/replace/relight an existing image | `reference-editing` |
-| Marks on a photo / painted mask layer | `reference-editing` + `egglab_photocraft_edit_active` |
+| Marks on a photo / painted mask layer | `reference-editing` + `egl_photocraft_edit_active` |
 | Transparent cut-out or RGBA edit | `transparency` skill |
-| Poster, packaging, infographic, signage | `egglab_generate` for imagery + PhotoCraft for exact type/layout |
-| Storyboard/character sheet/panorama | `egglab_generate` with continuity planning |
+| Poster, packaging, infographic, signage | `egl_generate` for imagery + PhotoCraft for exact type/layout |
+| Storyboard/character sheet/panorama | `egl_generate` with continuity planning |
 | Multiple references contributing attributes | `reference-editing` multi-reference path |
 
 If a source image is present, do not use `generate` unless the source is only inspiration and the user explicitly wants a wholly new frame.
@@ -72,13 +72,13 @@ Do not ask one donor to supply everything. For a new scene, describe the scene a
 
 - Use `transparent: true` when the deliverable is a cut-out, sprite, reusable layer or foreground element.
 - The panel wraps the prompt in the official RGBA template; describe the subject, not “on a white background”.
-- Prefer PNG. Verify real alpha with `egglab_check_alpha`; a checkerboard preview is not proof.
+- Prefer PNG. Verify real alpha with `egl_check_alpha`; a checkerboard preview is not proof.
 - Inspect hair/fur, semi-transparent edges, halos and contact shadows.
 - For editing an existing transparent asset, use the transparency skill and preserve alpha.
 
 ## 7. Typography, posters, packaging and information design
 
-- Treat `egglab_generate` as concept imagery; exact type, legal copy, logos and brand typography belong in editable PhotoCraft layers.
+- Treat `egl_generate` as concept imagery; exact type, legal copy, logos and brand typography belong in editable PhotoCraft layers.
 - Establish hierarchy, alignment, reading order and margins.
 - Proofread every generated character; generated text is not final.
 - For packaging, preserve product silhouette/branding from the product reference; do not redesign unless asked.

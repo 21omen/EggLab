@@ -26,7 +26,7 @@ Never silently ship REVISE/HOLD.
 10. Profile finish: only applicable finish/support/density checks.
 11. Workspace/delivery: scratch closed, project saved, export exists, no proof/superseded content leaks.
 
-Use audit metrics when available; never invent measurements. `edgeTouch` is acceptable only for intended bleed. Inspect fine edges, hands, text, repeated geometry and seams at native size. Alpha verification checks exported PNG via `egglab_check_alpha`.
+Use audit metrics when available; never invent measurements. `edgeTouch` is acceptable only for intended bleed. Inspect fine edges, hands, text, repeated geometry and seams at native size. Alpha verification checks exported PNG via `egl_check_alpha`.
 
 Repair one target, re-check affected items and compare for regressions. Revert a fix that introduces a new failure. Stop when relevant gate passes.
 
