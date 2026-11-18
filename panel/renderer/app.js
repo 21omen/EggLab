@@ -2700,6 +2700,7 @@ function renderSetup() {
       <div class="setup-step-head"><span class="setup-dot"></span><b>PhotoCraft</b>${setupBadge(pc.found, 'Found', 'Not found')}</div>
       <p class="setup-note">${pc.found ? esc(pc.exe) : 'The canvas app EggLab places renders into. Install PhotoCraft, then re-scan or locate its executable.'}</p>
       <div class="setup-actions">
+        ${pc.found ? '' : '<button class="mini" data-setup="get-pc">Download PhotoCraft…</button>'}
         <button class="mini" data-setup="locate-pc">Locate…</button>
         ${pc.found ? '<button class="mini" data-setup="launch-pc">Launch</button>' : ''}
       </div>
@@ -2759,6 +2760,9 @@ async function onSetupAction(action) {
         toast('PhotoCraft linked.');
         break;
       }
+      case 'get-pc':
+        await api.openExternal('https://getartcraft.com/');
+        break;
       case 'launch-pc':
         await api.pcLaunch();
         toast('Launching PhotoCraft…');

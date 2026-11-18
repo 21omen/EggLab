@@ -44,6 +44,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --verify-tag --title "EggLab $($tag.TrimStart('v'))" --generate-notes
+          }
           $exe = (Get-ChildItem ..\dist\EggLab-Setup-*.exe | Select-Object -First 1).FullName
           gh release upload $tag $exe "..\dist\latest.yml" "..\dist\SHA256SUMS.txt" --clobber
           gh release edit $tag --latest

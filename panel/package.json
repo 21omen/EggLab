@@ -1,7 +1,7 @@
 {
   "name": "egglab",
   "productName": "EggLab",
-  "version": "0.3.26",
+  "version": "0.3.27",
   "private": true,
   "description": "EggLab - Qwen-Image-2.1 agent panel for PhotoCraft",
   "author": "EggLab contributors",
@@ -143,5 +143,11 @@
       "deleteAppDataOnUninstall": false,
       "differentialPackage": false
     }
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/YanNyeinHtet/EggLab",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YanNyeinHtet/EggLab"
   }
 }

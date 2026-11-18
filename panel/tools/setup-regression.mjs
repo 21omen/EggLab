@@ -83,6 +83,13 @@ const hasResource = (from, to) => resources.some((r) => r.from === from && r.to 
 check('packages engine-install.ps1', hasResource('build/engine-install.ps1', 'engine-install.ps1'));
 check('packages knowledge', hasResource('skills', 'knowledge/skills') && hasResource('references', 'knowledge/references'));
 check('packages evals', hasResource('evals', 'knowledge/evals'));
+const rendererSource = read('renderer/app.js', PANEL);
+check(
+  'setup offers the PhotoCraft download link',
+  /get-pc/.test(rendererSource) && /getartcraft\.com/.test(rendererSource),
+);
+check('README links to PhotoCraft', /getartcraft\.com/.test(read('README.md')));
+check('package declares the MIT license', pkg.license === 'MIT');
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {

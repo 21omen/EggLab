@@ -21,7 +21,7 @@ Python, no cloud rendering.
 ## Requirements
 
 - Windows 10 or 11 (x64)
-- **PhotoCraft** installed (the canvas app EggLab drives — not bundled)
+- **PhotoCraft** installed ([download free](https://getartcraft.com/)) — the canvas app EggLab drives; not bundled
 - ~25 GB free disk: engine (17 MB–1.5 GB depending on GPU) + models (~20 GB, your choice)
 - A GPU is strongly recommended:
   - NVIDIA → CUDA engine (fastest, ~1.4 GB download)
@@ -41,7 +41,7 @@ Python, no cloud rendering.
 `SHA256SUMS.txt` is attached to every release if you want to verify the download:
 
 ```powershell
-Get-FileHash .\EggLab-Setup-0.1.0.exe -Algorithm SHA256
+Get-ChildItem .\EggLab-Setup-*.exe | Get-FileHash -Algorithm SHA256
 ```
 
 ## First run
@@ -52,7 +52,7 @@ The wizard checks the four pieces EggLab needs:
 
 | Piece | What it is | What the wizard does |
 |---|---|---|
-| **PhotoCraft** | The canvas app | Detects it, or lets you locate `photocraft.exe` |
+| **PhotoCraft** | The canvas app ([download free](https://getartcraft.com/)) | Detects it, or lets you locate `photocraft.exe` |
 | **OpenCode** | The agent runtime | Detects an existing install, or downloads the standalone build (~78 MB) |
 | **Engine** | stable-diffusion.cpp | Usually installed already; can re-download and switch GPU variant |
 | **Models** | Qwen-Image-2.1 + VAE + text encoder + turbo LoRA | Downloads missing files (resumable) or imports files you already have |
@@ -103,13 +103,10 @@ npm run dist       # one-click installer in ..\dist
 Node 20+ is required for development only; the released installer needs nothing but Windows.
 
 Releases are published by pushing a `v*` tag — see
-[`.github/workflows/release.yml`](.github/workflows/release.yml). Locally:
-
-```powershell
-cd panel
-$env:GH_TOKEN = "..."   # a token with repo scope
-npm run dist -- --publish always
-```
+[`.github/workflows/release.yml`](.github/workflows/release.yml). The workflow
+runs the agent gate, builds the installer on a Windows runner, and uploads the
+installer, `latest.yml` and `SHA256SUMS.txt` to the release. Bump the version in
+`panel/package.json`, commit, then push the matching tag.
 
 ## Project layout
 
@@ -118,7 +115,9 @@ egglab.ps1              engine runner (text-to-image, edit, turbo)
 panel/                  Electron panel + agent + service layer
 panel/build/            NSIS customization + engine downloader
 panel/service/          settings, engine, chat, models, setup, updater
-panel/knowledge (skills, references, templates)
+panel/skills/           progressive agent skills
+panel/references/       knowledge references
+panel/templates/        document templates
 ```
 
 ## Performance
