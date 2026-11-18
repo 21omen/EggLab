@@ -317,6 +317,29 @@ API can retarget them without deleting history.
 
 ---
 
+### 5.3 First-launch audit (0.3.27)
+
+Run with a separate `%APPDATA%`/`%LOCALAPPDATA%` so the live profile was not
+touched:
+
+- Wizard state: `firstRun: true`, `done: false`, `ready: false`.
+- `config.json` created at the fresh profile root with the fresh models folder,
+  the fresh engine path and the default diffusion file.
+- Engine, PhotoCraft and OpenCode correctly reported missing; the four required
+  model entries were missing and turbo was optional.
+- `get-pc` opens `https://getartcraft.com/`; the setup page and README now link
+  the free PhotoCraft download.
+- Download targets verified with HTTP 200: OpenCode v2.3.0 zip, the pinned
+  stable-diffusion.cpp `master-1091-b9d7176` Windows assets, and all seven
+  Hugging Face model files (sizes match the registry).
+- Installing 0.3.27 over the live profile preserved its settings and chats.
+
+The live profile has moved on since the 9-conversation repair; at audit time it
+held 5 visible chats (the newest `the_thimble…` conversation with 7 items) and
+still had the repaired backups under `_session-backups`.
+
+---
+
 ## 6. Remaining work
 
 1. **Move/rename a chat or document.** The backend can migrate identities, but
