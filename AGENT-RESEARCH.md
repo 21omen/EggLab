@@ -428,7 +428,7 @@ The P0 tool-surface fix is now in the app, not just this report.
   broken `external_directory` permission path entirely and keeps filesystem
   access out of the creative agent.
 - `mcp-server.mjs` filters `tools/list` and rejects `tools/call` outside the
-  agent profile. The full 27-tool registry remains available when
+  agent profile. The full 28-tool registry remains available when
   `EGGLAB_TOOLSET` is unset, for developers and tests.
 - **20 core tools:** status, read_knowledge, inspect, generate, edit, cancel,
   check_alpha, photocraft_launch/new_document/layers/place/canvas/
