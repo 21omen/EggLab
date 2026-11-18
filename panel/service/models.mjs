@@ -128,6 +128,7 @@ export function modelStatus() {
   const stored = readJson(STATE_FILE, {});
   return {
     modelsDir: cfg.models,
+    configPath: cfg.path,
     engineReady: fs.existsSync(path.join(cfg.engine, 'sd-cli.exe')),
     engineDir: cfg.engine,
     entries: registry().map((entry) => {

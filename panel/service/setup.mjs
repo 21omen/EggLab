@@ -119,6 +119,7 @@ export async function setupStatus() {
     },
     models: {
       dir: cfg.models,
+      config: cfg.path,
       ready: missing.length === 0,
       missing,
       entries: status.entries.map((entry) => ({

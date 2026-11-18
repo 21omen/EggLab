@@ -46,6 +46,28 @@ check('setup rejects OpenCode v1 as ready', /version\[0\]\s*<\s*2/.test(setup));
 check('setup requires downloaded OpenCode v2', /requires v2 or newer/.test(setup));
 check('setup has curl fallback for GitHub assets', /downloadWithCurl/.test(setup) && /ssl-no-revoke/.test(setup));
 check('setup has stalled-download timeout', /AbortController/.test(setup) && /120000/.test(setup));
+
+// ---- engine config is self-initializing -------------------------------
+// A packaged install has no install.ps1 step, so config.json starts missing.
+// Selecting a downloaded variant used to be a silent no-op in that state and
+// setup reported "model missing" forever.
+const settingsSource = read('panel/service/settings.mjs');
+check(
+  'missing config.json is created on first run',
+  /export function ensureEngineConfig/.test(settingsSource) &&
+    /writeJson\(cfgPath,\s*raw\)/.test(settingsSource),
+);
+check(
+  'model selection writes config instead of no-op',
+  /export function setEngineModel/.test(settingsSource) &&
+    !/if \(!cfg\.raw\) return null/.test(settingsSource) &&
+    /ensureEngineConfig\(\)/.test(settingsSource),
+);
+check(
+  'config.json is the models-folder authority',
+  /settings\.modelsDir !== raw\.models/.test(settingsSource),
+);
+check('setup status exposes the config path', /config:\s*cfg\.path/.test(setup));
 const mainSource = read('main.mjs', PANEL);
 const httpSource = read('service/http.mjs', PANEL);
 check(

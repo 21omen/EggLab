@@ -26,6 +26,82 @@ import { historyFileName } from './history-names.mjs';
 const execFileAsync = promisify(execFile);
 const REGISTRY_FILE = path.join(DATA_DIR, 'sessions.json');
 const REGISTRY_BACKUP = path.join(DATA_DIR, 'sessions.backup.json');
+/**
+ * Deleted chat ids.
+ *
+ * A deletion has to survive two things it cannot control: a late transcript
+ * write (a job card or an agent callback that was already in flight) and an
+ * unlink that Windows refused because another handle still held the file. The
+ * startup heal used to treat ANY content-bearing transcript as proof of a real
+ * chat, so either case resurrected the deleted conversation on the next launch.
+ * A tombstone is written before anything else and consulted by heal/recovery,
+ * so a leftover file can be swept to `_trash` instead of becoming a chat again.
+ */
+const DELETED_FILE = path.join(DATA_DIR, 'deleted-threads.json');
+const TOMBSTONE_TTL = 30 * 24 * 60 * 60 * 1000;
+
+function loadDeletedThreads() {
+  const data = readJson(DELETED_FILE, null);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const now = Date.now();
+  const out = {};
+  for (const [key, at] of Object.entries(data)) {
+    // Expire eventually: a document path can be reused months later, and a
+    // stale tombstone must not block a genuinely new conversation there.
+    if (!key || !Number.isFinite(Number(at)) || now - Number(at) > TOMBSTONE_TTL) continue;
+    out[key] = Number(at);
+  }
+  return out;
+}
+
+let deletedThreads = loadDeletedThreads();
+
+function saveDeletedThreads() {
+  try {
+    writeJson(DELETED_FILE, deletedThreads);
+  } catch {}
+}
+
+export function isDeleted(key) {
+  const id = String(key || '');
+  return Boolean(id && deletedThreads[id]);
+}
+
+export function markDeleted(key) {
+  const id = String(key || '');
+  if (!id) return false;
+  deletedThreads[id] = Date.now();
+  saveDeletedThreads();
+  return true;
+}
+
+export function clearDeleted(key) {
+  const id = String(key || '');
+  if (!deletedThreads[id]) return false;
+  delete deletedThreads[id];
+  saveDeletedThreads();
+  return true;
+}
+
+/**
+ * Startup repair: remove registry entries the user already deleted. The
+ * tombstone wins over a binding that survived a crash between "mark" and
+ * "unbind"; the transcript is swept by pruneOrphanThreads afterwards.
+ */
+export function purgeDeletedThreads() {
+  let purged = 0;
+  for (const [id, entry] of Object.entries(registry.threads)) {
+    if (!deletedThreads[id]) continue;
+    if (entry?.docKey && registry.activeThreads[entry.docKey] === id) {
+      delete registry.activeThreads[entry.docKey];
+    }
+    if (registry.currentKey === id) registry.currentKey = null;
+    delete registry.threads[id];
+    purged++;
+  }
+  if (purged) save();
+  return purged;
+}
 
 // A session started by a no-vision model stays vision-blind even after the
 // setting changes, so switching models must switch sessions too. Capability is
@@ -213,6 +289,10 @@ export function migrateKey(from, to) {
 export function bind({ key, docKey = null, model, vision = null, docName = null, sessionId = null } = {}) {
   const id = key || 'no-document';
   const doc = docKey || id;
+  // Sending a message here is an explicit decision to use this thread again,
+  // so a previous deletion no longer applies. (A late save from an old turn
+  // never comes through bind, and must stay blocked by the tombstone.)
+  clearDeleted(id);
   const existing = registry.threads[id] || null;
 
   // A session last driven by a different model may not be able to see images.
@@ -268,6 +348,9 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
 /** Record the id OpenCode minted, plus the title it auto-generated. */
 export function noteSession({ key, docKey = null, sessionId, title }) {
   const id = key || registry.currentKey || 'no-document';
+  // A deleted thread must not be re-created by a late turn callback. Only an
+  // explicit bind() (a new user message) revives an id after deletion.
+  if (isDeleted(id)) return null;
   const entry =
     registry.threads[id] ||
     (registry.threads[id] = { id, docKey: docKey || id, sessionId: null, title: null, createdAt: Date.now() });
@@ -293,6 +376,9 @@ export function noteSession({ key, docKey = null, sessionId, title }) {
  */
 export function ensureEntry(key, { docKey = null, docName = null, title = null } = {}) {
   const id = key || 'no-document';
+  // Never let a transcript write resurrect a deleted chat. bind()/newThread()
+  // clear the tombstone first when the user actually starts a new conversation.
+  if (isDeleted(id)) return null;
   const doc = docKey || id;
   const existing = registry.threads[id];
   if (existing) return existing;
@@ -343,6 +429,8 @@ export function newThread({ docKey = null, docName = null } = {}) {
     while (taken.has(`${doc}#${n}`)) n++;
     id = `${doc}#${n}`;
   }
+  // The primary id can be minted again after the user deleted that chat.
+  clearDeleted(id);
   const entry = {
     id,
     docKey: doc,
@@ -386,6 +474,7 @@ export function registryThreads() {
 /** A panel transcript with messages is a real conversation even if its
  * OpenCode binding was pruned. Used only for routing/listing, never for binding. */
 function threadHasHistory(id) {
+  if (isDeleted(id)) return false;
   try {
     const data = readJson(path.join(CHATS_DIR, historyFileName(id)), null);
     return Boolean(data && Array.isArray(data.items) && data.items.length);
@@ -398,17 +487,22 @@ export function threadFor(docKey) {
   if (!docKey) return null;
   const remembered = registry.threads[registry.activeThreads[docKey]];
   const candidates = Object.values(registry.threads)
-    .filter((thread) => thread && thread.docKey === docKey)
+    .filter((thread) => thread && thread.docKey === docKey && !isDeleted(thread.id))
     .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
   // A remembered empty "new chat" must not hide the document's real
   // conversation. Prefer a thread with a live session or real panel history;
   // only fall back to the remembered/new thread when the document has neither.
-  if (remembered && remembered.docKey === docKey && (remembered.sessionId || threadHasHistory(remembered.id))) {
+  if (
+    remembered &&
+    remembered.docKey === docKey &&
+    !isDeleted(remembered.id) &&
+    (remembered.sessionId || threadHasHistory(remembered.id))
+  ) {
     return remembered;
   }
   const withContent = candidates.find((thread) => thread.sessionId || threadHasHistory(thread.id));
   if (withContent) return withContent;
-  if (remembered && remembered.docKey === docKey) return remembered;
+  if (remembered && remembered.docKey === docKey && !isDeleted(remembered.id)) return remembered;
   return candidates[0] || null;
 }
 
@@ -464,7 +558,8 @@ export async function list(limit = 40) {
     // session was pruned; only the current empty thread is kept.
     .filter(
       ([id, entry]) =>
-        Boolean(entry?.sessionId) || id === registry.currentKey || threadHasHistory(id),
+        !isDeleted(id) &&
+        (Boolean(entry?.sessionId) || id === registry.currentKey || threadHasHistory(id)),
     )
     .map(([id, entry]) => {
     const liveEntry = entry.sessionId ? byId.get(entry.sessionId) : null;
@@ -555,24 +650,45 @@ export function unbind(key) {
   return true;
 }
 
-export async function deleteSession(key) {
+/**
+ * Remove a thread binding durably, WITHOUT waiting for OpenCode.
+ *
+ * The slow part of deleting a chat is `opencode session delete` (it boots the
+ * CLI). Doing that first meant a quit, crash or stalled CLI left both the
+ * binding and the transcript on disk, so the next launch showed the deleted
+ * chat again. Callers persist the tombstone + binding + transcript first, then
+ * clean up OpenCode separately.
+ */
+export function forgetThread(key) {
   const entry = registry.threads[key];
-  const id = entry?.sessionId;
-  if (id) {
-    try {
-      const oc = resolveOpenCode();
-      await execFileAsync(oc.cmd, ['session', 'delete', id], {
-        // Same project scope the chats are created in (see opencodeSessions).
-        cwd: AGENT_DIR,
-        windowsHide: true,
-        shell: oc.shell,
-      });
-    } catch {
-      // A session OpenCode never persisted is not an error worth surfacing.
-    }
+  const sessionId = entry?.sessionId || null;
+  if (entry?.docKey && registry.activeThreads[entry.docKey] === key) {
+    delete registry.activeThreads[entry.docKey];
   }
-  unbind(key);
-  return { deleted: Boolean(id) };
+  if (key === registry.currentKey) registry.currentKey = null;
+  delete registry.threads[key];
+  save();
+  return { sessionId, existed: Boolean(entry) };
+}
+
+/** Best-effort OpenCode cleanup after the panel state is already durable. */
+export async function deleteOpencodeSession(sessionId) {
+  if (!sessionId) return false;
+  try {
+    const oc = resolveOpenCode();
+    await execFileAsync(oc.cmd, ['session', 'delete', sessionId], {
+      // Same project scope the chats are created in (see opencodeSessions).
+      cwd: AGENT_DIR,
+      windowsHide: true,
+      shell: oc.shell,
+      // A wedged CLI must not keep the deletion "in flight" forever.
+      timeout: 20000,
+    });
+    return true;
+  } catch {
+    // A session OpenCode never persisted is not an error worth surfacing.
+    return false;
+  }
 }
 
 /** Start over on one thread without touching its siblings. */

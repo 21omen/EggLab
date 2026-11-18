@@ -395,6 +395,9 @@ function migrateHistoryNames() {
     let id = data.threadId || data.docKey || null;
     if (!id && name === 'default.json') id = NO_DOC_KEY;
     if (!id) continue;
+    // Do not rename (and therefore keep alive) a transcript whose chat was
+    // deleted; the startup sweep will move it to `_trash`.
+    if (sessions.isDeleted(id)) continue;
     const targetName = historyFileName(id);
     const target = path.join(HISTORY_DIR, targetName);
     if (targetName === name) {
@@ -528,7 +531,7 @@ function sessionToItems(exported) {
  */
 export async function recoverMissingHistories(limit = 24) {
   const entries = Object.values(sessions.registryThreads())
-    .filter((entry) => entry && entry.sessionId)
+    .filter((entry) => entry && entry.sessionId && !sessions.isDeleted(entry.id))
     .slice(0, limit);
   let recovered = 0;
   for (const entry of entries) {
@@ -590,9 +593,14 @@ if (migratedHistoryFiles) agentLog(`history filenames migrated: ${migratedHistor
 const repairedThread = sessions.repairCurrent();
 if (repairedThread) agentLog('current thread repaired to a conversation with a session');
 const restored = sessions.current();
-let threadId = restored.key || NO_DOC_KEY;
-let docKey = restored.entry?.docKey || threadId;
-let docTitle = restored.entry?.docName || null;
+// A deleted chat may still be the remembered current thread when the previous
+// process died between marking it deleted and unbinding it. Never open it after
+// a restart: the watcher will attach the real PhotoCraft document right after.
+const restoredDeleted = Boolean(restored.key && sessions.isDeleted(restored.key));
+let threadId = restored.key && !restoredDeleted ? restored.key : NO_DOC_KEY;
+let docKey = restoredDeleted ? NO_DOC_KEY : restored.entry?.docKey || threadId;
+let docTitle = restoredDeleted ? null : restored.entry?.docName || null;
+if (restoredDeleted) agentLog('opened no chat: current thread was deleted');
 let history = readJson(historyFile(threadId), null);
 if ((!history || !Array.isArray(history.items)) && threadId === NO_DOC_KEY) {
   // Carry the pre-Phase-2 single-thread transcript into the no-document thread.
@@ -829,7 +837,13 @@ export async function deleteThread(key) {
   if (target === threadId && (active || turnRunning)) {
     throw new Error('The agent is still working here. Wait for it to finish or press stop before deleting the chat.');
   }
-  const removed = await sessions.deleteSession(target);
+  // Order matters. Write the tombstone and remove the binding/transcript
+  // BEFORE the OpenCode CLI call: a quit during that call used to leave both
+  // the entry and the file intact, and the startup heal faithfully brought the
+  // "deleted" chat back. The tombstone also survives a refused unlink or a late
+  // transcript write, so nothing can re-register it on the next launch.
+  sessions.markDeleted(target);
+  const removed = sessions.forgetThread(target);
 
   const file = historyFile(target);
   let fileRemoved = false;
@@ -849,7 +863,14 @@ export async function deleteThread(key) {
     threadId = fallback ? fallback.id : docKey;
     adoptThread();
   }
-  return { removed, fileRemoved };
+  agentLog(
+    `chat deleted ${target}${removed.sessionId ? ` (session ${removed.sessionId})` : ''}` +
+      `${fileRemoved ? '' : ' - transcript was already gone or could not be removed; tombstoned'}`,
+  );
+  // OpenCode cleanup is not part of durability. Let it finish in the background
+  // so a slow/wedged CLI never makes the delete look stuck (or loses it on quit).
+  sessions.deleteOpencodeSession(removed.sessionId).catch(() => {});
+  return { removed: { deleted: Boolean(removed.sessionId) }, fileRemoved };
 }
 
 /**
@@ -887,6 +908,9 @@ function healRegistryEntries() {
     // a migration can still carry the identity it had before; registering that
     // would recreate the orphan entry the migration just removed.
     if (historyFileName(id) !== name) continue;
+    // A deleted chat may leave a transcript behind (late write, refused
+    // unlink). The tombstone is authoritative: never heal it back into a chat.
+    if (sessions.isDeleted(id)) continue;
     sessions.ensureEntry(id, { docKey: data.docKey || id });
     healed++;
   }
@@ -927,7 +951,9 @@ export function pruneOrphanThreads() {
   // reduced with historyFileName. Adding historyFile(threadId) (an absolute
   // path) meant the active transcript could be treated as an orphan and
   // deleted at startup.
-  const registryIds = Object.keys(sessions.registryThreads());
+  const registryIds = Object.keys(sessions.registryThreads()).filter(
+    (id) => !sessions.isDeleted(id),
+  );
   // Never sweep a tree when the registry failed to load. A transient/empty
   // registry used to make every transcript look like an orphan.
   if (!registryIds.length) {
@@ -972,6 +998,17 @@ export function pruneEmptyThreads(olderThanMs = 24 * 60 * 60 * 1000) {
   let pruned = 0;
   for (const [id, entry] of Object.entries(sessions.registryThreads())) {
     if (!entry || id === currentThread) continue;
+    // A tombstoned thread should already be gone; sweep any binding and
+    // transcript a crash left behind before the age/session checks below.
+    if (sessions.isDeleted(id)) {
+      try {
+        const file = historyFile(id);
+        if (fs.existsSync(file)) fs.rmSync(file, { force: true });
+      } catch {}
+      sessions.unbind(id);
+      pruned++;
+      continue;
+    }
     if (entry.sessionId) continue;
     if (Date.now() - (Number(entry.updatedAt) || 0) < olderThanMs) continue;
     const file = historyFile(id);

@@ -236,38 +236,127 @@ export function sizeFor(aspect = settings.aspect, width = settings.width, height
   return { width: Number(width) || 1024, height: Number(height) || 1024 };
 }
 
-export function engineConfig() {
-  const cfgPath = path.join(settings.engineRoot, 'config.json');
-  const cfg = readJson(cfgPath, null);
-  const modelsDir = cfg?.models || settings.modelsDir;
+/**
+ * Engine paths and model file names, in the shape `egglab.ps1` expects.
+ *
+ * `config.json` is the authoritative record. The packaged app has no
+ * install.ps1 step (the NSIS installer only downloads the engine), so on a
+ * fresh install this file does not exist. The old code returned in-memory
+ * defaults and made setEngineModel() a no-op: a model that finished
+ * downloading was never selected, and setup kept reporting the old default
+ * file as "missing" forever. Create/repair the file on first contact instead.
+ */
+function defaultEngineConfig() {
   return {
-    path: cfgPath,
-    raw: cfg,
-    engine: cfg?.engine || path.join(ENGINE_DIR, 'sd'),
-    models: modelsDir,
-    diffusion: cfg?.diffusion || 'qwen-image-2.1-UC-fp8.safetensors',
-    vae: cfg?.vae || 'qwen_image_2.1_vae_bf16.safetensors',
-    llm: cfg?.llm || 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf',
-    llmVision: cfg?.llmVision || 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf',
-    turbo: cfg?.turbo || {
+    engine: path.join(ENGINE_DIR, 'sd'),
+    models: settings.modelsDir || MODELS_DIR,
+    diffusion: 'qwen-image-2.1-UC-fp8.safetensors',
+    vae: 'qwen_image_2.1_vae_bf16.safetensors',
+    llm: 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-Q6_K.gguf',
+    llmVision: 'Qwen3VL-8B-Uncensored-HauhauCS-Balanced-mmproj-f16.gguf',
+    turbo: {
       lora: 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors',
       steps: 8,
       cfg: 1,
     },
+    defaults: {
+      width: 1024,
+      height: 1024,
+      steps: 40,
+      cfg: 1,
+      method: 'euler',
+      offload: true,
+    },
+  };
+}
+
+/**
+ * Read the engine config, creating it (or filling missing keys) when needed.
+ * Safe to call on every status poll: it only writes when something changed.
+ */
+export function ensureEngineConfig() {
+  const cfgPath = path.join(settings.engineRoot, 'config.json');
+  const base = defaultEngineConfig();
+  let raw = readJson(cfgPath, null);
+  let changed = false;
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    raw = base;
+    changed = true;
+  } else {
+    for (const key of ['engine', 'models', 'diffusion', 'vae', 'llm', 'llmVision']) {
+      if (typeof raw[key] !== 'string' || !raw[key].trim()) {
+        raw[key] = base[key];
+        changed = true;
+      }
+    }
+    if (!raw.turbo || typeof raw.turbo !== 'object' || !raw.turbo.lora) {
+      raw.turbo = { ...base.turbo, ...(raw.turbo && typeof raw.turbo === 'object' ? raw.turbo : {}) };
+      if (!raw.turbo.lora) raw.turbo.lora = base.turbo.lora;
+      changed = true;
+    }
+    if (!raw.defaults || typeof raw.defaults !== 'object') {
+      raw.defaults = base.defaults;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    try {
+      writeJson(cfgPath, raw);
+    } catch {
+      // A read-only profile must not break status; the defaults still work for
+      // this session and a later run can persist them.
+    }
+  }
+
+  // config.json is authoritative. Mirror its models folder into settings so a
+  // legacy `settings.modelsDir` (the old default pointed at a folder that no
+  // longer existed) can never disagree with the downloader and status.
+  if (raw.models && settings.modelsDir !== raw.models) {
+    try {
+      patchSettings({ modelsDir: raw.models });
+    } catch {}
+  }
+  try {
+    fs.mkdirSync(raw.models, { recursive: true });
+  } catch {}
+
+  return raw;
+}
+
+export function engineConfig() {
+  const cfgPath = path.join(settings.engineRoot, 'config.json');
+  const raw = ensureEngineConfig();
+  return {
+    path: cfgPath,
+    raw,
+    engine: raw.engine,
+    models: raw.models,
+    diffusion: raw.diffusion,
+    vae: raw.vae,
+    llm: raw.llm,
+    llmVision: raw.llmVision,
+    turbo: raw.turbo,
   };
 }
 
 /** Point the engine config at a different model file (after a download). */
 export function setEngineModel(key, filename) {
   const cfg = engineConfig();
-  if (!cfg.raw) return null;
+  const raw = cfg.raw || ensureEngineConfig();
+  if (!raw) throw new Error('EggLab could not create the engine config file.');
   if (key === 'turbo') {
-    cfg.raw.turbo = { ...(cfg.raw.turbo || {}), lora: filename };
+    raw.turbo = { ...(raw.turbo || {}), lora: filename };
   } else {
-    cfg.raw[key] = filename;
+    raw[key] = filename;
   }
-  writeJson(cfg.path, cfg.raw);
-  return cfg.raw;
+  try {
+    writeJson(cfg.path, raw);
+  } catch (err) {
+    throw new Error(`Model selected, but EggLab could not write ${cfg.path}: ${err.message}`);
+  }
+  return raw;
 }
 
 export function modelFileFor(key) {
@@ -497,7 +586,11 @@ export async function opencodeModels(force = false) {
 }
 
 export function ensureDirs() {
-  for (const dir of [settings.modelsDir]) {
+  let modelsDir = settings.modelsDir;
+  try {
+    modelsDir = engineConfig().models || modelsDir;
+  } catch {}
+  for (const dir of [modelsDir]) {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch {}

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { onEvent, emit } from './service/bus.mjs';
 import { startServer, TOKEN } from './service/http.mjs';
-import { getSettings, patchSettings, opencodeModels } from './service/settings.mjs';
+import { getSettings, patchSettings, opencodeModels, ensureDirs } from './service/settings.mjs';
 import { engineStatus, listJobs, startJob, cancelJob, cancelAllJobs, cleanupStaleEngines, killActiveEngine } from './service/engine.mjs';
 import { modelStatus, startDownloads, cancelDownload, cancelAgentDownloads, retryDownload, useVariant } from './service/models.mjs';
 import * as pc from './service/photocraft.mjs';
@@ -355,8 +355,15 @@ if (!gotLock) {
     trace('control written');
     chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
     trace('workspace built');
+    try {
+      ensureDirs();
+    } catch {}
     chat.sanitizeOnLoad();
     trace('history sanitized');
+    // A tombstone outlives a crash between "deleted" and "unbind": drop any
+    // binding it still matches before the backups/sweeps look at the registry.
+    const purgedBindings = sessions.purgeDeletedThreads();
+    if (purgedBindings) trace(`purged ${purgedBindings} deleted chat binding(s)`);
     const sessionBackup = chat.backupSessionData();
     if (sessionBackup) trace(`session backup -> ${sessionBackup}`);
     const pruned = chat.pruneOrphanThreads();

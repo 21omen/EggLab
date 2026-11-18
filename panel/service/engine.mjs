@@ -306,6 +306,7 @@ export function engineStatus() {
     engineExists: fs.existsSync(cli),
     models,
     modelsDir: cfg.models,
+    configPath: cfg.path,
     config: { diffusion: cfg.diffusion, vae: cfg.vae, llm: cfg.llm, llmVision: cfg.llmVision, turbo: cfg.turbo?.lora },
     workflows: { quality, turbo },
     defaults: {

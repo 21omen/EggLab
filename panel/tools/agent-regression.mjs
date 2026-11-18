@@ -362,6 +362,21 @@ check('generated permissions do not expose read', !/action:\s*'read'/.test(permi
 check('generated config passes inspect roots', /EGGLAB_READ_ROOTS/.test(chatSource));
 check('post-run document migration covers files', /savedDuringRun/.test(read('main.mjs')) && /createdDraftDuringRun/.test(read('main.mjs')));
 check('low-VRAM sub-megapixel retry exists', /lowVramRetry/.test(read('service/engine.mjs')));
+// Deleted chats must not come back when the app reopens. The durable part
+// (tombstone + registry + transcript) has to happen before the slow OpenCode
+// call, and startup repair must never heal a tombstoned transcript.
+const sessionsSource = read('service/sessions.mjs');
+check(
+  'delete persists before OpenCode cleanup',
+  /markDeleted\(target\)[\s\S]{0,2600}deleteOpencodeSession/.test(chatSource) &&
+    /markDeleted\(target\)[\s\S]{0,2600}forgetThread\(target\)/.test(chatSource),
+);
+check('startup heal ignores deleted threads', /sessions\.isDeleted\(id\)/.test(chatSource));
+check(
+  'deleted bindings purge at startup',
+  /purgeDeletedThreads/.test(sessionsSource) && /sessions\.purgeDeletedThreads\(\)/.test(read('main.mjs')),
+);
+check('tombstones are written to disk', /DELETED_FILE/.test(sessionsSource) && /deleted-threads\.json/.test(sessionsSource));
 check('OpenCode v2 uses a private server', /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource));
 check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
 check('Stop covers the retry gap', /let turnRunning/.test(chatSource) && /turnStopped/.test(chatSource));

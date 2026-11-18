@@ -166,6 +166,51 @@ repaired without deleting history. The existing `make poster design for egglab`
 chat was moved from `taunggyi-team` to `egglab-poster` with its four items
 intact.
 
+### 4.4b “Deleted chats come back when the app reopens”
+
+Found in 0.3.24. Deleting a chat was **not durable until after a slow OpenCode
+call**:
+
+1. `deleteThread()` awaited `opencode session delete` first.
+2. Only then did it unbind the registry and unlink the transcript.
+
+A quit/crash/wedged CLI in that window left all three parts intact. The startup
+heal then re-registered any content-bearing transcript, so the “deleted” chat
+reappeared. The same result followed a late transcript write or a Windows unlink
+that failed (the error was swallowed).
+
+Fix in 0.3.25:
+
+- `sessions.markDeleted()` writes a tombstone (`deleted-threads.json`) **before**
+  any cleanup.
+- The binding is removed synchronously (`forgetThread`) and the transcript is
+  unlinked; the OpenCode session cleanup runs afterwards with a 20 s timeout and
+  cannot undo the deletion.
+- Startup heal, OpenCode recovery, filename migration and the orphan sweep all
+  honour the tombstone. A leftover file is moved to `chats/_trash`, never
+  re-registered.
+- `purgeDeletedThreads()` drops a binding that survived a crash, and the chat
+  module refuses to restore a tombstoned current thread.
+- A tombstone is cleared only by an explicit new message (`bind`) or a new chat
+  on the same primary id, so the document remains usable.
+
+### 4.4c “Main model downloads, setup still says model not found”
+
+Found in 0.3.25. A packaged install has **no `config.json`**: the NSIS installer
+only downloads the engine and `install.ps1` is a dev script. `engineConfig()`
+fell back to in-memory defaults, and `setEngineModel()` returned `null` when the
+file did not exist. Downloading the main Qwen checkpoint therefore finished, but
+the engine config was never updated: `modelStatus()` kept checking the old
+default file and setup kept reporting it missing. Manual variant switching had
+the same silent no-op.
+
+Fix: `ensureEngineConfig()` creates (and repairs) `%APPDATA%\EggLab\config.json`
+on first read, `setEngineModel()` always persists and reports a write failure,
+and `config.json` is the single models-folder authority (mirrored into
+`settings.modelsDir`). `/api/setup` and `/api/status` now expose the config path.
+A regression test (`tools/model-config-test.mjs`) proves a fresh profile, a
+newly selected model and a repaired config all resolve to the same path.
+
 ### 4.5 Watcher and switch races
 
 - `syncDocument()` updates `lastDocKey`/`lastDocTab` **after** `useDocument()`
@@ -183,12 +228,15 @@ intact.
 | Old transcript files migrated | **10** |
 | Transcripts recovered from OpenCode | **5**, then **2** repaired |
 | Real skin-retouch chat | **2 items**, 16 tool chips, 2,276-char answer |
-| Session list | **7 real conversations** after cleanup (was 15 mixed rows) |
+| Session list | **9 real conversations** current (was 15 mixed rows after the first cleanup) |
 | Empty/test threads removed | eval + skin test threads deleted |
 | New thread on a doc with history | created `<doc>#2` |
 | Active-document send binding | chat created under `egglab-logo-directions`, not the previous doc |
 | Static agent/MCP/setup gate | all pass |
 | Filename collision unit test | 9 ids, 9 unique names, max 70 chars |
+| 0.3.25 delete + late write + restart | chat stays deleted; leftover transcript moved to `chats/_trash` |
+| 0.3.25 missing `config.json` | file recreated; main Q4_K_M selected; setup `ready: true` |
+| 0.3.25 render after config recreation | 832×1024 turbo done in 25.7 s |
 
 Backups made before migration:
 `%APPDATA%\EggLab\_backup-session-fix-20261118-180805\`.
@@ -205,11 +253,11 @@ project and generated images remain, but that chat history is gone.
 
 This was a test/repair mistake, not a product-code deletion. The new
 `backupSessionData()` keeps three pre-prune snapshots so a future repair cannot
-repeat it. Current list after cleanup: **7 real conversations** (downloads,
-hh-beauty, gp-taunggyi, eval-mask primary, eval-mask #2, reconstructed
-skin-retouch, and the poster chat moved to `egglab-poster`). The logo and the
-earlier Taunggyi conversation are preserved under `eval-mask.pcraft`; the new
-move API can retarget them without deleting history.
+repeat it. Current list: **9 real conversations** (downloads, hh-beauty,
+gp-taunggyi, eval-mask primary, eval-mask #2, reconstructed skin-retouch, the
+moved poster chat, plus the two untitled studio conversations). The logo and the
+earlier Taunggyi conversation are preserved under `eval-mask.pcraft`; the move
+API can retarget them without deleting history.
 
 ---
 
