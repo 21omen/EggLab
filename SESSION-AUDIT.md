@@ -151,6 +151,21 @@ before appending the user message. If the active document differs from
 `chat.documentKey()`, the chat adopts that document first. This closes the
 polling window that filed a message under the previous canvas.
 
+### 4.4a “Chat clears after the agent finishes”
+
+Found in 0.3.23: an agent turn can **save a new project** (for example
+`egglab-poster`) and leave PhotoCraft on it. The watcher then opened the new
+project's empty thread because the post-run migration only handled
+`no-document`/`untitled:` threads. The conversation stayed on the old document,
+but the UI showed the new empty thread.
+
+Fix: after a recent run, a `.pcraft` written during that run (mtime ≥ run start)
+or a new untitled draft now carries the thread across. Also added
+`POST /api/sessions/move` and `chat.moveThread()` so a legacy mismatch can be
+repaired without deleting history. The existing `make poster design for egglab`
+chat was moved from `taunggyi-team` to `egglab-poster` with its four items
+intact.
+
 ### 4.5 Watcher and switch races
 
 - `syncDocument()` updates `lastDocKey`/`lastDocTab` **after** `useDocument()`
@@ -168,7 +183,7 @@ polling window that filed a message under the previous canvas.
 | Old transcript files migrated | **10** |
 | Transcripts recovered from OpenCode | **5**, then **2** repaired |
 | Real skin-retouch chat | **2 items**, 16 tool chips, 2,276-char answer |
-| Session list | **6 real conversations** after cleanup (was 15 mixed rows) |
+| Session list | **7 real conversations** after cleanup (was 15 mixed rows) |
 | Empty/test threads removed | eval + skin test threads deleted |
 | New thread on a doc with history | created `<doc>#2` |
 | Active-document send binding | chat created under `egglab-logo-directions`, not the previous doc |
@@ -190,10 +205,11 @@ project and generated images remain, but that chat history is gone.
 
 This was a test/repair mistake, not a product-code deletion. The new
 `backupSessionData()` keeps three pre-prune snapshots so a future repair cannot
-repeat it. Current list after cleanup: **6 real conversations** (downloads,
+repeat it. Current list after cleanup: **7 real conversations** (downloads,
 hh-beauty, gp-taunggyi, eval-mask primary, eval-mask #2, reconstructed
-skin-retouch). The logo and Taunggyi conversations are preserved under
-`eval-mask.pcraft`, which is why they still need a “move chat” action.
+skin-retouch, and the poster chat moved to `egglab-poster`). The logo and the
+earlier Taunggyi conversation are preserved under `eval-mask.pcraft`; the new
+move API can retarget them without deleting history.
 
 ---
 

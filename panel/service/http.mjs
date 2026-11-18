@@ -224,6 +224,9 @@ async function handle(req, res, url) {
     case 'POST /api/sessions/delete':
       return json(res, 200, await chat.deleteThread(body.key));
 
+    case 'POST /api/sessions/move':
+      return json(res, 200, chat.moveThread(body.key, body.docKey, body.title || null));
+
     case 'POST /api/chat': {
       // Same stale-binding guard as the IPC path: bind to the document that is
       // actually active in PhotoCraft before appending the user message.

@@ -14,7 +14,13 @@ Activate for new design, poster, advertisement, packaging, campaign artwork, bra
    - find one specific detail in the project — place, material, audience, product, language, ritual or constraint;
    - generate 3–5 directions that differ **in kind**, not five layouts of the same idea;
    - select one and give the reason it fits this project.
-4. Do not use randomness or forced weirdness as a substitute for relevance. A direction is different only when the difference has a reason in the brief.
+4. Pull the alternatives from different **method lenses**, not random style cards:
+   - typographic (the message is the form),
+   - physical/material (the piece behaves like paper, fabric, metal, food),
+   - documentary/observed (a real place, person or process),
+   - abstract/systemic (diagram, grid, data, ritual structure),
+   - product-specific (a detail only this subject has).
+   Do not use randomness or forced weirdness as a substitute for relevance. A direction is different only when the difference has a reason in the brief.
 5. Choose the visual method before the finish: a print should feel printed, a photograph should behave like photography, a 3D render should keep clean geometry and physical light, a vector mark should stay vector. Do not let a generic AI finish erase the method.
 6. Select one concept and express it in a short phrase. One dominant visual idea per piece.
 7. Set format/safe zones/grid, then composition, focal subject, palette, typography and finishing treatment—in that order.

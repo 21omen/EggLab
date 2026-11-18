@@ -396,29 +396,18 @@ if (!gotLock) {
     let lastDocKey = null;
     let lastDocTab = null;
     let lastPcUp = null;
-    let sawBusy = false;
     const NO_DOCUMENT = 'no-document';
     const isUntitledKey = (value) => typeof value === 'string' && value.startsWith('untitled:');
     const isPcraftKey = (value) => typeof value === 'string' && value.toLowerCase().endsWith('.pcraft');
-    // A thread with no document of its own: it may follow a document that is
-    // created for it, but it can never lose one to an unrelated document.
-    const isDetachedKey = (value) => value === NO_DOCUMENT || isUntitledKey(value);
     const syncDocument = async () => {
       try {
         // An agent run may create a document. Switching the chat thread while
         // the run is streaming would move the transcript out from under it, so
         // wait until the turn ends — the migration below then carries the whole
         // exchange onto the new document.
-        if (chat.isBusy()) {
-          sawBusy = true;
-          return;
-        }
+        if (chat.isBusy()) return;
         const state = await pc.projectState();
-        if (chat.isBusy()) {
-          // A run started while the state call was in flight.
-          sawBusy = true;
-          return;
-        }
+        if (chat.isBusy()) return;
 
         const doc = state.document || null;
         // PhotoCraft closed (or its menu could not be read) is not a document
@@ -455,11 +444,6 @@ if (!gotLock) {
         // The user just picked a chat and PhotoCraft is still bringing its
         // document forward; do not drag the thread back while it does.
         if (Date.now() < holdSyncUntil) return;
-        // Only a poll that really processes a change may spend the flag — a
-        // deferred poll still has to run the post-run migration.
-        const afterRun = sawBusy;
-        if (afterRun) sawBusy = false;
-
         // Saving an untitled document for the first time changes its identity
         // (untitled:<name>:<w>x<h> -> the real path). Carry its conversation
         // across, but only when the SAME PhotoCraft tab changed identity: a
@@ -472,20 +456,24 @@ if (!gotLock) {
           !isUntitledKey(key) &&
           attachedKey === lastDocKey;
 
-        let migrateFrom = draftBecameFile ? lastDocKey : null;
-        if (!migrateFrom && afterRun && isDetachedKey(attachedKey) && isDetachedKey(lastDocKey) && isPcraftKey(key)) {
-          // The run started with no document of its own — the only session
-          // available while PhotoCraft had nothing open, or a draft — and this
-          // project file was written during the turn. The conversation belongs
-          // with the document it produced, so it follows instead of being
-          // abandoned on an empty thread.
-          const runAt = chat.lastRunStartedAt();
-          let savedDuringRun = false;
+        // An agent turn can also SAVE A NEW PROJECT (for example `egglab-poster`)
+        // and leave PhotoCraft on it. The old rule only migrated from
+        // `no-document`/draft threads, so a chat started on `taunggyi-team`
+        // stayed there while the watcher opened the new project's empty thread:
+        // the user saw the conversation disappear the moment the turn ended.
+        const runAt = chat.lastRunStartedAt();
+        const recentRun = Boolean(runAt) && Date.now() - runAt < 30 * 60 * 1000;
+        const sameThreadDocument = attachedKey === lastDocKey && key !== attachedKey;
+        let savedDuringRun = false;
+        if (recentRun && sameThreadDocument && isPcraftKey(key)) {
           try {
-            savedDuringRun = Boolean(runAt) && fs.statSync(key).mtimeMs >= runAt - 2000;
+            savedDuringRun = fs.statSync(key).mtimeMs >= runAt - 2000;
           } catch {}
-          if (savedDuringRun) migrateFrom = attachedKey;
         }
+        const createdDraftDuringRun = recentRun && sameThreadDocument && isUntitledKey(key);
+
+        let migrateFrom =
+          draftBecameFile || savedDuringRun || createdDraftDuringRun ? attachedKey : null;
         if (migrateFrom) {
           if (chat.migrateThread(migrateFrom, key, doc?.name || null)) trace(`thread migrated -> ${key}`);
         }
@@ -719,6 +707,7 @@ ipcMain.handle('chat:history', () => chat.getHistory());
 ipcMain.handle('sessions:list', () => sessions.list());
 ipcMain.handle('sessions:rename', (e, { key, title }) => sessions.rename(key, title));
 ipcMain.handle('sessions:delete', (e, key) => chat.deleteThread(key));
+ipcMain.handle('sessions:move', (e, { key, docKey, title }) => chat.moveThread(key, docKey, title || null));
 ipcMain.handle('sessions:switch', async (e, { key }) => {
   if (chat.isBusy()) {
     throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');

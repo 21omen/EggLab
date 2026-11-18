@@ -765,6 +765,45 @@ export function newThread() {
   return { key: docKey, threadId, changed: true, sessionID: null, title: entry.title || null };
 }
 
+/**
+ * Move the selected conversation to another document (manual repair / an agent
+ * that saved a new project). The thread id and OpenCode binding stay intact;
+ * only the document ownership and grouping change.
+ */
+export function moveThread(key, targetDocKey, title = null) {
+  const id = String(key || threadId);
+  const dest = String(targetDocKey || '').trim();
+  if (!dest) throw new Error('A target document key is required.');
+  const entry = sessions.entryFor(id);
+  if (!entry) throw new Error('No such chat.');
+  if (entry.docKey === dest) return { ...entry, changed: false };
+  if (id === threadId) saveHistory();
+  const file = historyFile(id);
+  const data = readThread(file);
+  if (data) {
+    writeJson(file, { ...data, threadId: id, docKey: dest });
+  }
+  sessions.retarget(id, dest, title);
+  // Move to the document that is on screen: adopt the moved conversation even
+  // if the current thread was an empty placeholder for that document.
+  if (id === threadId || (docKey === dest && threadId === dest)) {
+    threadId = id;
+    docKey = dest;
+    docTitle = title || docTitle;
+    history = readThread(historyFile(threadId)) || { items: [] };
+    const moved = sessions.entryFor(id);
+    emit('chat', {
+      action: 'thread',
+      docKey,
+      threadId,
+      sessionID: moved?.sessionId || null,
+      title: moved?.title || title || docTitle || null,
+      items: history.items,
+    });
+  }
+  return { ...sessions.entryFor(id), changed: true };
+}
+
 /** The document currently owning the chat thread on screen. */
 export function documentKey() {
   return docKey;

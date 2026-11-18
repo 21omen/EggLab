@@ -360,6 +360,7 @@ check('generated permissions deny everything by default', /action:\s*'\*',\s*res
 check('generated permissions allow egl tools', /action:\s*'egl_\*'/.test(permissionBlock));
 check('generated permissions do not expose read', !/action:\s*'read'/.test(permissionBlock));
 check('generated config passes inspect roots', /EGGLAB_READ_ROOTS/.test(chatSource));
+check('post-run document migration covers files', /savedDuringRun/.test(read('main.mjs')) && /createdDraftDuringRun/.test(read('main.mjs')));
 check('OpenCode v2 uses a private server', /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource));
 check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
 check('Stop covers the retry gap', /let turnRunning/.test(chatSource) && /turnStopped/.test(chatSource));

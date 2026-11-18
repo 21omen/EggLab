@@ -512,6 +512,27 @@ export async function repairDeadSessions() {
   return cleared;
 }
 
+/**
+ * Move one thread to another PhotoCraft document without renaming its id or
+ * touching its OpenCode session. Used when an agent creates/saves a new project
+ * and the conversation belongs with that project, and by the manual "move
+ * chat" repair path.
+ */
+export function retarget(key, docKey, docName = null) {
+  const entry = registry.threads[key];
+  if (!entry) return null;
+  const from = entry.docKey;
+  if (from === docKey) return entry;
+  entry.docKey = docKey;
+  if (docName) entry.docName = docName;
+  entry.updatedAt = Date.now();
+  if (registry.activeThreads[from] === key) delete registry.activeThreads[from];
+  registry.activeThreads[docKey] = key;
+  if (registry.currentKey === docKey) registry.currentKey = key;
+  save();
+  return entry;
+}
+
 /** Rename in the panel (OpenCode cannot rename). */
 export function rename(key, title) {
   const entry = registry.threads[key];
