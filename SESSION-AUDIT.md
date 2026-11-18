@@ -168,7 +168,7 @@ polling window that filed a message under the previous canvas.
 | Old transcript files migrated | **10** |
 | Transcripts recovered from OpenCode | **5**, then **2** repaired |
 | Real skin-retouch chat | **2 items**, 16 tool chips, 2,276-char answer |
-| Session list | **7 real conversations** (was 15 mixed rows) |
+| Session list | **6 real conversations** after cleanup (was 15 mixed rows) |
 | Empty/test threads removed | eval + skin test threads deleted |
 | New thread on a doc with history | created `<doc>#2` |
 | Active-document send binding | chat created under `egglab-logo-directions`, not the previous doc |
@@ -177,6 +177,23 @@ polling window that filed a message under the previous canvas.
 
 Backups made before migration:
 `%APPDATA%\EggLab\_backup-session-fix-20261118-180805\`.
+
+### 5.1 Incident during the repair (must be recorded)
+
+While validating the recovery path, I restored the **pre-fix** session backup
+after some recovered transcripts had already been written. OpenCode had already
+purged the old real sessions, so the restore overwrote the recovered copies.
+The skin-retouch primary conversation was reconstructed from the transcript
+that had been displayed during verification (2 items, 2,278 characters). The
+Burmese studio primary transcript could not be reconstructed; its PhotoCraft
+project and generated images remain, but that chat history is gone.
+
+This was a test/repair mistake, not a product-code deletion. The new
+`backupSessionData()` keeps three pre-prune snapshots so a future repair cannot
+repeat it. Current list after cleanup: **6 real conversations** (downloads,
+hh-beauty, gp-taunggyi, eval-mask primary, eval-mask #2, reconstructed
+skin-retouch). The logo and Taunggyi conversations are preserved under
+`eval-mask.pcraft`, which is why they still need a “move chat” action.
 
 ---
 
