@@ -357,6 +357,8 @@ if (!gotLock) {
     trace('workspace built');
     chat.sanitizeOnLoad();
     trace('history sanitized');
+    const sessionBackup = chat.backupSessionData();
+    if (sessionBackup) trace(`session backup -> ${sessionBackup}`);
     const pruned = chat.pruneOrphanThreads();
     if (pruned) trace(`pruned ${pruned} orphan chat transcript(s)`);
     const empties = chat.pruneEmptyThreads();
@@ -367,8 +369,13 @@ if (!gotLock) {
     // has the messages, so this is a background restore, not a blank chat.
     chat
       .recoverMissingHistories(24)
-      .then((recovered) => {
+      .then(async (recovered) => {
         if (recovered) trace(`recovered ${recovered} transcript(s) from OpenCode`);
+        // After recovery, drop only bindings that a successful live session
+        // list proves are gone. The panel transcript remains; the next message
+        // starts a fresh OpenCode session instead of failing on a dead id.
+        const cleared = await sessions.repairDeadSessions();
+        if (cleared) trace(`cleared ${cleared} dead OpenCode session binding(s)`);
       })
       .catch((err) => trace(`transcript recovery failed: ${err.message}`));
 

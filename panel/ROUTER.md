@@ -70,7 +70,7 @@ Load the Qwen 2.1 feature research for any Qwen generation/editing decision. Loa
 5. Selected visual profile/style card.
 6. General design heuristics.
 
-If same-level rules conflict, prefer the narrower current-task rule and record it in job state. Do not silently discard the other rule; mention material trade-offs.
+If same-level rules conflict, prefer the narrower current-task rule and record it with `egl_job_state`. Do not silently discard the other rule; mention material trade-offs.
 
 ## Retrieval policy
 - Search manifest, not the whole directory.

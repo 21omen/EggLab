@@ -30,6 +30,13 @@ cases:
     conditional: [photocraft-production]
     must_not: [misspell_text, substitute_editable_copy]
     checks: [exact_spelling, legibility, studio_lighting, inspected_output]
+  - id: anti_default_direction_26
+    category: creative_direction
+    brief: Create a launch poster for a small family tea shop in Taunggyi without the obvious food-photo-and-red-badge layout.
+    must_load: [design-direction, qa-delivery]
+    conditional: [asset-planning, image-generation, photocraft-production]
+    must_not: [arbitrary_novelty, stock_category_imagery]
+    checks: [specific_project_detail, generic_default_named, directions_differ_in_kind, chosen_reason]
   - id: object_remove_05
     category: local_edit
     brief: Remove one named object and preserve everything else in the photo.

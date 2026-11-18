@@ -15,21 +15,23 @@ engine:
   accepted_dimensions: {min: null, max: null, multiple_of: null}
   max_references: null
   recommended_reference_count: null
-  transparent_rgba: unknown
-  inpaint_modes: []
-  outpaint_supported: unknown
-  parallel_render_supported: unknown
+  transparent_rgba: true
+  inpaint_modes: ["crop", "inpaint"]
+  outpaint_supported: false
+  parallel_render_supported: false
   observed_vram_gb: null
   license_name: unknown
   license_url: null
 photocraft:
-  running: unknown
-  version: null
+  capability_source: "panel code; verify live with egl_status"
+  live_status_tool: egl_status
+  running: "query egl_status"
+  version: "query egl_status"
   command_catalog_checked_at: null
-  supports_batch: unknown
-  batch_stops_on_first_error: unknown
-  supports_layer_masks: unknown
-  supports_editable_type: unknown
+  supports_batch: true
+  batch_stops_on_first_error: true
+  supports_layer_masks: true
+  supports_editable_type: true
 budgets:
   max_heavy_renders_per_turn: 2  # v1 legacy default; override only from actual runtime/time budget
   max_retry_after_transient: 1

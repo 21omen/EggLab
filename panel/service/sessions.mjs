@@ -20,7 +20,8 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { visionForModel, resolveOpenCode } from './settings.mjs';
-import { AGENT_DIR, DATA_DIR, OUT_DIR, TMP_DIR, readJson, writeJson, uid } from './paths.mjs';
+import { AGENT_DIR, CHATS_DIR, DATA_DIR, OUT_DIR, TMP_DIR, readJson, writeJson, uid } from './paths.mjs';
+import { historyFileName } from './history-names.mjs';
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_FILE = path.join(DATA_DIR, 'sessions.json');
@@ -104,9 +105,11 @@ export async function opencodeSessions(limit = 40) {
       },
     );
     const parsed = JSON.parse(String(stdout).trim() || '[]');
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
-    return [];
+    // null means "could not ask", not "no sessions". Callers must not clear
+    // bindings or treat chats as dead on a transient CLI failure.
+    return null;
   }
 }
 
@@ -380,6 +383,17 @@ export function registryThreads() {
  * A brand-new document has none, and the caller then falls back to the primary
  * thread id (the document key), which is created on first contact.
  */
+/** A panel transcript with messages is a real conversation even if its
+ * OpenCode binding was pruned. Used only for routing/listing, never for binding. */
+function threadHasHistory(id) {
+  try {
+    const data = readJson(path.join(CHATS_DIR, historyFileName(id)), null);
+    return Boolean(data && Array.isArray(data.items) && data.items.length);
+  } catch {
+    return false;
+  }
+}
+
 export function threadFor(docKey) {
   if (!docKey) return null;
   const remembered = registry.threads[registry.activeThreads[docKey]];
@@ -387,12 +401,13 @@ export function threadFor(docKey) {
     .filter((thread) => thread && thread.docKey === docKey)
     .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
   // A remembered empty "new chat" must not hide the document's real
-  // conversation. Prefer the remembered thread when it has an OpenCode session;
-  // otherwise fall back to the newest thread that does. If the document has no
-  // session at all, keep the remembered/new thread.
-  if (remembered && remembered.docKey === docKey && remembered.sessionId) return remembered;
-  const withSession = candidates.find((thread) => thread.sessionId);
-  if (withSession) return withSession;
+  // conversation. Prefer a thread with a live session or real panel history;
+  // only fall back to the remembered/new thread when the document has neither.
+  if (remembered && remembered.docKey === docKey && (remembered.sessionId || threadHasHistory(remembered.id))) {
+    return remembered;
+  }
+  const withContent = candidates.find((thread) => thread.sessionId || threadHasHistory(thread.id));
+  if (withContent) return withContent;
   if (remembered && remembered.docKey === docKey) return remembered;
   return candidates[0] || null;
 }
@@ -406,7 +421,8 @@ export function repairCurrent() {
   const currentThread = registry.threads[registry.currentKey];
   if (!currentThread || currentThread.sessionId) return false;
   const better = threadFor(currentThread.docKey);
-  if (!better || better.id === currentThread.id || !better.sessionId) return false;
+  if (!better || better.id === currentThread.id) return false;
+  if (!better.sessionId && !threadHasHistory(better.id)) return false;
   registry.currentKey = better.id;
   registry.activeThreads[currentThread.docKey] = better.id;
   save();
@@ -441,12 +457,15 @@ export function isTransientDocKey(key) {
 /** The registry, merged with OpenCode's live list so dead ids are visible. */
 export async function list(limit = 40) {
   const live = await opencodeSessions(limit);
-  const byId = new Map(live.map((s) => [s.id, s]));
+  const byId = new Map((live || []).map((s) => [s.id, s]));
   const docs = Object.entries(registry.threads)
     // An empty "new chat" that the user never sent to is not a conversation.
-    // Keep only the thread currently on screen so the list is not filled with
-    // "Untitled chat" rows after an accidental click.
-    .filter(([id, entry]) => Boolean(entry?.sessionId) || id === registry.currentKey)
+    // A thread with real panel history stays visible even if its OpenCode
+    // session was pruned; only the current empty thread is kept.
+    .filter(
+      ([id, entry]) =>
+        Boolean(entry?.sessionId) || id === registry.currentKey || threadHasHistory(id),
+    )
     .map(([id, entry]) => {
     const liveEntry = entry.sessionId ? byId.get(entry.sessionId) : null;
     return {
@@ -469,6 +488,28 @@ export async function list(limit = 40) {
     };
   });
   return { currentKey: registry.currentKey, docs: docs.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)) };
+}
+
+/**
+ * A dead OpenCode binding must not poison a panel conversation forever. If the
+ * CLI returns a real session list and a thread's id is absent, clear the
+ * binding; the next message starts a fresh OpenCode session while the panel
+ * transcript stays intact. Never run this when the list is null/empty because
+ * that is indistinguishable from a transient CLI failure.
+ */
+export async function repairDeadSessions() {
+  const live = await opencodeSessions(200);
+  if (!Array.isArray(live) || !live.length) return 0;
+  const ids = new Set(live.map((session) => session.id));
+  let cleared = 0;
+  for (const entry of Object.values(registry.threads)) {
+    if (!entry?.sessionId || ids.has(entry.sessionId)) continue;
+    entry.sessionId = null;
+    entry.updatedAt = Date.now();
+    cleared++;
+  }
+  if (cleared) save();
+  return cleared;
 }
 
 /** Rename in the panel (OpenCode cannot rename). */

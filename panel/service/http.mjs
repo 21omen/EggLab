@@ -196,6 +196,12 @@ async function handle(req, res, url) {
     case 'GET /api/chat':
       return json(res, 200, chat.getHistory());
 
+    case 'GET /api/job-state':
+      return json(res, 200, chat.getJobState());
+
+    case 'PATCH /api/job-state':
+      return json(res, 200, chat.patchJobState(body?.patch || body));
+
     case 'GET /api/sessions':
       return json(res, 200, await sessions.list(Number(body?.limit) || 40));
 

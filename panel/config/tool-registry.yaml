@@ -1,98 +1,73 @@
-# Names recovered from original EggLab instructions. NOT an API schema.
-version: 1
-schema_status: names_only_until_live_schema_discovery
-forbidden_substitutions: [photocraft_status]  # egglab_status includes PhotoCraft per v1
-primary_tools:
-  - egglab_status
-  - egglab_generate
-  - egglab_edit
-  - egglab_models
-  - egglab_download_models
-  - egglab_check_alpha
-  - egglab_photocraft_launch
-  - egglab_photocraft_canvas
-  - egglab_photocraft_audit
-  - egglab_photocraft_new_document
-  - egglab_photocraft_command
-  - egglab_photocraft_commands
-  - egglab_photocraft_batch
-  - egglab_photocraft_place
-  - egglab_photocraft_edit_active
-  - egglab_photocraft_layers
-  - egglab_photocraft_project
-  - egglab_photocraft_save
-  - egglab_photocraft_export_flat
-  - egglab_photocraft_export_layers
-  - egglab_photocraft_export_layer
-discovery:
-  command_catalog_tool: egglab_photocraft_commands
-  rule: "Discover exact IDs and parameter schemas before using unknown commands."
-  do_not_infer_wildcard_parameters: true
-photocraft_command_families:
-  - document.activate
-  - file.close
-  - document.inspect
-  - type.create
-  - type.setStyle
-  - type.edit
-  - type.info
-  - shape.create
-  - shape.edit
-  - shape.rasterize
-  - layer.moveTo
-  - layer.delete
-  - layer.duplicate
-  - layer.setProps
-  - layer.new.group
-  - layer.groupLayers
-  - layer.align.*
-  - layer.stampVisible
-  - layer.select
-  - layer.list
-  - layer.copyToDocument
-  - select.subject
-  - select.refineEdge
-  - select.rect
-  - select.lasso
-  - select.object
-  - select.modify.*
-  - layer.layerMask.revealSelection
-  - layer.layerMask.hideSelection
-  - layer.layerMask.apply
-  - layer.vectorMask.add
-  - layer.newAdjustmentLayer.curves
-  - layer.newAdjustmentLayer.hueSaturation
-  - layer.newAdjustmentLayer.gradientMap
-  - layer.setAdjustment
-  - layer.createClippingMask
-  - edit.transform
-  - layer.translate
-  - image.crop
-  - image.canvasSize
-  - image.imageSize
-  - image.perspectiveCrop
-  - edit.contentAwareFill
-  - filter.blur.gaussianBlur
-  - filter.blur.lensBlur
-  - filter.blur.motionBlur
-  - filter.sharpen.unsharpMask
-  - filter.noise.addNoise
-  - filter.other.highPass
-  - filter.blurGallery.tiltShift
-  - layer.layerStyle.dropShadow
-  - layer.layerStyle.stroke
-  - layer.layerStyle.innerShadow
-  - layer.layerStyle.outerGlow
-  - filter.gallery.filmGrain
-  - filter.gallery.grain
-  - filter.noise.dustAndScratches
-  - layer.layerStyle.patternOverlay
-  - image.mode.duotone
-  - filter.pixelate.colorHalftone
-  - filter.gallery.halftonePattern
-  - image.adjustments.*
-operational_notes:
-  - "egglab_status is the first status check; v1 says it already includes PhotoCraft."
-  - "Do not call photocraft_status."
-  - "v1 says PhotoCraft batches execute in order and stop at first error; verify against live runtime."
-  - "egglab_photocraft_export_layer is described as scratch/@mentions/vision only, not a final deliverable."
+# Generated view of the real MCP tool registry.
+# Source of truth: mcp-server.mjs (`tools` + `AGENT_TOOL_NAMES`).
+# OpenCode prefixes MCP tool names with the server key: `egl_<name>`.
+version: 2
+schema_status: synchronized_with_mcp_server
+naming:
+  mcp: bare_name
+  opencode: egl_prefix
+  server_key: egl
+agent_tools:
+  - status
+  - read_knowledge
+  - inspect
+  - job_state
+  - generate
+  - edit
+  - cancel
+  - check_alpha
+  - photocraft_launch
+  - photocraft_new_document
+  - photocraft_layers
+  - photocraft_place
+  - photocraft_canvas
+  - photocraft_edit_active
+  - photocraft_audit
+  - photocraft_save
+  - photocraft_export_flat
+  - photocraft_export_layers
+  - photocraft_command
+  - photocraft_commands
+  - photocraft_batch
+full_tools:
+  - status
+  - read_knowledge
+  - inspect
+  - job_state
+  - generate
+  - edit
+  - settings
+  - models
+  - download_models
+  - cancel
+  - photocraft_launch
+  - photocraft_layers
+  - photocraft_place
+  - photocraft_canvas
+  - photocraft_audit
+  - photocraft_new_document
+  - photocraft_export_flat
+  - photocraft_export_layers
+  - check_alpha
+  - photocraft_edit_active
+  - photocraft_command
+  - photocraft_batch
+  - photocraft_commands
+  - photocraft_export_layer
+  - photocraft_export_layers_by_mentions
+  - photocraft_project
+  - photocraft_save
+  - photocraft_open
+  - photocraft_recent_projects
+hidden_from_agent:
+  - settings
+  - models
+  - download_models
+  - photocraft_project
+  - photocraft_open
+  - photocraft_export_layer
+  - photocraft_export_layers_by_mentions
+  - photocraft_recent_projects
+notes:
+  - "The production profile is deny-all + allow egl_*; the full registry exists only when EGGLAB_TOOLSET=full."
+  - "Do not select a tool from this file alone; use the live schema and egl_status."

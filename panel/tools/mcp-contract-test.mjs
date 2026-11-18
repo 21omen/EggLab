@@ -86,7 +86,14 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
 const child = spawn(process.execPath, ['mcp-server.mjs'], {
   cwd: PANEL,
-  env: { ...process.env, EGGLAB_URL: `http://127.0.0.1:${port}`, EGGLAB_TOKEN: 'test' },
+  env: {
+    ...process.env,
+    EGGLAB_URL: `http://127.0.0.1:${port}`,
+    EGGLAB_TOKEN: 'test',
+    // This test exercises the full registry (downloads, recent projects), not
+    // the production agent profile.
+    EGGLAB_TOOLSET: 'full',
+  },
   stdio: ['pipe', 'pipe', 'pipe'],
 });
 const lines = createInterface({ input: child.stdout });

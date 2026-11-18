@@ -72,30 +72,57 @@ const IMAGE_MIMES = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
 };
-function readImage(requested) {
-  const abs = path.resolve(String(requested || ''));
-  let roots = [];
+function canonical(file) {
   try {
-    roots = JSON.parse(process.env.EGGLAB_READ_ROOTS || '[]');
-  } catch {}
-  roots = roots.map((root) => path.resolve(String(root))).filter(Boolean);
-  if (roots.length) {
-    const inside = roots.some((root) => abs === root || abs.startsWith(`${root}${path.sep}`));
-    if (!inside) return null;
+    return fs.realpathSync.native
+      ? fs.realpathSync.native(file)
+      : fs.realpathSync(file);
+  } catch {
+    return null;
   }
-  const mimeType = IMAGE_MIMES[path.extname(abs).toLowerCase()];
+}
+
+function inside(canonicalRoot, canonicalFile) {
+  const fold = (value) => (process.platform === 'win32' ? value.toLowerCase() : value);
+  const rel = path.relative(fold(canonicalRoot), fold(canonicalFile));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function readImage(requested) {
+  // Fail closed. A missing/invalid/empty allowlist must never mean "allow all";
+  // the panel always supplies EGGLAB_READ_ROOTS, so this only happens in a
+  // misconfigured or compromised child process.
+  let configured = [];
+  try {
+    const parsed = JSON.parse(process.env.EGGLAB_READ_ROOTS || '[]');
+    if (Array.isArray(parsed)) configured = parsed;
+  } catch {}
+  if (!configured.length) return null;
+
+  const requestedAbs = path.resolve(String(requested || ''));
+  // Resolve the file and every root to their canonical targets before the
+  // boundary check. A symlink inside an allowed directory must not be able to
+  // point at a private file elsewhere.
+  const file = canonical(requestedAbs);
+  if (!file) return null;
+  const roots = configured
+    .map((root) => canonical(path.resolve(String(root))))
+    .filter(Boolean);
+  if (!roots.length || !roots.some((root) => inside(root, file))) return null;
+
+  const mimeType = IMAGE_MIMES[path.extname(file).toLowerCase()];
   if (!mimeType) return null;
   let stat;
   try {
-    stat = fs.statSync(abs);
+    stat = fs.statSync(file);
   } catch {
     return null;
   }
   if (!stat.isFile() || stat.size > 32 * 1024 * 1024) return null;
   return {
     __mcpContent: [
-      { type: 'text', text: JSON.stringify({ ok: true, path: abs, bytes: stat.size, mimeType }) },
-      { type: 'image', data: fs.readFileSync(abs).toString('base64'), mimeType },
+      { type: 'text', text: JSON.stringify({ ok: true, path: file, bytes: stat.size, mimeType }) },
+      { type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType },
     ],
   };
 }
@@ -279,6 +306,21 @@ const tools = [
     },
   },
   {
+    name: 'job_state',
+    description:
+      'Read or update this chat thread\'s panel-managed job state. Omit patch to read. Patch may contain brief, constraints, approvals, assets, renders, qa, delivery and notes. The panel persists it per thread, so it survives turns and restarts; use it for multi-step work instead of writing files. Keep the record compact and factual: exact copy/constraints, approved direction, asset paths, render seeds/paths, QA result and delivery status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        patch: {
+          type: 'object',
+          additionalProperties: true,
+          description: 'Shallow state merge, e.g. {"delivery":{"status":"exported","path":"..."}}',
+        },
+      },
+    },
+  },
+  {
     name: 'generate',
     description:
       'Generate a NEW image with Qwen-Image-2.1 and wait for the PNG. Use this only when no source image is the canvas. Three uses: a full scene/backdrop (text-to-image, describe the whole frame, leave empty space where type will go), a transparent asset (transparent=true, native RGBA for a product/person/prop/icon), or a background plate for compositing. If the user supplies a photo to change, use edit; if they drew circles/marks on a photo, use photocraft_edit_active; if they painted a separate mask layer, use photocraft_edit_active with mask_layer. Returns path, seed, duration and - for transparent jobs - measured alpha stats. Never assume a transparent render worked; read alpha. Steps/CFG come from panel settings.',
@@ -286,7 +328,7 @@ const tools = [
       type: 'object',
       properties: {
         prompt: { type: 'string', description: 'Full description of the finished image. For transparent assets the panel wraps it in the official RGBA template, so describe only the subject.' },
-        workflow: { type: 'string', enum: ['quality', 'turbo'], description: 'quality = 40 steps, final art and anything with alpha edges; turbo = 8 steps, contact sheets, composition and light tests.' },
+        workflow: { type: 'string', enum: ['quality', 'turbo'], description: 'quality = the panel quality preset for final art and alpha edges; turbo = the panel turbo preset for contact sheets, composition and light tests. Use the live step/CFG values from egl_status, not a hardcoded number.' },
         width: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (the service caps at 2048). Size the asset will occupy in the layout (or 1.5x), NOT the canvas size; floor 512 for anything bearing text. Render time scales with area.' },
         height: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (the service caps at 2048). Match the element\'s aspect, not the canvas\'.' },
         steps: { type: 'integer' },
@@ -307,7 +349,7 @@ const tools = [
         prompt: { type: 'string', description: 'The change first, then what must stay unchanged. Never describe preserved things in detail — that makes them drift.' },
         images: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference images (1-10). Order is the order the model sees: <image1>, <image2>, …' },
         use_active_layer: { type: 'boolean', description: 'Export the selected PhotoCraft layer and use it as the first reference.' },
-        workflow: { type: 'string', enum: ['quality', 'turbo'] },
+        workflow: { type: 'string', enum: ['quality', 'turbo'], description: 'Use the panel preset; quality for final/identity work, turbo for tests. Live steps/CFG come from egl_status.' },
         width: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (service caps at 2048). Default: follow the source aspect, capped at 1024 long side.' },
         height: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (service caps at 2048).' },
         steps: { type: 'integer' },
@@ -616,6 +658,7 @@ const AGENT_TOOL_NAMES = Object.freeze([
   'status',
   'read_knowledge',
   'inspect',
+  'job_state',
   'generate',
   'edit',
   'cancel',
@@ -634,7 +677,9 @@ const AGENT_TOOL_NAMES = Object.freeze([
   'photocraft_commands',
   'photocraft_batch',
 ]);
-const TOOL_PROFILE = String(process.env.EGGLAB_TOOLSET || 'full').toLowerCase();
+// Fail safe: the production agent profile is the default. The full registry is
+// opt-in (`EGGLAB_TOOLSET=full`) for developer tools and contract tests.
+const TOOL_PROFILE = String(process.env.EGGLAB_TOOLSET || 'agent').toLowerCase();
 const activeTools =
   TOOL_PROFILE === 'agent'
     ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
@@ -687,6 +732,11 @@ async function callTool(name, args = {}) {
       }
       return image;
     }
+
+    case 'job_state':
+      return args.patch && typeof args.patch === 'object'
+        ? await api('PATCH', '/api/job-state', { patch: args.patch })
+        : await api('GET', '/api/job-state');
 
     case 'generate': {
       const count = Math.min(4, Math.max(1, Number(args.count) || 1));
@@ -972,21 +1022,57 @@ async function callTool(name, args = {}) {
 // budget overrun from 161% to 99.7% in arXiv:2610.10833.
 const T0 = Date.now();
 
+let runtimeMetadataAt = 0;
+
+/**
+ * Keep tool descriptions consistent with the live panel workflow. Tool schemas
+ * are part of the prompt, so a stale "40 steps" here can override the actual
+ * 25-step runtime profile. Refresh before initialize/tools-list.
+ */
+async function applyRuntimeMetadata(force = false) {
+  if (!BASE || !TOKEN) return;
+  if (!force && Date.now() - runtimeMetadataAt < 30000) return;
+  try {
+    const status = await api('GET', '/api/status');
+    const quality = status?.engine?.workflows?.quality || {};
+    const turbo = status?.engine?.workflows?.turbo || {};
+    const generateTool = tools.find((tool) => tool.name === 'generate');
+    const editTool = tools.find((tool) => tool.name === 'edit');
+    const description =
+      `quality = ${quality.steps ?? 'panel preset'} steps, CFG ${quality.cfg ?? 'panel'}, final art and alpha edges; ` +
+      `turbo = ${turbo.steps ?? 'panel preset'} steps, CFG ${turbo.cfg ?? 'panel'}, contact sheets, composition and light tests.`;
+    if (generateTool?.inputSchema?.properties?.workflow) {
+      generateTool.inputSchema.properties.workflow.description = description;
+    }
+    if (editTool?.inputSchema?.properties?.workflow) {
+      editTool.inputSchema.properties.workflow.description = description;
+    }
+    runtimeMetadataAt = Date.now();
+  } catch {
+    // The panel may still be starting. Keep the generic description; the agent
+    // also has live values from egl_status.
+  }
+}
+
 async function handle(msg) {
   if (msg.id === undefined || msg.id === null) return;
   const { id, method, params } = msg;
 
   if (method === 'initialize') {
+    await applyRuntimeMetadata(true);
     return ok(id, {
       protocolVersion: params?.protocolVersion || '2025-11-25',
       capabilities: { tools: {} },
       serverInfo: { name: 'egglab', version: '0.1.0' },
       instructions:
-        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egl_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egl_status (compact). After a render, canvas preview or layer export that must be judged visually, call egl_inspect with its absolute path; it returns the actual image. Use egl_read_knowledge only for the knowledge package. Decompose the piece into assets: generate transparent cut-outs for subjects (egl_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egl_edit), and local fixes with egl_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egl_photocraft_audit, save, export. egl_check_alpha measures any PNG. Look up unknown engine commands with egl_photocraft_commands. Knowledge loads on demand: use egl_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
+        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egl_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egl_status (compact). Use egl_job_state to read/patch the panel-managed brief, constraints, assets, QA and delivery record. After a render, canvas preview or layer export that must be judged visually, call egl_inspect with its absolute path; it returns the actual image. Use egl_read_knowledge only for the knowledge package. Decompose the piece into assets: generate transparent cut-outs for subjects (egl_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egl_edit), and local fixes with egl_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egl_photocraft_audit, save, export. egl_check_alpha measures any PNG. Look up unknown engine commands with egl_photocraft_commands. Knowledge loads on demand: use egl_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
     });
   }
   if (method === 'ping') return ok(id, {});
-  if (method === 'tools/list') return ok(id, { tools: activeTools });
+  if (method === 'tools/list') {
+    await applyRuntimeMetadata();
+    return ok(id, { tools: activeTools });
+  }
   if (method === 'resources/list') return ok(id, { resources: [] });
   if (method === 'prompts/list') return ok(id, { prompts: [] });
   if (method === 'tools/call') {

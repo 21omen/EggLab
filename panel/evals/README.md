@@ -1,4 +1,4 @@
-# EggLab evaluation suite
+﻿# EggLab evaluation suite
 
 Run the same brief, same references and same runtime/model configuration against v1 and v2. Where model nondeterminism exists, repeat generation-based cases and compare distributions or reviewer judgments rather than treating one seed as absolute truth.
 
@@ -26,13 +26,13 @@ Track both context efficiency and actual outcome quality. A missing relevant ski
 `npm run test:agent` (also run by `.github/workflows/agent-gate.yml` on every
 panel push/PR and by the release workflow before building) validates:
 
-- all 24 original benchmark cases plus the agent-upgrade routing cases;
+- all 26 benchmark cases plus the 18 agent-upgrade routing cases;
 - unique IDs and required fields;
 - every `must_load` / `conditional` / `primary_skill` / `supporting_skills`
   skill exists in `skills/`;
-- every `egglab_*` reference in the prompt, router, manifest, evals and MCP
-  instructions maps to a registered MCP tool;
-- each upgrade case's task → expected tool chain (generate / edit /
+- every `egl_*` reference in the prompt, router, manifest, evals and MCP
+  instructions maps to a registered MCP tool (bare MCP name + `egl_` prefix);
+- each upgrade case's task â†’ expected tool chain (generate / edit /
   photocraft_edit_active) and its required prompt evidence, including
   `mask_layer` for separate-mask cases;
 - the root OpenCode prompt points at the canonical `panel/AGENT.md`;
@@ -42,8 +42,18 @@ panel push/PR and by the release workflow before building) validates:
 - the user-painted mask layer is normalized to the active canvas, including
   luminance, alpha and invert conventions.
 
-The gate is deterministic and needs no GPU, model provider or PhotoCraft. Full
-visual/LLM evaluation of the 24 benchmark briefs and 16 upgrade briefs still
-requires a configured provider and human review; run those before a substantial
-prompt/skill change.
+The gate is deterministic and needs no GPU, model provider or PhotoCraft.
+
+## Measured runs
+
+- **2026-11-18, 0.3.19:** `npm run test:live` â€” 6 production tasks, **31/31
+  checks** on `opencode-go/deepseek-v4.1-flash`: text effect, transparent
+  cut-out, multi-reference, editable-type poster/save/export, annotated photo,
+  separate mask.
+- **2026-11-18, 0.3.20:** session recovery â€” 10 old transcript files migrated,
+  5+2 transcripts recovered from OpenCode, real skin-retouch chat restored.
+- **Not yet measured:** the full 26 benchmark briefs and 18 upgrade briefs have
+  not all been executed against real jobs. The regression log records the
+  subset that has evidence; do not cite the full suite as measured.
+
 

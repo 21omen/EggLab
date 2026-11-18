@@ -145,3 +145,12 @@ cases:
     expected_tool: generate
     prompt_must_include: ["EGGLAB", chrome, legible]
     notes: Inspect the actual render and verify spelling; ordinary body copy still belongs in editable PhotoCraft type.
+  - id: upgrade_anti_default_poster
+    category: creative_direction
+    brief: Create a launch poster for a small family tea shop in Taunggyi without using the obvious food-photo-and-red-badge layout.
+    task: creative_direction
+    primary_skill: design-direction
+    supporting_skills: [image-generation, qa-delivery]
+    expected_tool: generate
+    prompt_must_include: [specific, generic, reason]
+    notes: The anti-default pass is a reasoning contract; judge concept specificity and relevance, not arbitrary strangeness.

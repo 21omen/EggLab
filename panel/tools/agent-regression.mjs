@@ -69,6 +69,35 @@ for (const hidden of [
   check(`agent profile hides ${hidden}`, !agentTools.has(hidden));
 }
 
+// config/tool-registry.yaml is documentation only, but stale names here caused
+// real confusion. Keep it mechanically synchronized with the server.
+let toolRegistry = null;
+try {
+  toolRegistry = yaml.load(read('config/tool-registry.yaml'));
+  check('tool registry parses', Boolean(toolRegistry?.agent_tools?.length), `${toolRegistry?.agent_tools?.length || 0} agent tools`);
+} catch (err) {
+  check('tool registry parses', false, err.message);
+}
+if (toolRegistry) {
+  const registryAgent = new Set(toolRegistry.agent_tools || []);
+  const registryFull = new Set(toolRegistry.full_tools || []);
+  check(
+    'tool registry agent list matches server',
+    registryAgent.size === agentTools.size && [...registryAgent].every((name) => agentTools.has(name)),
+    `${registryAgent.size} vs ${agentTools.size}`,
+  );
+  check(
+    'tool registry full list matches server',
+    registryFull.size === toolNames.size && [...registryFull].every((name) => toolNames.has(name)),
+    `${registryFull.size} vs ${toolNames.size}`,
+  );
+  check(
+    'tool registry has no egglab_ names',
+    ![...registryAgent, ...registryFull].some((name) => String(name).startsWith('egglab_')),
+  );
+  check('tool registry uses the egl prefix', toolRegistry?.naming?.opencode === 'egl_prefix');
+}
+
 // ---- knowledge skills --------------------------------------------------
 const skillNames = new Set(
   fs
@@ -133,7 +162,7 @@ for (const line of caseText.split(/\r?\n/)) {
     current.lines.push(line);
   }
 }
-check('benchmark case count', caseBlocks.length === 25, `${caseBlocks.length} cases`);
+check('benchmark case count', caseBlocks.length === 26, `${caseBlocks.length} cases`);
 const ids = caseBlocks.map((c) => c.id);
 check('benchmark ids unique', new Set(ids).size === ids.length, `${ids.length} unique`);
 
@@ -192,6 +221,7 @@ const TASK_TOOL = {
   transparent_edit: 'edit',
   typography: 'generate',
   text_effect: 'generate',
+  creative_direction: 'generate',
   storyboard: 'generate',
   panorama: 'generate',
 };
@@ -309,6 +339,9 @@ check(
   chatAgentTools.size === agentTools.size && [...chatAgentTools].every((name) => agentTools.has(name)),
   `${chatAgentTools.size} vs ${agentTools.size}`,
 );
+check('MCP default tool profile is agent', /process\.env\.EGGLAB_TOOLSET \|\| 'agent'/.test(toolSource));
+check('MCP full profile is opt-in', /EGGLAB_TOOLSET=full/.test(toolSource) || /EGGLAB_TOOLSET[^\n]*full/.test(toolSource));
+check('MCP workflow description is live metadata', !/quality = 40 steps/.test(toolSource) && /applyRuntimeMetadata/.test(toolSource));
 check('generated config uses mcp.servers', /mcp:\s*\{[\s\S]*?servers:\s*\{/.test(chatSource));
 check('generated config disables Code Mode', /codemode:\s*false/.test(chatSource));
 check('generated config selects the agent profile', /EGGLAB_TOOLSET:\s*'agent'/.test(chatSource));

@@ -25,6 +25,7 @@ const AGENT_CORE_TOOLS = Object.freeze([
   'status',
   'read_knowledge',
   'inspect',
+  'job_state',
   'generate',
   'edit',
   'cancel',
@@ -353,6 +354,8 @@ export function buildWorkspace({ url, token }) {
 }
 
 const HISTORY_DIR = CHATS_DIR;
+const JOB_STATE_DIR = path.join(DATA_DIR, 'job-state');
+fs.mkdirSync(JOB_STATE_DIR, { recursive: true });
 const LEGACY_HISTORY = path.join(DATA_DIR, 'chat.json');
 /** Written once chat.json has been carried into the no-document thread. */
 const LEGACY_IMPORTED = path.join(HISTORY_DIR, '.legacy-imported');
@@ -797,6 +800,7 @@ export async function deleteThread(key) {
       fileRemoved = true;
     }
   } catch {}
+  clearJobState(target);
 
   // If the thread we just deleted is the one on screen, fall back to whatever
   // conversation the document still has — never a hard reset to nothing when a
@@ -855,12 +859,43 @@ function healRegistryEntries() {
  * every deleted chat (and every untitled document that was never migrated)
  * leaves a transcript behind forever.
  */
+export function backupSessionData() {
+  try {
+    const root = path.join(DATA_DIR, '_session-backups');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = path.join(root, stamp);
+    fs.mkdirSync(target, { recursive: true });
+    for (const file of ['sessions.json', 'sessions.backup.json']) {
+      const source = path.join(DATA_DIR, file);
+      if (fs.existsSync(source)) fs.copyFileSync(source, path.join(target, file));
+    }
+    if (fs.existsSync(HISTORY_DIR)) {
+      fs.cpSync(HISTORY_DIR, path.join(target, 'chats'), { recursive: true });
+    }
+    const backups = fs.readdirSync(root).filter((name) => !name.startsWith('.')).sort().reverse();
+    for (const old of backups.slice(3)) {
+      fs.rmSync(path.join(root, old), { recursive: true, force: true });
+    }
+    return target;
+  } catch (err) {
+    agentLog(`session backup failed: ${err.message}`);
+    return null;
+  }
+}
+
 export function pruneOrphanThreads() {
   // keep is compared against directory entry names, so every id must be
   // reduced with historyFileName. Adding historyFile(threadId) (an absolute
   // path) meant the active transcript could be treated as an orphan and
   // deleted at startup.
-  const keep = new Set(Object.keys(sessions.registryThreads()).map(historyFileName));
+  const registryIds = Object.keys(sessions.registryThreads());
+  // Never sweep a tree when the registry failed to load. A transient/empty
+  // registry used to make every transcript look like an orphan.
+  if (!registryIds.length) {
+    agentLog('pruneOrphanThreads skipped: empty registry');
+    return 0;
+  }
+  const keep = new Set(registryIds.map(historyFileName));
   const currentThread = sessions.current().key;
   if (currentThread) keep.add(historyFileName(currentThread));
   keep.add(historyFileName(threadId));
@@ -1024,6 +1059,62 @@ export function getHistory() {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Panel-managed job state, one compact record per thread              */
+/* ------------------------------------------------------------------ */
+
+function jobStateFile(key = threadId) {
+  return path.join(JOB_STATE_DIR, historyFileName(key).replace(/\.json$/, '.job.json'));
+}
+
+function defaultJobState() {
+  return {
+    brief: null,
+    constraints: [],
+    approvals: [],
+    assets: [],
+    renders: [],
+    qa: null,
+    delivery: { status: 'in_progress', notes: '' },
+    notes: [],
+  };
+}
+
+/** Read the job state for the thread on screen (creates a default in memory). */
+export function getJobState() {
+  const saved = readJson(jobStateFile(), null);
+  return {
+    ...defaultJobState(),
+    ...(saved && typeof saved === 'object' ? saved : {}),
+    threadId,
+    docKey,
+    updatedAt: saved?.updatedAt || null,
+  };
+}
+
+/**
+ * Shallow-merge a state patch. The panel owns storage and thread identity; the
+ * agent owns the creative content (brief, constraints, approvals, assets,
+ * renders, QA, delivery). Arrays replace, objects replace at the top level.
+ */
+export function patchJobState(patch) {
+  const next = {
+    ...getJobState(),
+    ...(patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {}),
+    threadId,
+    docKey,
+    updatedAt: Date.now(),
+  };
+  writeJson(jobStateFile(), next);
+  return next;
+}
+
+function clearJobState(key = threadId) {
+  try {
+    fs.rmSync(jobStateFile(key), { force: true });
+  } catch {}
+}
+
 /** True while an agent run is streaming; document switches must wait. */
 export function isBusy() {
   return Boolean(active || turnRunning);
@@ -1040,6 +1131,7 @@ export function clearHistory() {
   if (active || turnRunning) return false;
   history.items = [];
   saveHistory();
+  clearJobState();
   // Clear only THIS thread: siblings on the same document keep their
   // transcripts and OpenCode sessions.
   sessions.clear(threadId);
