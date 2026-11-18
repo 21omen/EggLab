@@ -117,7 +117,10 @@ export const DEFAULTS = {
   opencode: {
     exe: defaultOpenCodeExe(),
     agent: 'egglab',
-    model: 'inferx/deepseek-v4.1-flash-1017-basic',
+    // Public default: the provider ships with OpenCode v2, so a fresh install
+    // has a working (and vision-capable) chat model before the user opens
+    // Settings. Private/custom providers remain available in the model list.
+    model: 'opencode-go/deepseek-v4.1-flash',
     // Providers whose models come from a live list without capability metadata
     // (so opencode would treat them as text-only and drop image attachments).
     customProviders: ['inferx'],

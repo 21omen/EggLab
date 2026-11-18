@@ -67,6 +67,10 @@ check(
   'config.json is the models-folder authority',
   /settings\.modelsDir !== raw\.models/.test(settingsSource),
 );
+check(
+  'fresh settings default to a bundled OpenCode provider',
+  /model: 'opencode-go\//.test(settingsSource) && !/model: 'inferx\//.test(settingsSource),
+);
 check('setup status exposes the config path', /config:\s*cfg\.path/.test(setup));
 const mainSource = read('main.mjs', PANEL);
 const httpSource = read('service/http.mjs', PANEL);

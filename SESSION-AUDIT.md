@@ -327,6 +327,8 @@ touched:
   the fresh engine path and the default diffusion file.
 - Engine, PhotoCraft and OpenCode correctly reported missing; the four required
   model entries were missing and turbo was optional.
+- Fresh settings default to `opencode-go/deepseek-v4.1-flash` (vision-capable),
+  not a private/custom provider; the model ships with OpenCode v2.
 - `get-pc` opens `https://getartcraft.com/`; the setup page and README now link
   the free PhotoCraft download.
 - Download targets verified with HTTP 200: OpenCode v2.3.0 zip, the pinned
