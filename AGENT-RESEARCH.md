@@ -1,7 +1,8 @@
 ﻿# EggLab agent â€” deep research and diagnosis
 
 **Date:** 18 November 2026  
-**Build:** 0.3.16  
+**Measured build:** 0.3.16
+**Fix shipped:** 0.3.17 (see §7)
 **Agent model:** `opencode-go/deepseek-v4.1-flash` (free tier)  
 **Scope:** agent quality for image generation, Qwen-Image 2.1 editing and
 PhotoCraft production. This report does **not** blame the image model first; it
@@ -397,12 +398,78 @@ slow renders. Those also depend on Qwen-Image 2.1 limits, Q4_K_M, 25 steps,
 measure image quality separately with the reference-editing skill and quality
 40/FP8.
 
-**Not changed by this report:** the runtime config. The measurements and
-recommended config are ready; implementing P0 is the next code change.
+**Not changed by this report:** the runtime config at the time of measurement.
+P0 was implemented in 0.3.17; see §7.
 
 ---
 
-## 7. Sources
+## 7. Implementation in 0.3.17
+
+The P0 tool-surface fix is now in the app, not just this report.
+
+### What changed
+
+- `service/chat.mjs` generates **`mcp.servers.egglab`** with
+  **`codemode: false`** and `EGGLAB_TOOLSET=agent`. The legacy `mcp.egglab`
+  shape is gone, so OpenCode cannot silently drop the direct-tool setting.
+- The generated agent gets a **hard allowlist** (`"*": false` plus 19 exact
+  `egglab_*` names and `read`) and permission denies for `execute`, `glob`,
+  `grep`, `list`, `edit`, `bash`, `skill`, `question`, `task`, `todowrite`,
+  `webfetch`, `websearch` and `experimental_image_generate`.
+- `mcp-server.mjs` filters `tools/list` and rejects `tools/call` outside the
+  agent profile. The full 27-tool registry remains available when
+  `EGGLAB_TOOLSET` is unset, for developers and tests.
+- **19 core tools:** status, read_knowledge, generate, edit, cancel,
+  check_alpha, photocraft_launch/new_document/layers/place/canvas/
+  edit_active/audit/save/export_flat/export_layers/command/commands/batch.
+- **8 hidden admin tools:** settings, models, download_models, photocraft_open,
+  photocraft_recent_projects, photocraft_project, photocraft_export_layer,
+  photocraft_export_layers_by_mentions.
+- `AGENT.md` now opens with a direct tool card and explicitly forbids generic
+  shell/file/web/experimental tools and the OpenCode `skill` tool. `ROUTER.md`
+  and the image-generation/photocraft-production skills were updated to stop
+  referencing hidden tools.
+- `tools/agent-regression.mjs` now checks that the MCP profile and generated
+  allowlist match, that Code Mode is off, that the agent profile is selected,
+  that hidden admin tools stay hidden, and that the root dev config follows the
+  same shape.
+
+### Measured result
+
+A clean meta-test against the generated workspace now reports **21 tools**:
+
+| Visible | Count |
+|---|---|
+| EggLab core | 19 |
+| `read` (image inspection) | 1 |
+| OpenCode `skill` (built-in; denied by permission and forbidden in prompt) | 1 |
+
+`experimental_image_generate`, `execute`, `glob`, `grep`, `question`, Context7,
+gh_grep and the Omelette `egg_*` server are **not visible**.
+
+A real task — “Use egglab_generate now to create a 512×512 turbo image of a
+green circle on white” — completed in **55 s** with exactly one tool call,
+`egglab_generate`, and no `read`/`glob`/experimental detour. The previous
+agent failed or stopped on the same kind of request.
+
+### Token reality check
+
+| Surface | JSON size | Approx. tokens |
+|---|---|---|
+| Full 27-tool registry | 17,149 chars | ~4,287 |
+| Agent core 19 tools | 14,556 chars | ~3,639 |
+
+Direct core tools are **not cheaper** than Code Mode's ~2,000-token partial
+catalog; they cost roughly 1.6k more per request. The win is that the model can
+actually see the tools it is told to use, and the allowlist removes the much
+larger unrelated surface (Context7, gh_grep, OpenCode file/shell/web tools and
+`experimental_image_generate`). **“Too many tools” was a real design problem,
+but token count alone was not what made the agent look dumb; hidden core tools
+and visible wrong tools were.**
+
+---
+
+## 8. Sources
 
 - Anthropic: Building effective agents, effective context engineering, writing
   tools for agents.

@@ -1,7 +1,7 @@
 {
   "name": "egglab",
   "productName": "EggLab",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "private": true,
   "description": "EggLab - Qwen-Image-2.1 agent panel for PhotoCraft",
   "author": "EggLab contributors",
@@ -13,6 +13,7 @@
     "dist": "electron-builder --win nsis",
     "dist:dir": "electron-builder --win dir",
     "test:agent": "node tools/agent-regression.mjs && node tools/mcp-contract-test.mjs && node tools/mask-layer-test.mjs && node tools/setup-regression.mjs",
+    "test:surface": "node tools/agent-surface-test.mjs",
     "test:setup": "node tools/setup-regression.mjs"
   },
   "devDependencies": {

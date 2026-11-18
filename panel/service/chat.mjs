@@ -14,6 +14,43 @@ const CORE_PROMPT = path.join(KNOWLEDGE_DIR, 'AGENT.md');
 const ROUTER_PROMPT = path.join(KNOWLEDGE_DIR, 'ROUTER.md');
 const MANIFEST_FILE = path.join(KNOWLEDGE_DIR, 'manifest.yaml');
 
+// Production tool surface for the creative agent. These are exposed directly
+// (codemode:false), so each schema costs prompt tokens on every request. The
+// list is mirrored in mcp-server.mjs and checked by tools/agent-regression.mjs;
+// keep only tools a normal generation/edit/PhotoCraft turn needs. Downloads,
+// panel settings, model inventory, project navigation and individual layer
+// exports stay in the full MCP profile for developers.
+const AGENT_CORE_TOOLS = Object.freeze([
+  'status',
+  'read_knowledge',
+  'generate',
+  'edit',
+  'cancel',
+  'check_alpha',
+  'photocraft_launch',
+  'photocraft_new_document',
+  'photocraft_layers',
+  'photocraft_place',
+  'photocraft_canvas',
+  'photocraft_edit_active',
+  'photocraft_audit',
+  'photocraft_save',
+  'photocraft_export_flat',
+  'photocraft_export_layers',
+  'photocraft_command',
+  'photocraft_commands',
+  'photocraft_batch',
+]);
+
+function agentToolMap() {
+  const map = { '*': false };
+  for (const name of AGENT_CORE_TOOLS) map[`egglab_${name}`] = true;
+  // `read` is the only built-in the agent needs: it opens the render/canvas
+  // PNGs returned by EggLab tools so the model can inspect its own output.
+  map.read = true;
+  return map;
+}
+
 function agentLog(line) {
   try {
     fs.appendFileSync(path.join(LOG_DIR, 'agent.log'), `${new Date().toISOString()} ${line}\n`);
@@ -190,28 +227,36 @@ export function buildWorkspace({ url, token }) {
       },
     },
     mcp: {
-      egglab: {
-        type: 'local',
-        // Packaged installs have no `node` on PATH and mcp-server.mjs lives
-        // outside app.asar (extraResources): run it with the Electron binary
-        // in Node mode (ELECTRON_RUN_AS_NODE). Dev keeps plain node.
-        command: PACKAGED
-          ? [process.execPath, path.join(KNOWLEDGE_DIR, 'mcp-server.mjs')]
-          : ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
-        enabled: true,
-        environment: {
-          EGGLAB_URL: url,
-          EGGLAB_TOKEN: token,
-          ...(PACKAGED ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+      // OpenCode v2 form. `codemode:false` is the critical part: it sends the
+      // curated tool schemas to the provider directly instead of hiding most of
+      // them behind Code Mode's partial catalog. It is only honored on the
+      // `mcp.servers` shape; adding it to the legacy `mcp.<name>` entry is
+      // silently dropped.
+      servers: {
+        egglab: {
+          type: 'local',
+          // Packaged installs have no `node` on PATH and mcp-server.mjs lives
+          // outside app.asar (extraResources): run it with the Electron binary
+          // in Node mode (ELECTRON_RUN_AS_NODE). Dev keeps plain node.
+          command: PACKAGED
+            ? [process.execPath, path.join(KNOWLEDGE_DIR, 'mcp-server.mjs')]
+            : ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
+          codemode: false,
+          environment: {
+            EGGLAB_URL: url,
+            EGGLAB_TOKEN: token,
+            EGGLAB_TOOLSET: 'agent',
+            ...(PACKAGED ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+          },
+          timeout: 4200000,
         },
-        timeout: 4200000,
       },
       // The user's global config carries Blender, Context7, GitHub grep,
       // Google search and OpenClaw. Every one of them injects its whole tool
-      // schema into this agent's context, which made a 12k-token prompt cost
-      // 46k tokens and tempted the model toward tools that cannot help it.
-      // This config only governs the panel's own run directory, so switching
-      // them off here does not touch the user's normal OpenCode setup.
+      // schema into this agent's context. This config only governs the panel's
+      // own run directory, so switching them off here does not touch the
+      // user's normal OpenCode setup. The legacy `enabled:false` overrides are
+      // what OpenCode uses to disable a server declared in the user config.
       blender: { enabled: false },
       context7: { enabled: false },
       gh_grep: { enabled: false },
@@ -224,6 +269,12 @@ export function buildWorkspace({ url, token }) {
         mode: 'primary',
         model: s.opencode.model,
         prompt: '{file:./AGENT.md}',
+        // Hard allowlist. A wildcard deny plus exact EggLab names keeps
+        // unrelated MCP servers, OpenCode's generic file/shell/web tools,
+        // Code Mode and experimental_image_generate out of the model's tool
+        // list entirely. `skill` is a built-in that survives wildcard denies,
+        // so it is also blocked by permission below.
+        tools: agentToolMap(),
       },
     },
     // The agent must be able to *see* renders, which live outside its working
@@ -247,9 +298,17 @@ export function buildWorkspace({ url, token }) {
       })(),
       edit: 'deny',
       bash: 'deny',
+      execute: 'deny',
+      glob: 'deny',
+      grep: 'deny',
+      list: 'deny',
+      skill: 'deny',
+      question: 'deny',
+      todowrite: 'deny',
       webfetch: 'deny',
       websearch: 'deny',
       task: 'deny',
+      experimental_image_generate: 'deny',
     },
   };
 

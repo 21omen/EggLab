@@ -32,6 +32,43 @@ for (const required of ['status', 'generate', 'edit', 'download_models', 'photoc
   check(`tool: ${required}`, toolNames.has(required));
 }
 
+// The production profile is a curated direct-tool set, not the full registry.
+// Parse the same constant the MCP server uses at runtime.
+const profileStart = toolSource.indexOf('const AGENT_TOOL_NAMES');
+const profileEnd = toolSource.indexOf(']);', profileStart);
+const agentTools = new Set(
+  profileStart < 0
+    ? []
+    : [...toolSource.slice(profileStart, profileEnd).matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]),
+);
+check('agent tool profile parsed', agentTools.size >= 15, `${agentTools.size} tools`);
+for (const required of [
+  'status',
+  'read_knowledge',
+  'generate',
+  'edit',
+  'cancel',
+  'check_alpha',
+  'photocraft_edit_active',
+  'photocraft_save',
+  'photocraft_export_flat',
+  'photocraft_command',
+]) {
+  check(`agent tool: ${required}`, agentTools.has(required));
+}
+for (const hidden of [
+  'settings',
+  'models',
+  'download_models',
+  'photocraft_open',
+  'photocraft_recent_projects',
+  'photocraft_project',
+  'photocraft_export_layer',
+  'photocraft_export_layers_by_mentions',
+]) {
+  check(`agent profile hides ${hidden}`, !agentTools.has(hidden));
+}
+
 // ---- knowledge skills --------------------------------------------------
 const skillNames = new Set(
   fs
@@ -171,7 +208,7 @@ for (const block of upgradeBlocks) {
     .map((s) => s.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean);
   check(`upgrade ${block.id} task`, Boolean(task && TASK_TOOL[task]), task || 'missing');
-  check(`upgrade ${block.id} expected tool`, Boolean(tool) && toolNames.has(tool), tool || 'missing');
+  check(`upgrade ${block.id} expected tool`, Boolean(tool) && agentTools.has(tool), tool || 'missing');
   if (task && TASK_TOOL[task]) {
     check(`upgrade ${block.id} task/tool`, tool === TASK_TOOL[task], `${task} -> ${tool}`);
   }
@@ -204,7 +241,7 @@ for (const file of promptFiles) {
   const text = read(file);
   const refs = [...new Set([...text.matchAll(/\begglab_([a-z0-9_]+)/g)].map((m) => m[1]))];
   for (const ref of refs) {
-    check(`${file} tool ${ref}`, toolNames.has(ref));
+    check(`${file} tool ${ref}`, agentTools.has(ref));
   }
 }
 const instructionRefs = [
@@ -232,8 +269,16 @@ if (rootConfig) {
   const m = prompt.match(/\{file:\.\/(.+?)\}/);
   check('root prompt is a file reference', Boolean(m), prompt);
   if (m) check('root prompt file exists', exists(m[1], REPO), m[1]);
-  const timeout = Number(rootConfig?.mcp?.egglab?.timeout) || 0;
+  const timeout = Number(rootConfig?.mcp?.servers?.egglab?.timeout) || 0;
   check('root MCP timeout', timeout >= 3_900_000, `${timeout} ms`);
+  check('root MCP is direct', rootConfig?.mcp?.servers?.egglab?.codemode === false);
+  check('root MCP uses the agent profile', rootConfig?.mcp?.servers?.egglab?.environment?.EGGLAB_TOOLSET === 'agent');
+  const rootTools = rootConfig?.agent?.egglab?.tools || {};
+  check('root agent has a hard allowlist', rootTools['*'] === false);
+  for (const name of agentTools) {
+    check(`root allowlist ${name}`, rootTools[`egglab_${name}`] === true);
+  }
+  check('root agent allows image read', rootTools.read === true);
 }
 
 // ---- generated config / download timeout chain ------------------------
@@ -246,6 +291,30 @@ check(
   '60 minutes',
 );
 const chatSource = read('service/chat.mjs');
+const chatProfileStart = chatSource.indexOf('const AGENT_CORE_TOOLS');
+const chatProfileEnd = chatSource.indexOf(']);', chatProfileStart);
+const chatAgentTools = new Set(
+  chatProfileStart < 0
+    ? []
+    : [...chatSource.slice(chatProfileStart, chatProfileEnd).matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]),
+);
+check(
+  'chat and MCP agent tool lists match',
+  chatAgentTools.size === agentTools.size && [...chatAgentTools].every((name) => agentTools.has(name)),
+  `${chatAgentTools.size} vs ${agentTools.size}`,
+);
+check('generated config uses mcp.servers', /mcp:\s*\{[\s\S]*?servers:\s*\{/.test(chatSource));
+check('generated config disables Code Mode', /codemode:\s*false/.test(chatSource));
+check('generated config selects the agent profile', /EGGLAB_TOOLSET:\s*'agent'/.test(chatSource));
+check('generated config has no legacy egglab MCP entry', !/mcp:\s*\{\s*egglab:/.test(chatSource));
+check(
+  'generated allowlist maps every core tool',
+  /map\[`egglab_\$\{name\}`\] = true/.test(chatSource),
+);
+check('generated config allows image read', /map\.read = true/.test(chatSource));
+for (const action of ['execute', 'glob', 'grep', 'list', 'skill', 'question', 'experimental_image_generate']) {
+  check(`generated config denies ${action}`, new RegExp(`${action}:\\s*'deny'`).test(chatSource));
+}
 check('OpenCode v2 uses a private server', /if \(major >= 2\) args\.push\('--standalone'\)/.test(chatSource));
 check('Stop has a settle watchdog', /current\.finish\?\.\(-1\)/.test(chatSource));
 check('Stop covers the retry gap', /let turnRunning/.test(chatSource) && /turnStopped/.test(chatSource));

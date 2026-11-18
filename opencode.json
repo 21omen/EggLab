@@ -1,11 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "egglab": {
-      "type": "local",
-      "command": ["node", "./panel/mcp-server.mjs"],
-      "enabled": true,
-      "timeout": 4200000
+    "servers": {
+      "egglab": {
+        "type": "local",
+        "command": ["node", "./panel/mcp-server.mjs"],
+        "codemode": false,
+        "environment": {
+          "EGGLAB_TOOLSET": "agent"
+        },
+        "timeout": 4200000
+      }
     }
   },
   "agent": {
@@ -15,10 +20,43 @@
       "model": "inferx/deepseek-v4.1-flash-1017-basic",
       "prompt": "{file:./panel/AGENT.md}",
       "tools": {
-        "bash": false,
-        "edit": false,
-        "write": false
+        "*": false,
+        "egglab_status": true,
+        "egglab_read_knowledge": true,
+        "egglab_generate": true,
+        "egglab_edit": true,
+        "egglab_cancel": true,
+        "egglab_check_alpha": true,
+        "egglab_photocraft_launch": true,
+        "egglab_photocraft_new_document": true,
+        "egglab_photocraft_layers": true,
+        "egglab_photocraft_place": true,
+        "egglab_photocraft_canvas": true,
+        "egglab_photocraft_edit_active": true,
+        "egglab_photocraft_audit": true,
+        "egglab_photocraft_save": true,
+        "egglab_photocraft_export_flat": true,
+        "egglab_photocraft_export_layers": true,
+        "egglab_photocraft_command": true,
+        "egglab_photocraft_commands": true,
+        "egglab_photocraft_batch": true,
+        "read": true
       }
     }
+  },
+  "permission": {
+    "edit": "deny",
+    "bash": "deny",
+    "execute": "deny",
+    "glob": "deny",
+    "grep": "deny",
+    "list": "deny",
+    "skill": "deny",
+    "question": "deny",
+    "todowrite": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "task": "deny",
+    "experimental_image_generate": "deny"
   }
 }

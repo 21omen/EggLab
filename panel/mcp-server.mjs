@@ -534,7 +534,44 @@ const tools = [
   },
 ];
 
+// The panel's production profile. OpenCode exposes these directly
+// (`codemode: false`), so every schema in this list is paid for on every model
+// request. Keep it to tools a normal creative turn actually needs; the panel
+// owns installation, model downloads, settings and project navigation.
+// The same list is mirrored in service/chat.mjs for the OpenCode tool
+// allowlist, and tools/agent-regression.mjs checks that they stay in sync.
+const AGENT_TOOL_NAMES = Object.freeze([
+  'status',
+  'read_knowledge',
+  'generate',
+  'edit',
+  'cancel',
+  'check_alpha',
+  'photocraft_launch',
+  'photocraft_new_document',
+  'photocraft_layers',
+  'photocraft_place',
+  'photocraft_canvas',
+  'photocraft_edit_active',
+  'photocraft_audit',
+  'photocraft_save',
+  'photocraft_export_flat',
+  'photocraft_export_layers',
+  'photocraft_command',
+  'photocraft_commands',
+  'photocraft_batch',
+]);
+const TOOL_PROFILE = String(process.env.EGGLAB_TOOLSET || 'full').toLowerCase();
+const activeTools =
+  TOOL_PROFILE === 'agent'
+    ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
+    : tools;
+const activeToolNames = new Set(activeTools.map((tool) => tool.name));
+
 async function callTool(name, args = {}) {
+  if (!activeToolNames.has(name)) {
+    throw new Error(`Tool ${name} is not available in this tool profile (${TOOL_PROFILE}).`);
+  }
   switch (name) {
     case 'status': {
       const full = await api('GET', '/api/status');
@@ -864,11 +901,11 @@ async function handle(msg) {
       capabilities: { tools: {} },
       serverInfo: { name: 'egglab', version: '0.1.0' },
       instructions:
-        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Start with egglab_status (compact). Decompose the piece into assets: generate transparent cut-outs for subjects (egglab_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egglab_edit), and local fixes with egglab_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egglab_photocraft_audit, save, export. egglab_check_alpha measures any PNG. Look up unknown engine commands with egglab_photocraft_commands. Knowledge loads on demand: use egglab_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
+        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egglab_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egglab_status (compact). Decompose the piece into assets: generate transparent cut-outs for subjects (egglab_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egglab_edit), and local fixes with egglab_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egglab_photocraft_audit, save, export. egglab_check_alpha measures any PNG. Look up unknown engine commands with egglab_photocraft_commands. Knowledge loads on demand: use egglab_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
     });
   }
   if (method === 'ping') return ok(id, {});
-  if (method === 'tools/list') return ok(id, { tools });
+  if (method === 'tools/list') return ok(id, { tools: activeTools });
   if (method === 'resources/list') return ok(id, { resources: [] });
   if (method === 'prompts/list') return ok(id, { prompts: [] });
   if (method === 'tools/call') {

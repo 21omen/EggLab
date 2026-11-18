@@ -25,7 +25,7 @@ description: Build/edit PhotoCraft documents with editable type, vector shapes, 
 1. Inspect canvas; use `egglab_photocraft_audit` when available.
 2. Fix named defects; re-audit once, not endlessly.
 3. Close scratch docs and exclude proof layers from export.
-4. Check `egglab_photocraft_project` state.
+4. Check the active document's path and dirty flag in `egglab_status`.
 5. Save editable project with `egglab_photocraft_save`.
 6. Choose one path: `egglab_photocraft_export_flat` for flat final PNG, or `egglab_photocraft_export_layers` for explicitly requested layer handoff. Do not export both “just in case”.
 7. Verify paths/status with tool results.

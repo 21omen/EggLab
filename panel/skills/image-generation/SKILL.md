@@ -10,7 +10,7 @@ Use this skill only when the deliverable is a **new image** and no supplied imag
 
 - Call `egglab_status`; check engine readiness, active model file and current workflow.
 - Read the active model label. Base Qwen-Image-2.1 and the Turbo LoRA/checkpoint are different operating modes; never assume Turbo because the model family is Qwen.
-- Check `egglab_models` only when a required model is missing. Do not download large models without the user's authorization/install policy.
+- `egglab_status` reports missing model files. Model installation and downloads belong to the panel/setup flow; the production agent has no download tool. If a file is missing, stop and report it.
 - Treat historical Qwen facts as research, not runtime guarantees. Verify live resolution, steps and capabilities.
 
 ## 2. Task classification
