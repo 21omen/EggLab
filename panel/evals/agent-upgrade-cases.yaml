@@ -136,3 +136,12 @@ cases:
     supporting_skills: [reference-editing, qa-delivery]
     expected_tool: generate
     prompt_must_include: [wide, horizon, consistency]
+  - id: upgrade_text_effect
+    category: text_effect
+    brief: Generate a polished 3D chrome text effect for the word EGGLAB on a dark studio background.
+    task: text_effect
+    primary_skill: image-generation
+    supporting_skills: [qa-delivery]
+    expected_tool: generate
+    prompt_must_include: ["EGGLAB", chrome, legible]
+    notes: Inspect the actual render and verify spelling; ordinary body copy still belongs in editable PhotoCraft type.

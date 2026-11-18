@@ -23,6 +23,7 @@ Use this skill only when the deliverable is a **new image** and no supplied imag
 | Marks on a photo / painted mask layer | `reference-editing` + `egl_photocraft_edit_active` |
 | Transparent cut-out or RGBA edit | `transparency` skill |
 | Poster, packaging, infographic, signage | `egl_generate` for imagery + PhotoCraft for exact type/layout |
+| Text-as-artwork: 3D, chrome, neon or inflatable lettering | `egl_generate`; inspect at native size and spell-check; ordinary copy stays editable type |
 | Storyboard/character sheet/panorama | `egl_generate` with continuity planning |
 | Multiple references contributing attributes | `reference-editing` multi-reference path |
 
@@ -37,7 +38,8 @@ If a source image is present, do not use `generate` unless the source is only in
 5. Keep simple props/subjects short. Long 400–500-word prompts are a legacy mode for complex spatial layouts, not a default.
 6. Use positive, observable language. Qwen-Image-2.1 runs at CFG 1; do not rely on negative prompts or invent scheduler/guidance controls.
 7. For exact text, quote the string exactly and plan editable PhotoCraft type for the final; generated type is a draft until proofread.
-8. Reuse one world line across assets in the same piece.
+8. When the lettering itself is the artwork (3D, chrome, neon, inflatable), generate it as pixels, then inspect at native size for exact spelling and legibility. This exception does not apply to ordinary copy.
+9. Reuse one world line across assets in the same piece.
 9. Render serially unless runtime confirms safe concurrency. Change one variable per iteration and inspect.
 
 ## 4. Qwen-Image-2.1 mental model

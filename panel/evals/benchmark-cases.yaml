@@ -23,6 +23,13 @@ cases:
     brief: Change lighting mood while preserving the person's identity and composition.
     must_load: [reference-editing, qa-delivery]
     checks: [consent_gate, identity_invariants, anatomy, minimal_drift]
+  - id: text_effect_chrome_25
+    category: text_effect
+    brief: Generate a polished 3D chrome text effect reading EGGLAB on a dark studio background.
+    must_load: [image-generation, qa-delivery]
+    conditional: [photocraft-production]
+    must_not: [misspell_text, substitute_editable_copy]
+    checks: [exact_spelling, legibility, studio_lighting, inspected_output]
   - id: object_remove_05
     category: local_edit
     brief: Remove one named object and preserve everything else in the photo.

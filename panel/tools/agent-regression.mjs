@@ -133,7 +133,7 @@ for (const line of caseText.split(/\r?\n/)) {
     current.lines.push(line);
   }
 }
-check('benchmark case count', caseBlocks.length === 24, `${caseBlocks.length} cases`);
+check('benchmark case count', caseBlocks.length === 25, `${caseBlocks.length} cases`);
 const ids = caseBlocks.map((c) => c.id);
 check('benchmark ids unique', new Set(ids).size === ids.length, `${ids.length} unique`);
 
@@ -191,6 +191,7 @@ const TASK_TOOL = {
   transparent_generate: 'generate',
   transparent_edit: 'edit',
   typography: 'generate',
+  text_effect: 'generate',
   storyboard: 'generate',
   panorama: 'generate',
 };
