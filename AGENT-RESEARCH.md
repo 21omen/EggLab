@@ -2,7 +2,7 @@
 
 **Date:** 18 November 2026  
 **Measured build:** 0.3.16
-**Fix shipped:** 0.3.18 (see §7)
+**Fix shipped:** 0.3.19 (see §7)
 **Agent model:** `opencode-go/deepseek-v4.1-flash` (free tier)  
 **Scope:** agent quality for image generation, Qwen-Image 2.1 editing and
 PhotoCraft production. This report does **not** blame the image model first; it
@@ -403,7 +403,7 @@ P0 was implemented in 0.3.17; see §7.
 
 ---
 
-## 7. Implementation in 0.3.17–0.3.18
+## 7. Implementation in 0.3.17–0.3.19
 
 The P0 tool-surface fix is now in the app, not just this report.
 
@@ -445,6 +445,25 @@ The P0 tool-surface fix is now in the app, not just this report.
   permissions match, that Code Mode is off, that the agent profile is selected,
   that hidden admin tools stay hidden, and that the root dev config follows the
   same shape.
+- 0.3.19 fixes the region-edit artefact found by the production eval. A crop
+  edit now composites the feathered patch over a copy of the original layer and
+  places that full-layer result, instead of leaving the original visible under a
+  translucent patch. The original is hidden only after the composite exists, so
+  untouched pixels outside the region survive. Unit coverage is in
+  `tools/region-composite-test.mjs`.
+- 0.3.19 adds a lightweight MCP heartbeat. If the panel closes/restarts and the
+  stdio server is orphaned, three failed `/api/jobs` checks (or a token
+  rejection) make it exit instead of lingering as an `EggLab.exe mcp-server.mjs`
+  process.
+- `tools/agent-live-eval.mjs` now commits the production eval:
+  `npm run test:live` creates a base image and marked/mask fixtures, builds
+  PhotoCraft documents, runs text effect, transparency, multi-reference,
+  editable-type poster, annotated-photo and separate-mask tasks, and asserts the
+  tool sequences and artifacts.
+- The image-generation skill now distinguishes **text-as-artwork** (3D, chrome,
+  neon, inflatable lettering: generate as pixels, inspect and spell-check) from
+  ordinary copy (still editable PhotoCraft type). The upgrade/benchmark suites
+  include a text-effect case.
 
 ### Measured result
 
@@ -459,19 +478,26 @@ A real task — “Use egl_generate now to create a 512×512 turbo image of a gr
 circle on white” — completed with exactly one tool call, `egl_generate`, and no
 generic detour.
 
-A live 24-check suite against the packaged app then passed **24/24** on
-`opencode-go/hy4-flash-free` (the model the user selected):
+The committed production eval (`npm run test:live`) passed **31/31** on
+`opencode-go/deepseek-v4.1-flash` in the final 0.3.19 run:
 
-- **surface** — 20/20 curated tools visible; only the denied `skill` built-in
-  extra; no `read`/experimental/execute/glob/grep leakage;
-- **knowledge** — `egl_read_knowledge` loaded `reference-editing` and returned
-  the `mask_layer` / `mask_invert` / annotation rules without rendering;
-- **generate + inspect** — `egl_generate` completed, then `egl_inspect`
-  returned the actual PNG and the model correctly described it;
-- **edit** — `egl_edit` changed the generated source, then `egl_inspect`
-  returned the result;
-- **stop** — Stop acknowledged, the active render job settled to `canceled`,
-  the turn ended as `Stopped.`, and no job was left running.
+- **text effect** — `egl_generate` produced a 768×768 chrome “EGGLAB” render;
+  `egl_inspect` confirmed legibility and exact spelling;
+- **transparent product** — `egl_generate` produced a real RGBA cut-out and
+  `egl_check_alpha` independently measured it;
+- **multi-reference** — `egl_edit` used the chrome render as canvas and the
+  green circle as donor, then inspected the result;
+- **editable-type poster** — 1080×1350, exact headline/subhead, two Type layers,
+  saved project, flat export, inspection;
+- **annotated photo** — scoped `egl_photocraft_edit_active`; the new full-layer
+  composite placed a visible `photo (EggLab region)` layer and hid the original;
+- **separate mask** — `mask-full` selected as `mask_layer`; result placed as
+  `base (EggLab)` and original hidden.
+
+Separately, the 24-check surface/knowledge/generate/edit/stop suite passed
+24/24 on `opencode-go/hy4-flash-free`; the same surface check on
+`opencode-go/deepseek-v4.1-flash` reported 20 curated tools plus the denied
+`skill` built-in.
 
 ### Token reality check
 

@@ -266,3 +266,85 @@ export function featherEdges(src, dst, px) {
   encodePng(dst, width, height, data);
   return f;
 }
+
+/**
+ * Resize an RGBA buffer with bilinear sampling in premultiplied alpha, so a
+ * feathered edge does not pick up dark or white fringes. Used when the engine
+ * renders a region at a capped size and the result has to be composited back
+ * at the layer's true pixel dimensions.
+ */
+function resizeRgba(src, sw, sh, dw, dh) {
+  if (sw === dw && sh === dh) return src;
+  const out = Buffer.alloc(dw * dh * 4);
+  for (let y = 0; y < dh; y++) {
+    const sy = Math.max(0, Math.min(sh - 1, (y + 0.5) * sh / dh - 0.5));
+    const y0 = Math.floor(sy);
+    const y1 = Math.min(sh - 1, y0 + 1);
+    const fy = sy - y0;
+    for (let x = 0; x < dw; x++) {
+      const sx = Math.max(0, Math.min(sw - 1, (x + 0.5) * sw / dw - 0.5));
+      const x0 = Math.floor(sx);
+      const x1 = Math.min(sw - 1, x0 + 1);
+      const fx = sx - x0;
+      const idx = [y0 * sw + x0, y0 * sw + x1, y1 * sw + x0, y1 * sw + x1];
+      const weights = [(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy];
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (let i = 0; i < 4; i++) {
+        const s = idx[i] * 4;
+        const wa = (src[s + 3] / 255) * weights[i];
+        r += src[s] * wa;
+        g += src[s + 1] * wa;
+        b += src[s + 2] * wa;
+        a += wa;
+      }
+      const d = (y * dw + x) * 4;
+      if (a > 0) {
+        out[d] = Math.round(r / a);
+        out[d + 1] = Math.round(g / a);
+        out[d + 2] = Math.round(b / a);
+        out[d + 3] = Math.round(a * 255);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Composite an edited (already feathered) patch back over the original layer
+ * at a region. The result is a full-layer image: original pixels outside the
+ * region, blended patch inside. Placing this over the canvas and hiding the
+ * original avoids the classic "original shows through the feathered edge"
+ * artefact without sacrificing the rest of the layer.
+ */
+export function compositePng(baseFile, patchFile, dstFile, rect) {
+  const base = decodePng(baseFile);
+  const patch = decodePng(patchFile);
+  const [rx, ry, rw, rh] = (rect || []).map((v) => Math.round(Number(v) || 0));
+  if (!(rw > 0) || !(rh > 0)) throw new Error('compositePng needs a positive region');
+  const patchData = resizeRgba(patch.data, patch.width, patch.height, rw, rh);
+  const data = Buffer.from(base.data);
+  for (let y = 0; y < rh; y++) {
+    const by = ry + y;
+    if (by < 0 || by >= base.height) continue;
+    for (let x = 0; x < rw; x++) {
+      const bx = rx + x;
+      if (bx < 0 || bx >= base.width) continue;
+      const s = (y * rw + x) * 4;
+      const sa = patchData[s + 3] / 255;
+      if (sa <= 0) continue;
+      const d = (by * base.width + bx) * 4;
+      const da = data[d + 3] / 255;
+      const oa = sa + da * (1 - sa);
+      if (oa <= 0) continue;
+      data[d] = Math.round((patchData[s] * sa + data[d] * da * (1 - sa)) / oa);
+      data[d + 1] = Math.round((patchData[s + 1] * sa + data[d + 1] * da * (1 - sa)) / oa);
+      data[d + 2] = Math.round((patchData[s + 2] * sa + data[d + 2] * da * (1 - sa)) / oa);
+      data[d + 3] = Math.round(oa * 255);
+    }
+  }
+  encodePng(dstFile, base.width, base.height, data);
+  return { width: base.width, height: base.height, rect: [rx, ry, rw, rh] };
+}

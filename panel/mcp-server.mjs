@@ -103,6 +103,29 @@ function readImage(requested) {
 const BASE = process.env.EGGLAB_URL;
 const TOKEN = process.env.EGGLAB_TOKEN;
 
+// If the panel closes or restarts, OpenCode can leave this stdio child behind
+// (observed as an orphan `EggLab.exe mcp-server.mjs` holding a model/tool
+// process open). A cheap heartbeat makes the server exit on its own: three
+// consecutive misses, or a token rejection after a restart.
+if (BASE && TOKEN) {
+  let misses = 0;
+  const heartbeat = setInterval(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/jobs`, {
+        headers: { 'x-egglab-token': TOKEN },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.status === 401) process.exit(0);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      misses = 0;
+    } catch {
+      misses++;
+      if (misses >= 3) process.exit(0);
+    }
+  }, 20000);
+  heartbeat.unref();
+}
+
 let buf = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -466,7 +489,7 @@ const tools = [
         workflow: { type: 'string', enum: ['quality', 'turbo'] },
         steps: { type: 'integer' },
         seed: { type: 'integer' },
-        replace: { type: 'boolean', description: 'Hide the original layer (default true; ignored for a region edit).' },
+        replace: { type: 'boolean', description: 'Hide the original layer (default true). Region edits build a full-layer composite first, so the untouched pixels survive outside the region.' },
       },
       required: ['prompt'],
     },

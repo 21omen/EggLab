@@ -11,7 +11,7 @@ import * as sessions from './sessions.mjs';
 import * as setup from './setup.mjs';
 import * as updater from './updater.mjs';
 import { alphaStats, describeAlpha } from './imagecheck.mjs';
-import { featherEdges, regionMask, layerMask } from './pngfeather.mjs';
+import { featherEdges, regionMask, layerMask, compositePng } from './pngfeather.mjs';
 import { getSettings, patchSettings } from './settings.mjs';
 import { LOG_DIR, TMP_DIR, stamp, clamp } from './paths.mjs';
 import { emit } from './bus.mjs';
@@ -359,6 +359,7 @@ async function editActive(body) {
   //                  and a seam cannot exist by construction. Costs a small
   //                  global VAE drift; buys a perfect blend.
   let region = null;
+  let cropRect = null; // layer-relative [x,y,w,h] for a crop edit
   let source = exported.path;
   let pasteBounds = null; // where the result lands; null = use the layer bounds
   let swapOriginal = false; // result covers the whole layer, so hide the old one
@@ -441,6 +442,12 @@ async function editActive(body) {
       const cropped = await pc.cropCopy(exported.path, [rx, ry, rw, rh]);
       source = cropped.path;
       region = [lx + cropped.rect[0], ly + cropped.rect[1], cropped.rect[2], cropped.rect[3]];
+      cropRect = [
+        cropped.rect[0],
+        cropped.rect[1],
+        cropped.rect[2],
+        cropped.rect[3],
+      ];
       pasteBounds = region;
       local.feather = band;
     }
@@ -505,6 +512,26 @@ async function editActive(body) {
       if (feathered > 0) output = faded;
     } catch (err) {
       emit('log', `feather failed (${err.message}); placing the un-feathered result`);
+    }
+  }
+
+  // Crop edits used to place the feathered patch directly over the still-visible
+  // original. At a uniform fill the original showed through the ramp as arcs
+  // and seams, and the agent had to hide the whole layer manually. Composite
+  // the patch over a copy of the original instead: the result is a full-layer
+  // replacement with the untouched pixels preserved outside the region.
+  if (cropRect && output && layer?.bounds) {
+    try {
+      const composed = path.join(
+        TMP_DIR,
+        `pc-composite-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`,
+      );
+      compositePng(exported.path, output, composed, cropRect);
+      output = composed;
+      pasteBounds = layer.bounds;
+      swapOriginal = true;
+    } catch (err) {
+      emit('log', `region composite failed (${err.message}); using the feathered patch`);
     }
   }
 
