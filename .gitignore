@@ -44,9 +44,9 @@ panel/config/runtime-profile.yaml
 # ---------------------------------------------------------------------------
 # Large binaries — downloaded at install/run time (see PACKING-PLAN.md)
 # ---------------------------------------------------------------------------
-engine/
-bin/
-Models/
+/engine/
+/bin/
+/Models/
 dist/
 *.safetensors
 *.gguf
