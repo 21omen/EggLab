@@ -29,7 +29,21 @@ jobs:
       - name: Agent regression gate
         run: npm run test:agent
 
-      - name: Build and publish installer
+      - name: Build installer
+        run: npm run dist -- --publish never
+
+      - name: Checksums
+        run: |
+          $exe = Get-ChildItem ..\dist\EggLab-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash -Algorithm SHA256 $exe.FullName).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content ..\dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content ..\dist\SHA256SUMS.txt
+
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist -- --publish always
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $exe = (Get-ChildItem ..\dist\EggLab-Setup-*.exe | Select-Object -First 1).FullName
+          gh release upload $tag $exe "..\dist\latest.yml" "..\dist\SHA256SUMS.txt" --clobber
+          gh release edit $tag --latest
