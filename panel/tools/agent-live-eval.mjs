@@ -12,12 +12,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodePng, encodePng } from '../service/pngfeather.mjs';
 
-const ctl = JSON.parse(
-  fs.readFileSync(
-    path.join(process.env.APPDATA || '', 'EggLab', 'control.json'),
-    'utf8',
-  ),
-);
+const controlCandidates = [
+  path.join(process.env.APPDATA || '', 'EggLab', 'control.json'),
+  path.join(process.cwd(), 'control.json'),
+];
+const controlFile = controlCandidates.find((file) => fs.existsSync(file));
+if (!controlFile) {
+  console.error('No running EggLab panel found (control.json). Start EggLab first.');
+  process.exit(2);
+}
+const ctl = JSON.parse(fs.readFileSync(controlFile, 'utf8'));
 const OUT = path.join(process.env.TEMP || os.tmpdir(), 'opencode');
 const FIX = path.join(OUT, 'agent-live-eval-fixtures');
 fs.mkdirSync(FIX, { recursive: true });
