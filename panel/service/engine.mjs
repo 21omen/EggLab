@@ -543,6 +543,7 @@ export function startJob(input = {}) {
   // encoder on CPU - it costs a few seconds of prompt encoding but fits
   // (verified on a 4060 Ti 8 GB).
   let teCpuRetry = false;
+  let lowVramRetry = false;
   let sizeRetry = false;
   let sizeRetry2 = false;
   let imageListFile = null;
@@ -745,7 +746,31 @@ if (Array.isArray(images) && images.length) {
       job.error = null;
       job.child = null;
       job.phase = 'starting';
-      job.detail = 'VRAM full — retrying with the text encoder on CPU';
+      job.detail = 'VRAM full - retrying with the text encoder on CPU';
+      stderrText = '';
+      buffer = '';
+      update(job);
+      launchNow();
+      return;
+    }
+
+    // 832x1024 and other sub-0.9 MP canvases were previously outside both size
+    // retries, so a transient VRAM squeeze during a transformer weight load
+    // ended the job immediately. Retry once with a tighter explicit device
+    // budget; the engine offloads more weights to RAM instead of dying.
+    if (memoryFailure && !lowVramRetry) {
+      lowVramRetry = true;
+      const budget = Math.max(3, Math.floor((Number(vram.total) || 8) * 0.55));
+      const mi = args.indexOf('-MaxVram');
+      if (mi >= 0) args[mi + 1] = String(budget);
+      else args.push('-MaxVram', String(budget));
+      if (!args.includes('-VaeTiling')) args.push('-VaeTiling');
+      log.write(`# retry: VRAM capacity check failed, max-vram -> ${budget} GB\n`);
+      job.logTail.push(`--- VRAM was full: retrying with a ${budget} GB VRAM budget ---`);
+      job.error = null;
+      job.child = null;
+      job.phase = 'starting';
+      job.detail = `VRAM full - retrying with a ${budget} GB budget`;
       stderrText = '';
       buffer = '';
       update(job);
@@ -791,6 +816,9 @@ if (Array.isArray(images) && images.length) {
       job.phase = 'error';
       const tail = job.logTail.slice(-6).join('\n');
       job.error = job.error || (code === 0 ? 'Engine exited without writing the output file.' : `Engine failed (exit ${code}).`);
+      if (memoryFailure) {
+        job.error = `The engine ran out of free VRAM after retrying. Close GPU-heavy apps/windows or switch to the turbo workflow and a smaller size.\n${job.error}`;
+      }
       job.error += tail ? `\n${tail}` : '';
     }
     try {
