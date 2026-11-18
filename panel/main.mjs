@@ -363,6 +363,14 @@ if (!gotLock) {
     if (empties) trace(`pruned ${empties} empty chat thread(s)`);
     const scratch = pruneScratch();
     if (scratch) trace(`pruned ${scratch} stale reference render(s)`);
+    // Repair transcripts lost to the old lossy filename scheme. OpenCode still
+    // has the messages, so this is a background restore, not a blank chat.
+    chat
+      .recoverMissingHistories(24)
+      .then((recovered) => {
+        if (recovered) trace(`recovered ${recovered} transcript(s) from OpenCode`);
+      })
+      .catch((err) => trace(`transcript recovery failed: ${err.message}`));
 
     /**
      * Follow the active PhotoCraft document: when the user switches tabs in
@@ -475,9 +483,12 @@ if (!gotLock) {
           if (chat.migrateThread(migrateFrom, key, doc?.name || null)) trace(`thread migrated -> ${key}`);
         }
 
+        const result = chat.useDocument(key, doc?.name || null);
+        // Advance the watcher state only after the chat actually adopted the
+        // document. Updating these first meant a failed adoption (busy/race)
+        // was treated as "already synced" on every later poll.
         lastDocKey = key;
         lastDocTab = activeTab;
-        const result = chat.useDocument(key, doc?.name || null);
         if (result.changed) trace(`thread -> ${key}`);
         sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
       } catch (err) {
@@ -672,6 +683,25 @@ ipcMain.handle('dialog:pickModel', async () => {
 });
 
 ipcMain.handle('chat:send', async (e, { text, files, refMap }) => {
+  // Close the 2.5 s polling gap: if PhotoCraft is already showing another
+  // document, send the message to that document's thread instead of the
+  // thread the watcher last saw. This is the stale-binding path that used to
+  // put a real conversation under the wrong canvas.
+  if (!chat.isBusy()) {
+    try {
+      const state = await pc.projectState();
+      const doc = state.document;
+      if (doc?.key && doc.key !== chat.documentKey()) {
+        chat.useDocument(doc.key, doc.name || null);
+        sendToRenderer('egglab:event', {
+          type: 'chat',
+          action: 'document',
+          docKey: doc.key,
+          doc,
+        });
+      }
+    } catch {}
+  }
   return await chat.send(text, files || [], refMap || {});
 });
 ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJobs(), downloads: cancelAgentDownloads() }));
@@ -698,8 +728,12 @@ ipcMain.handle('sessions:switch', async (e, { key }) => {
   // appeared to fail.
   holdSyncUntil = Date.now() + 4000;
   const shown = await showDocumentForKey(chat.documentKey()).catch(() => false);
+  // Opening a large project can take longer than the initial hold. Extend it
+  // from the completed open, otherwise the 2.5 s watcher can run against the
+  // old active tab and pull the chat back — the "switch did nothing" symptom.
+  holdSyncUntil = Date.now() + 4000;
   if (shown) trace(`document follows chat -> ${chat.documentKey()}`);
-  return { ...res, history: chat.getHistory() };
+  return { ...res, documentOpened: shown, history: chat.getHistory() };
 });
 ipcMain.handle('sessions:newThread', () => chat.newThread());
 

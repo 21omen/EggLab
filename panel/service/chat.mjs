@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { historyFileName } from './history-names.mjs';
 import { emit } from './bus.mjs';
 import { getSettings, patchSettings, engineConfig, workflowParams, visionForModel, resolveOpenCode } from './settings.mjs';
 import { AGENT_DIR, CHATS_DIR, CONFIG_DIR, DATA_DIR, KNOWLEDGE_DIR, LOG_DIR, OUT_DIR, PACKAGED, PANEL_DIR, TMP_DIR, readJson, uid, writeJson } from './paths.mjs';
@@ -365,12 +366,56 @@ fs.mkdirSync(HISTORY_DIR, { recursive: true });
  */
 const NO_DOC_KEY = 'no-document';
 
-function historyFileName(key) {
-  return `${String(key || NO_DOC_KEY).replace(/[^a-z0-9]+/gi, '_').slice(0, 80)}.json`;
-}
-
 function historyFile(key) {
   return path.join(HISTORY_DIR, historyFileName(key));
+}
+
+/**
+ * Rewrite old lossy filenames to the hashed name. Records written before the
+ * `threadId` field existed can still be identified by their own `docKey`; the
+ * original single-chat file is the no-document thread. Existing destinations
+ * are merged, never overwritten.
+ */
+function migrateHistoryNames() {
+  let names = [];
+  try {
+    names = fs.readdirSync(HISTORY_DIR);
+  } catch {
+    return 0;
+  }
+  let moved = 0;
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    const file = path.join(HISTORY_DIR, name);
+    const data = readJson(file, null);
+    if (!data || typeof data !== 'object' || !Array.isArray(data.items)) continue;
+    let id = data.threadId || data.docKey || null;
+    if (!id && name === 'default.json') id = NO_DOC_KEY;
+    if (!id) continue;
+    const targetName = historyFileName(id);
+    const target = path.join(HISTORY_DIR, targetName);
+    if (targetName === name) {
+      if (data.threadId !== id || data.docKey !== (data.docKey || id)) {
+        writeJson(file, { ...data, threadId: id, docKey: data.docKey || id });
+      }
+      continue;
+    }
+    const existing = readJson(target, null);
+    if (existing && Array.isArray(existing.items)) {
+      writeJson(target, {
+        threadId: id,
+        docKey: data.docKey || id,
+        items: mergeThreadItems(existing.items, data.items),
+      });
+    } else {
+      writeJson(target, { threadId: id, docKey: data.docKey || id, items: data.items });
+    }
+    try {
+      fs.rmSync(file, { force: true });
+      moved++;
+    } catch {}
+  }
+  return moved;
 }
 
 /** A transcript on disk, or null when it is missing or malformed. */
@@ -399,6 +444,134 @@ function mergeThreadItems(base, extra) {
   return items.slice(-160);
 }
 
+/**
+ * Convert an `opencode session export` payload into the panel's transcript
+ * items. Used only when a panel transcript is missing (for example after the
+ * old 80-character filename collision); live turns keep their own item shape.
+ */
+function sessionToItems(exported) {
+  const items = [];
+  // A chain of assistant messages between two user messages is ONE panel turn:
+  // the model emits a tool-call message, then another, then a final text
+  // message. Rebuilding one item per provider message produced sixteen empty
+  // bubbles instead of one answer with tool chips.
+  let turn = null;
+  const flush = () => {
+    if (!turn) return;
+    if (turn.text.length || turn.tools.length) {
+      items.push({
+        id: turn.id || uid('msg'),
+        role: 'agent',
+        text: turn.text.join('\n\n'),
+        tools: turn.tools,
+        at: turn.at || Date.now(),
+        pending: false,
+        error: null,
+      });
+    }
+    turn = null;
+  };
+  for (const message of exported?.messages || []) {
+    if (message?.type === 'user' && message.text) {
+      flush();
+      const files = (message.files || [])
+        .map((file) => (typeof file === 'string' ? file : file?.path))
+        .filter(Boolean);
+      items.push({
+        id: message.id || uid('msg'),
+        role: 'user',
+        text: String(message.text),
+        ...(files.length ? { files } : {}),
+        at: Number(message.time?.created) || Date.now(),
+      });
+      continue;
+    }
+    if (message?.type === 'idle') {
+      flush();
+      continue;
+    }
+    if (message?.type !== 'assistant') continue;
+    turn ||= { id: message.id, text: [], tools: [], at: 0 };
+    for (const part of message.content || []) {
+      if (part?.type === 'text' && part.text) turn.text.push(String(part.text));
+      if (part?.type !== 'tool') continue;
+      const state = part.state || {};
+      let output = '';
+      if (state.error) {
+        output = `${state.error.type || 'error'}: ${state.error.message || ''}`;
+      } else if (Array.isArray(state.content)) {
+        output = state.content.map((c) => c?.text || '').filter(Boolean).join('\n');
+      } else if (state.content?.text) {
+        output = state.content.text;
+      }
+      turn.tools.push({
+        name: String(part.name || 'tool').replace(/^egl_egl_/, 'egl_'),
+        status: state.status || 'completed',
+        arg: JSON.stringify(state.input || {}).slice(0, 600),
+        output: String(output).slice(0, 4000),
+      });
+    }
+    turn.at = Number(message.time?.completed || message.time?.created) || turn.at;
+  }
+  flush();
+  return items.sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0)).slice(-160);
+}
+
+/**
+ * Rebuild panel transcripts from OpenCode for registry threads whose own file
+ * is missing or empty. This is the repair path for the old filename collision:
+ * the OpenCode session still holds the conversation even when the panel file
+ * was overwritten by a sibling thread.
+ */
+export async function recoverMissingHistories(limit = 24) {
+  const entries = Object.values(sessions.registryThreads())
+    .filter((entry) => entry && entry.sessionId)
+    .slice(0, limit);
+  let recovered = 0;
+  for (const entry of entries) {
+    const file = historyFile(entry.id);
+    const current = readThread(file);
+    // Old recovery builds emitted one agent bubble per provider message, which
+    // leaves runs of empty-text tool bubbles. Re-export those once; normal live
+    // transcripts never have consecutive agent items.
+    const needsRepair =
+      current &&
+      current.items.some(
+        (item, i) =>
+          i > 0 &&
+          item.role === 'agent' &&
+          current.items[i - 1].role === 'agent' &&
+          !String(item.text || '').trim() &&
+          !item.pending,
+      );
+    if (current && current.items.length && !needsRepair) continue;
+    const exported = await sessions.exportSession(entry.sessionId);
+    const items = sessionToItems(exported);
+    if (!items.length) continue;
+    writeJson(file, {
+      threadId: entry.id,
+      docKey: entry.docKey || entry.id,
+      items,
+      recovered: true,
+      recoveredVersion: 2,
+    });
+    if (entry.id === threadId) {
+      history = { items };
+      emit('chat', {
+        action: 'thread',
+        docKey,
+        threadId,
+        sessionID: entry.sessionId,
+        title: entry.title || docTitle || null,
+        items,
+      });
+    }
+    recovered++;
+  }
+  if (recovered) agentLog(`recovered ${recovered} transcript(s) from OpenCode`);
+  return recovered;
+}
+
 // Open on the last thread's own document. Starting from `no-document` meant a
 // restart with PhotoCraft closed showed an empty chat even though a document's
 // conversation existed — the chat did not follow the document until the editor
@@ -408,6 +581,11 @@ function mergeThreadItems(base, extra) {
 // `threadId` is which transcript is on screen; `docKey` is which PhotoCraft
 // document it belongs to. They differ only for a secondary thread on a
 // document that already has a primary one (whose id IS the document key).
+const migratedHistoryFiles = migrateHistoryNames();
+if (migratedHistoryFiles) agentLog(`history filenames migrated: ${migratedHistoryFiles}`);
+
+const repairedThread = sessions.repairCurrent();
+if (repairedThread) agentLog('current thread repaired to a conversation with a session');
 const restored = sessions.current();
 let threadId = restored.key || NO_DOC_KEY;
 let docKey = restored.entry?.docKey || threadId;

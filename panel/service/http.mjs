@@ -219,6 +219,17 @@ async function handle(req, res, url) {
       return json(res, 200, await chat.deleteThread(body.key));
 
     case 'POST /api/chat': {
+      // Same stale-binding guard as the IPC path: bind to the document that is
+      // actually active in PhotoCraft before appending the user message.
+      if (!chat.isBusy()) {
+        try {
+          const state = await pc.projectState();
+          const doc = state.document;
+          if (doc?.key && doc.key !== chat.documentKey()) {
+            chat.useDocument(doc.key, doc.name || null);
+          }
+        } catch {}
+      }
       const item = await chat.send(body.text, body.files || [], body.refMap || {});
       return json(res, 200, { item });
     }

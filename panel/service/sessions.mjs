@@ -110,6 +110,28 @@ export async function opencodeSessions(limit = 40) {
   }
 }
 
+/** Export one OpenCode session (messages + metadata) for transcript recovery. */
+export async function exportSession(sessionId) {
+  if (!sessionId) return null;
+  try {
+    const oc = resolveOpenCode();
+    const { stdout } = await execFileAsync(
+      oc.cmd,
+      ['session', 'export', sessionId],
+      {
+        cwd: AGENT_DIR,
+        windowsHide: true,
+        maxBuffer: 16 * 1024 * 1024,
+        shell: oc.shell,
+      },
+    );
+    const parsed = JSON.parse(String(stdout).trim());
+    return parsed && Array.isArray(parsed.messages) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Point the registry at a THREAD without creating a chat entry.
  *
@@ -361,13 +383,34 @@ export function registryThreads() {
 export function threadFor(docKey) {
   if (!docKey) return null;
   const remembered = registry.threads[registry.activeThreads[docKey]];
+  const candidates = Object.values(registry.threads)
+    .filter((thread) => thread && thread.docKey === docKey)
+    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+  // A remembered empty "new chat" must not hide the document's real
+  // conversation. Prefer the remembered thread when it has an OpenCode session;
+  // otherwise fall back to the newest thread that does. If the document has no
+  // session at all, keep the remembered/new thread.
+  if (remembered && remembered.docKey === docKey && remembered.sessionId) return remembered;
+  const withSession = candidates.find((thread) => thread.sessionId);
+  if (withSession) return withSession;
   if (remembered && remembered.docKey === docKey) return remembered;
-  let best = null;
-  for (const thread of Object.values(registry.threads)) {
-    if (!thread || thread.docKey !== docKey) continue;
-    if (!best || (Number(thread.updatedAt) || 0) > Number(best.updatedAt || 0)) best = thread;
-  }
-  return best;
+  return candidates[0] || null;
+}
+
+/**
+ * Startup repair: if the remembered thread has never run and a sibling
+ * conversation on the same document has an OpenCode session, open the sibling
+ * instead. This is what stops an abandoned "new chat" from hiding real history.
+ */
+export function repairCurrent() {
+  const currentThread = registry.threads[registry.currentKey];
+  if (!currentThread || currentThread.sessionId) return false;
+  const better = threadFor(currentThread.docKey);
+  if (!better || better.id === currentThread.id || !better.sessionId) return false;
+  registry.currentKey = better.id;
+  registry.activeThreads[currentThread.docKey] = better.id;
+  save();
+  return true;
 }
 
 /** Every conversation belonging to one document, newest first. */
@@ -399,7 +442,12 @@ export function isTransientDocKey(key) {
 export async function list(limit = 40) {
   const live = await opencodeSessions(limit);
   const byId = new Map(live.map((s) => [s.id, s]));
-  const docs = Object.entries(registry.threads).map(([id, entry]) => {
+  const docs = Object.entries(registry.threads)
+    // An empty "new chat" that the user never sent to is not a conversation.
+    // Keep only the thread currently on screen so the list is not filled with
+    // "Untitled chat" rows after an accidental click.
+    .filter(([id, entry]) => Boolean(entry?.sessionId) || id === registry.currentKey)
+    .map(([id, entry]) => {
     const liveEntry = entry.sessionId ? byId.get(entry.sessionId) : null;
     return {
       // `key` is the id every rename/delete/switch call takes back. Threads on
