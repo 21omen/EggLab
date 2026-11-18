@@ -278,11 +278,26 @@ Fix in 0.3.26:
 | 0.3.26 agent new-document while attached | rejected 409 (tool + `document.new`) |
 | 0.3.26 agent leaves the canvas mid-turn | watcher restored `Untitled-1`, chat stayed on its thread |
 | 0.3.26 repaired incident data | 9 chats; current `#2` with 11 items; one chat per document |
+| 0.3.26 release pipeline | GitHub Actions built and uploaded `EggLab-Setup-0.3.26.exe`; release `latest` points to v0.3.26 |
 
 Backups made before migration:
 `%APPDATA%\EggLab\_backup-session-fix-20261118-180805\`.
 
-### 5.1 Incident during the repair (must be recorded)
+### 5.1 Release pipeline
+
+The first `v0.3.26` tag run failed the agent gate because `.gitignore`'s
+`engine/` rule also matched `panel/references/engine/`. The reference file was
+present locally but never committed. Changed the rule to `/engine/`, committed
+the Qwen legacy-facts reference, and moved the tag to the fixed commit.
+
+The second run built the installer but skipped publishing: electron-builder
+defaults to a **draft** release, and the existing `v0.3.26` release was already
+published. The workflow now builds with `--publish never` and uploads the
+installer, `latest.yml` and `SHA256SUMS.txt` with
+`gh release upload --clobber`, then marks the release latest. Verified: the
+published `v0.3.26` has all three assets, and `/releases/latest` resolves to it.
+
+### 5.2 Incident during the repair (must be recorded)
 
 While validating the recovery path, I restored the **pre-fix** session backup
 after some recovered transcripts had already been written. OpenCode had already
