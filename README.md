@@ -33,7 +33,9 @@ Python, no cloud rendering.
 
 1. Download **`EggLab-Setup-<version>.exe`** from [Releases](../../releases).
 2. Windows SmartScreen will warn because the installer is not code-signed yet:
-   **More info → Run anyway**.
+   **More info → Run anyway**. This is an unsigned-publisher warning, not a
+   virus detection; verify `SHA256SUMS.txt` if you want to check the download.
+   The fix and the signing options are in [docs/SIGNING.md](docs/SIGNING.md).
 3. The installer copies the app (~77 MB) and downloads the engine that matches your GPU
    (SHA-256 verified, resumable; CUDA → Vulkan → CPU fallback if a download fails).
 4. Launch EggLab and finish the setup wizard (below).

@@ -30,7 +30,21 @@ jobs:
         run: npm run test:agent
 
       - name: Build installer
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run dist -- --publish never
+
+      - name: Verify signature
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem ..\dist\EggLab-Setup-*.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "Signature: $($sig.Status)"
+          Write-Host "Signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') {
+            Write-Warning "Installer is not signed. Windows SmartScreen will warn until a code-signing certificate is configured (see docs/SIGNING.md)."
+          }
 
       - name: Checksums
         run: |

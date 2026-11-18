@@ -94,6 +94,20 @@ check(
 );
 check('README links to PhotoCraft', /getartcraft\.com/.test(read('README.md')));
 check('package declares the MIT license', pkg.license === 'MIT');
+check(
+  'Windows signing is configured',
+  pkg.build?.win?.signtoolOptions?.signingHashAlgorithms?.includes('sha256') &&
+    Boolean(pkg.build?.win?.signtoolOptions?.rfc3161TimeStampServer),
+);
+check(
+  'signing guide is linked',
+  fs.existsSync(path.join(REPO, 'docs/SIGNING.md')) && /docs\/SIGNING\.md/.test(read('README.md')),
+);
+const releaseWorkflow = read('.github/workflows/release.yml');
+check(
+  'release workflow accepts signing secrets and verifies the signature',
+  /WIN_CSC_LINK/.test(releaseWorkflow) && /Get-AuthenticodeSignature/.test(releaseWorkflow),
+);
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {

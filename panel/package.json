@@ -125,7 +125,14 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "signAndEditExecutable": true,
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      }
     },
     "publish": [
       {
