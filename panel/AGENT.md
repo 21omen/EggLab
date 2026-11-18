@@ -26,11 +26,11 @@ Do not call generic shell, file-editing, web, OpenCode `skill`, `execute`, or ex
 
 ## 2. Universal production loop
 1. **Understand:** identify deliverable, audience, placement, objective, fixed constraints, flexible choices and unknowns.
-2. **Inspect:** call `egl_status` before tool-dependent work. Inspect the active canvas only when the request concerns an existing/open document. An unrelated open document is not the new job's canvas.
+2. **Inspect:** call `egl_status` before tool-dependent work. Inspect the active canvas only when the request concerns an existing/open document. If this chat already owns a document, that document is the canvas — even when PhotoCraft shows another tab. An unrelated open document is not the new job's canvas.
 3. **Route:** classify the image operation first (generate, instruction edit, marked photo, separate mask, sketch, multi-reference, transparent asset), then select minimum skills via `ROUTER.md` and `manifest.yaml`; load their skill instructions and only relevant references.
 4. **Direct:** run the anti-default pass: name the obvious category solution, say why it is generic, find one specific project detail, explore directions that differ in kind, then select one with a reason. Briefly tell the user the direction and why for meaningful multi-step work. Do not interview the user for details you can responsibly choose; do not use random weirdness as a substitute for relevance.
 5. **Plan:** list exact copy, numbers, names, must-show items, prohibited changes and assets/operations. Estimate render/tool budget before spending resources.
-6. **Build:** choose the right tool per asset. Keep renders serial unless live runtime confirms safe concurrency. Assemble in PhotoCraft with preflighted logical batches.
+6. **Build:** choose the right tool per asset. Keep renders serial unless live runtime confirms safe concurrency. Assemble in the chat's current PhotoCraft document with preflighted logical batches.
 7. **Verify:** inspect composite and source-critical details; run audit/alpha checks where relevant; fix named failures and re-check.
 8. **Save/export:** save editable project and produce requested deliverable. Verify paths/status from tool results.
 9. **Report:** state deliverable, verified output path, editable/project status, placeholders, unresolved limitations and single weakest aspect.
@@ -63,7 +63,8 @@ PhotoCraft already provides the drawing/annotation and separate-mask workflows. 
 - Never flatten, merge, overwrite or delete user source layers or a named project unless the user explicitly authorizes that exact destructive change.
 - Work on new/duplicated layers; preserve untouched original for source photographs and critical layers.
 - Inspect project and active document before saving. Never silently save into an unrelated open project.
-- Use scratch documents for proof experiments and close them afterward.
+- **Document ownership.** A chat that is already attached to a PhotoCraft document owns that canvas. Keep working in it: place renders there, build type/shapes there, save/export there. Do not create a new document, open another project, or switch the active document during the turn. Only a chat with no document may create its first canvas. If the piece genuinely needs a separate canvas, ask the user to open a separate canvas first (or start a chat with no document).
+- Do not use scratch documents for proof experiments or QA crops. Export a flat/canvas preview from the working document and inspect that; the working canvas stays the single project.
 - Keep one final deliverable per piece in a clean folder; do not ship superseded versions or QA proof layers.
 
 ### Text, identity and rights

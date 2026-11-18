@@ -265,8 +265,25 @@ async function handle(req, res, url) {
     case 'POST /api/photocraft/place':
       return json(res, 200, { result: await pc.place(body.path, body), save: await pc.autosave('placed a layer') });
 
-    case 'POST /api/photocraft/new-document':
+    case 'POST /api/photocraft/new-document': {
+      // A chat that already owns a document must stay in it. Letting an agent
+      // create a new canvas mid-turn moves the PhotoCraft active document and
+      // used to retarget the conversation onto it (two chats on one doc, the
+      // working doc left without its chat). Only a chat with no document may
+      // create one; a human can always start a new chat for a separate piece.
+      if (body.source === 'agent') {
+        const working = chat.workingDocument();
+        if (working) {
+          return json(res, 409, {
+            error:
+              `This chat is working in "${working}". Keep building in that document. ` +
+              'Only a chat with no document may create a new one; use the current canvas, ' +
+              'or ask the user to open a separate canvas first.',
+          });
+        }
+      }
       return json(res, 200, { result: await pc.newDocument(body) });
+    }
 
     case 'POST /api/photocraft/export-layers':
       return json(res, 200, { result: await pc.exportLayers(body) });
@@ -288,8 +305,62 @@ async function handle(req, res, url) {
       return json(res, 200, await pc.exportLayersByMentions(body.names || []));
     }
 
-    case 'POST /api/photocraft/command':
-      return json(res, 200, { result: await pc.command(body.id, body.params || {}) });
+    case 'POST /api/photocraft/command': {
+      // The tool registry exposes one generic command bridge; keep the
+      // no-new-document rule there too, so an agent cannot bypass the guarded
+      // tool with `doc_new`/`document.new`.
+      const id = String(body.id || '');
+      if (body.source === 'agent' && /^(?:doc|document|file)\.(?:new|create)$/i.test(id)) {
+        const working = chat.workingDocument();
+        if (working) {
+          return json(res, 409, {
+            error:
+              `This chat is working in "${working}". New documents are only allowed from a chat ` +
+              'with no document; keep working in the current canvas.',
+          });
+        }
+      }
+      // Activating another open document is the other way out of the working
+      // canvas. Allow only the chat's own document; the watcher would otherwise
+      // have to drag the user back after the turn.
+      if (body.source === 'agent' && /^document\.activate$/i.test(id)) {
+        const working = chat.workingDocument();
+        const target = Number(body.params?.document);
+        if (working && Number.isFinite(target)) {
+          const state = await pc.projectState().catch(() => null);
+          const documents = state?.documents || [];
+          const doc = documents.find((d) => d.index === target);
+          if (doc) {
+            const active = documents.find((d) => d.active);
+            const targetIsActive = Boolean(active && active.index === target);
+            const workingName = working.startsWith('untitled:') ? working.split(':')[1] : null;
+            const sameUntitledName = Boolean(
+              workingName && String(doc.label || doc.name || '') === workingName,
+            );
+            const samePath = Boolean(
+              doc.path &&
+                path.resolve(String(doc.path)).toLowerCase() ===
+                  path.resolve(working).toLowerCase(),
+            );
+            const key = pc.docKey({
+              path: doc.path || '',
+              name: doc.label || doc.name,
+              width: doc.width,
+              height: doc.height,
+            });
+            if (!targetIsActive && !sameUntitledName && !samePath && key !== working) {
+              const label = String(doc.label || doc.name || key);
+              return json(res, 409, {
+                error:
+                  `This chat is working in "${working}". Do not activate "${label}" during the turn; ` +
+                  'keep building in the working document.',
+              });
+            }
+          }
+        }
+      }
+      return json(res, 200, { result: await pc.command(id, body.params || {}) });
+    }
 
     case 'POST /api/photocraft/commands':
       return json(res, 200, await pc.commandCatalog(body || {}));

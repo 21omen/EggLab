@@ -28,4 +28,4 @@ The original source lists these font names as candidates: Impact, Oswald, Roboto
 Use editable vector shapes for logos, icons, labels, charts and precise geometry where possible. Preserve source vector geometry and stroke behavior. Rasterize only when required by a specific effect or unsupported operation and retain the editable source when possible.
 
 ## Existing documents
-Inspect active document, canvas dimensions, layer list and save state before editing. Never assume the currently active file is the intended project. Activate the intended document explicitly when supported.
+Inspect active document, canvas dimensions, layer list and save state before editing. Never assume the currently active file is the intended project. Activate the intended document explicitly when supported. A chat that already owns a document must keep working in that document — do not create a second document or switch to another project during the turn. Only a chat with no document may create its first canvas.

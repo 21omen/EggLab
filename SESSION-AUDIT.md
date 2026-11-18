@@ -211,6 +211,44 @@ and `config.json` is the single models-folder authority (mirrored into
 A regression test (`tools/model-config-test.mjs`) proves a fresh profile, a
 newly selected model and a repaired config all resolve to the same path.
 
+### 4.4d “Agent leaves the working document and creates a new one”
+
+Found in 0.3.25. During a group-portrait turn the agent created **seven** new
+PhotoCraft documents with `egl_photocraft_new_document` (one per QA zoom pass,
+then `final-fix` for the final placement). At 14:59 the watcher logged
+`thread migrated -> untitled:final-fix:1088x1408`. `migrateThread` moved the
+document's primary thread to the new canvas and retargeted every sibling, so
+`untitled:final-fix` ended up with two chats and the original working document
+lost both.
+
+Root causes:
+
+1. The global MCP instructions said “Assemble bottom-up in PhotoCraft (new
+   document, place, …)”, and `photocraft-production` said “For new jobs create a
+   new document”. `AGENT.md` also recommended “scratch documents for proof
+   experiments”. The agent followed those instructions literally.
+2. `egl_photocraft_new_document` had no ownership guard; it always created and
+   activated a new document.
+3. The 0.3.23 post-run migration treated any document created during a run as
+   the chat's new home, even when the chat already owned a working document.
+
+Fix in 0.3.26:
+
+- `egl_photocraft_new_document` is refused (HTTP 409) when the chat owns a
+  document. Only a chat with no document may create its first canvas. The same
+  rule covers `doc_new`/`document.new` through the generic command bridge.
+- Instructions now say the chat's document is the canvas: assemble there, never
+  create a second document to escape its size or for a QA proof. Scratch-document
+  advice was removed.
+- The watcher no longer migrates an attached chat to a canvas created during a
+  run. If the agent left its document, the watcher re-activates the working
+  document and keeps the thread where it is; only a chat that started with no
+  document may adopt a new canvas.
+- Repaired the incident data from the 14:34 pre-run snapshot: both Untitled-1
+  threads are back on `untitled:Untitled-1:1500x2100`, current thread `#2` with
+  11 items, one chat per document. The seven canvases the agent created remain
+  as documents, but none owns a conversation.
+
 ### 4.5 Watcher and switch races
 
 - `syncDocument()` updates `lastDocKey`/`lastDocTab` **after** `useDocument()`
@@ -237,6 +275,9 @@ newly selected model and a repaired config all resolve to the same path.
 | 0.3.25 delete + late write + restart | chat stays deleted; leftover transcript moved to `chats/_trash` |
 | 0.3.25 missing `config.json` | file recreated; main Q4_K_M selected; setup `ready: true` |
 | 0.3.25 render after config recreation | 832×1024 turbo done in 25.7 s |
+| 0.3.26 agent new-document while attached | rejected 409 (tool + `document.new`) |
+| 0.3.26 agent leaves the canvas mid-turn | watcher restored `Untitled-1`, chat stayed on its thread |
+| 0.3.26 repaired incident data | 9 chats; current `#2` with 11 items; one chat per document |
 
 Backups made before migration:
 `%APPDATA%\EggLab\_backup-session-fix-20261118-180805\`.

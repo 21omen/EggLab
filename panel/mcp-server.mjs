@@ -440,7 +440,7 @@ const tools = [
   {
     name: 'photocraft_new_document',
     description:
-      'Create a new PhotoCraft document and make it the active one. Returns {document:index, activated:true}; if activated is false, call photocraft_command {id:"document.activate",params:{document}} before placing anything.',
+      'Create a PhotoCraft document ONLY when this chat has no document yet (a fresh chat with no canvas). A chat already attached to a working document must keep building in that document — never create a second canvas to escape its size, for a QA proof, or for the final placement. The panel refuses this call for an attached chat. Returns {document:index, activated:true}; if activated is false, call photocraft_command {id:"document.activate",params:{document}} before placing anything.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -897,6 +897,7 @@ async function callTool(name, args = {}) {
         height: args.height,
         background: args.background,
         name: args.name,
+        source: 'agent',
       });
 
     case 'photocraft_export_layers':
@@ -928,7 +929,7 @@ async function callTool(name, args = {}) {
       });
 
     case 'photocraft_command':
-      return await api('POST', '/api/photocraft/command', { id: args.id, params: args.params || {} });
+      return await api('POST', '/api/photocraft/command', { id: args.id, params: args.params || {}, source: 'agent' });
 
     case 'photocraft_batch': {
       const list = Array.isArray(args.commands) ? args.commands : [];
@@ -938,7 +939,7 @@ async function callTool(name, args = {}) {
       const runStep = async (step) =>
         step.id === 'place' || step.id === 'photocraft_place'
           ? api('POST', '/api/photocraft/place', step.params || {})
-          : api('POST', '/api/photocraft/command', { id: step.id, params: step.params || {} });
+          : api('POST', '/api/photocraft/command', { id: step.id, params: step.params || {}, source: 'agent' });
       for (let i = 0; i < list.length; i++) {
         const step = list[i] || {};
         try {
@@ -1065,7 +1066,7 @@ async function handle(msg) {
       capabilities: { tools: {} },
       serverInfo: { name: 'egglab', version: '0.1.0' },
       instructions:
-        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egl_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egl_status (compact). Use egl_job_state to read/patch the panel-managed brief, constraints, assets, QA and delivery record. After a render, canvas preview or layer export that must be judged visually, call egl_inspect with its absolute path; it returns the actual image. Use egl_read_knowledge only for the knowledge package. Decompose the piece into assets: generate transparent cut-outs for subjects (egl_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egl_edit), and local fixes with egl_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up in PhotoCraft (new document, place, type, shape, adjustment layers), check with egl_photocraft_audit, save, export. egl_check_alpha measures any PNG. Look up unknown engine commands with egl_photocraft_commands. Knowledge loads on demand: use egl_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
+        'EggLab tools drive a local Qwen-Image-2.1 engine and a live PhotoCraft session. Tools are exposed directly under their exact egl_* names; do not use generic shell, file, web, OpenCode skill or experimental image tools. Start with egl_status (compact). Use egl_job_state to read/patch the panel-managed brief, constraints, assets, QA and delivery record. After a render, canvas preview or layer export that must be judged visually, call egl_inspect with its absolute path; it returns the actual image. Use egl_read_knowledge only for the knowledge package. Decompose the piece into assets: generate transparent cut-outs for subjects (egl_generate transparent=true, then read the returned alpha), full scenes or plates for fields, reference edits for anything derived from existing imagery (egl_edit), and local fixes with egl_photocraft_edit_active. For local work: a rectangle uses region:[x,y,w,h]; user-drawn circles/marks on the active photo are annotation guidance (name each mark and tell the model to remove it); a separately painted mask layer uses mask_layer:"name" (white/alpha = edit, black/transparent = keep), never as a donor image. A region/mask edit must never come back as a visible rectangle: pass mode:"inpaint" on flat areas or raise feather if you can see an edge, and read all four borders before calling it done. Assemble bottom-up inside the document this chat already owns (place, type, shape, adjustment layers); if the chat has no document yet, create one at the working size first. Never create a second document, leave the working document, or switch to another project mid-turn to escape its size or for a QA proof — the panel blocks new documents for attached chats. Check with egl_photocraft_audit, save, export. egl_check_alpha measures any PNG. Look up unknown engine commands with egl_photocraft_commands. Knowledge loads on demand: use egl_read_knowledge for a skill body or reference only after ROUTER.md selects it.',
     });
   }
   if (method === 'ping') return ok(id, {});

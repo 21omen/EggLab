@@ -635,6 +635,11 @@ let turnStopped = false;
 // Timestamp of the turn currently running / most recently run. Main uses it to
 // tell a project saved DURING a run from one that simply happened to be open.
 let lastRunAt = null;
+// What the chat was bound to when that turn started, and when it ended. The
+// document watcher uses these to tell "the agent left its working document"
+// from "the user switched tabs".
+let lastRunDocKey = null;
+let lastRunFinishedAt = null;
 
 // Persist a migrated transcript straight away. Otherwise the file only comes
 // back on the next message, and a restart in between would lose it.
@@ -815,6 +820,20 @@ export function moveThread(key, targetDocKey, title = null) {
 /** The document currently owning the chat thread on screen. */
 export function documentKey() {
   return docKey;
+}
+
+/**
+ * The PhotoCraft document this chat is working in, or null when it has none.
+ * A chat is authoritative over the canvas: once it owns a document, an agent
+ * turn must not create or switch to another one.
+ */
+export function workingDocument() {
+  return docKey && docKey !== NO_DOC_KEY ? docKey : null;
+}
+
+/** True when this chat is attached to a real/untitled PhotoCraft document. */
+export function hasWorkingDocument() {
+  return Boolean(workingDocument());
 }
 
 /** The transcript currently on screen (differs from docKey for extra threads). */
@@ -1199,6 +1218,16 @@ export function isBusy() {
 /** When the current or most recent agent turn began. */
 export function lastRunStartedAt() {
   return lastRunAt;
+}
+
+/** When that turn finished (null before the first finished turn). */
+export function lastRunEndedAt() {
+  return lastRunFinishedAt;
+}
+
+/** The document the chat owned when that turn started. */
+export function lastRunDocumentKey() {
+  return lastRunDocKey;
 }
 
 export function clearHistory() {
@@ -1594,6 +1623,7 @@ export async function send(text, files = [], refMap = {}) {
   const heartbeatMs = Math.max(5, Number(s.opencode.heartbeatSec) || 15) * 1000;
   const startedTurn = Date.now();
   lastRunAt = startedTurn;
+  lastRunDocKey = docKey;
 
   // A daily free-tier quota ("free-models-per-day", "add N credits") cannot
   // heal inside one turn. Retrying it only burns the whole retry budget on
@@ -1660,6 +1690,7 @@ export async function send(text, files = [], refMap = {}) {
   }
   if (turnStopped) result.stopped = true;
   turnRunning = false;
+  lastRunFinishedAt = Date.now();
 
   if (stalled(result) && !result.error) {
     result.error = `${model} stopped responding — no response from the model`;

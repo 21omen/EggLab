@@ -451,6 +451,36 @@ if (!gotLock) {
         // The user just picked a chat and PhotoCraft is still bringing its
         // document forward; do not drag the thread back while it does.
         if (Date.now() < holdSyncUntil) return;
+
+        const runAt = chat.lastRunStartedAt();
+        const runEndedAt = chat.lastRunEndedAt();
+        const runDoc = chat.lastRunDocumentKey();
+        const justFinishedRun = Boolean(runEndedAt) && Date.now() - runEndedAt < 15000;
+        const recentRun = Boolean(runAt) && Date.now() - runAt < 30 * 60 * 1000;
+
+        // The agent left the document it was working in. A chat that owns a
+        // document must never follow another canvas: retargeting the thread is
+        // what left two chats on one document and the working document with
+        // none. Put the working document back and keep the thread where it is.
+        // Only a chat that started with no document may adopt a new canvas.
+        if (
+          justFinishedRun &&
+          runDoc &&
+          runDoc !== NO_DOCUMENT &&
+          attachedKey === runDoc &&
+          key !== runDoc
+        ) {
+          const restored = await showDocumentForKey(runDoc).catch(() => false);
+          lastDocKey = runDoc;
+          lastDocTab = null;
+          trace(
+            `agent left document ${runDoc} -> ${key}; ` +
+              (restored ? 'restored the working document' : 'could not restore the working document'),
+          );
+          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: runDoc, doc: null });
+          return;
+        }
+
         // Saving an untitled document for the first time changes its identity
         // (untitled:<name>:<w>x<h> -> the real path). Carry its conversation
         // across, but only when the SAME PhotoCraft tab changed identity: a
@@ -463,24 +493,22 @@ if (!gotLock) {
           !isUntitledKey(key) &&
           attachedKey === lastDocKey;
 
-        // An agent turn can also SAVE A NEW PROJECT (for example `egglab-poster`)
-        // and leave PhotoCraft on it. The old rule only migrated from
-        // `no-document`/draft threads, so a chat started on `taunggyi-team`
-        // stayed there while the watcher opened the new project's empty thread:
-        // the user saw the conversation disappear the moment the turn ended.
-        const runAt = chat.lastRunStartedAt();
-        const recentRun = Boolean(runAt) && Date.now() - runAt < 30 * 60 * 1000;
-        const sameThreadDocument = attachedKey === lastDocKey && key !== attachedKey;
+        // A chat with no document may adopt the canvas the agent creates for
+        // it. An attached chat never migrates (handled above).
         let savedDuringRun = false;
-        if (recentRun && sameThreadDocument && isPcraftKey(key)) {
+        if (recentRun && attachedKey === NO_DOCUMENT && isPcraftKey(key) && key !== lastDocKey) {
           try {
             savedDuringRun = fs.statSync(key).mtimeMs >= runAt - 2000;
           } catch {}
         }
-        const createdDraftDuringRun = recentRun && sameThreadDocument && isUntitledKey(key);
+        const docAppearedDuringRun = key !== lastDocKey;
+        const createdForDetachedChat =
+          recentRun &&
+          attachedKey === NO_DOCUMENT &&
+          docAppearedDuringRun &&
+          (savedDuringRun || isUntitledKey(key));
 
-        let migrateFrom =
-          draftBecameFile || savedDuringRun || createdDraftDuringRun ? attachedKey : null;
+        let migrateFrom = draftBecameFile || createdForDetachedChat ? attachedKey : null;
         if (migrateFrom) {
           if (chat.migrateThread(migrateFrom, key, doc?.name || null)) trace(`thread migrated -> ${key}`);
         }

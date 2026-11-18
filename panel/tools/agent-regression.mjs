@@ -360,7 +360,38 @@ check('generated permissions deny everything by default', /action:\s*'\*',\s*res
 check('generated permissions allow egl tools', /action:\s*'egl_\*'/.test(permissionBlock));
 check('generated permissions do not expose read', !/action:\s*'read'/.test(permissionBlock));
 check('generated config passes inspect roots', /EGGLAB_READ_ROOTS/.test(chatSource));
-check('post-run document migration covers files', /savedDuringRun/.test(read('main.mjs')) && /createdDraftDuringRun/.test(read('main.mjs')));
+check(
+  'post-run migration only for a detached chat',
+  /savedDuringRun/.test(read('main.mjs')) && /createdForDetachedChat/.test(read('main.mjs')),
+);
+check(
+  'watcher restores the working document when an agent leaves it',
+  /agent left document/.test(read('main.mjs')) &&
+    /showDocumentForKey\(runDoc\)/.test(read('main.mjs')) &&
+    /lastRunDocumentKey/.test(read('service/chat.mjs')),
+);
+check(
+  'new document blocked for an attached chat',
+  /source === 'agent'/.test(read('service/http.mjs')) &&
+    /chat\.workingDocument\(\)/.test(read('service/http.mjs')) &&
+    /doc\|document\|file/.test(read('service/http.mjs')),
+);
+check(
+  'MCP new-document call is tagged as agent',
+  /'\/api\/photocraft\/new-document'[\s\S]{0,400}source: 'agent'/.test(read('mcp-server.mjs')),
+);
+check(
+  'agent activation is limited to the working document',
+  /document\\\.activate/.test(read('service/http.mjs')) &&
+    /targetIsActive/.test(read('service/http.mjs')) &&
+    /sameUntitledName/.test(read('service/http.mjs')),
+);
+check(
+  'instructions keep the agent in its working document',
+  /Document ownership/.test(read('AGENT.md')) &&
+    /Do not create a new document/i.test(read('AGENT.md')) &&
+    /never create a second document/i.test(read('skills/photocraft-production/SKILL.md')),
+);
 check('low-VRAM sub-megapixel retry exists', /lowVramRetry/.test(read('service/engine.mjs')));
 // Deleted chats must not come back when the app reopens. The durable part
 // (tombstone + registry + transcript) has to happen before the slow OpenCode
