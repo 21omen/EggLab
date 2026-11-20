@@ -92,7 +92,16 @@ export const ENGINE_INSTALLER = IS_WIN ? ENGINE_INSTALL_PS1 : ENGINE_INSTALL_SH;
 export const OUT_DIR = PACKAGED ? path.join(DATA_DIR, 'out') : path.join(ROOT, 'out');
 export const LOG_DIR = PACKAGED ? path.join(DATA_DIR, 'logs') : path.join(PANEL_DIR, 'logs');
 export const TMP_DIR = PACKAGED ? path.join(DATA_DIR, 'tmp') : path.join(PANEL_DIR, 'tmp');
-export const AGENT_DIR = PACKAGED ? path.join(DATA_DIR, 'agent') : path.join(PANEL_DIR, 'agent');
+// The agent workspace must not sit inside the repo checkout on Linux: OpenCode
+// also loads the repo-root opencode.json (a developer config whose relative
+// `egl` command then resolves against the wrong folder and carries no panel
+// URL/token), and the agent loses every egl_* tool. Windows dev keeps the
+// historic location.
+export const AGENT_DIR = PACKAGED
+  ? path.join(DATA_DIR, 'agent')
+  : IS_WIN
+    ? path.join(PANEL_DIR, 'agent')
+    : path.join(USER.local, 'agent');
 /**
  * Runtime workspace for the beta agent (`egglab-beta`). Separate folder and a
  * separate OpenCode project scope: beta chats cannot inherit official-agent
