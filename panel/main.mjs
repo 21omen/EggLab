@@ -127,7 +127,16 @@ function applyBounds(bounds) {
   applyingBounds = true;
   suppressMoveUntil = Date.now() + 400;
   try {
-    win.setBounds(bounds, false);
+    if (process.platform === 'linux') {
+      // A non-resizable X11 window advertises min = max = its current size,
+      // and tiling WMs (Hyprland) enforce that hint, so the egg could never
+      // grow into the panel. Unlock, resize, and lock again at the new size.
+      win.setResizable(true);
+      win.setBounds(bounds, false);
+      win.setResizable(false);
+    } else {
+      win.setBounds(bounds, false);
+    }
   } finally {
     applyingBounds = false;
   }
