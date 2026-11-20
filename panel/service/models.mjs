@@ -53,6 +53,7 @@ function listRoleFiles(cfg, key, currentPath) {
       name: path.basename(full),
       path: full,
       size,
+      sizeText: size ? humanBytes(size) : '',
       current: Boolean(currentPath && path.resolve(currentPath) === resolved),
     });
   };

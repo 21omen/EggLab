@@ -1611,7 +1611,12 @@ function syncUI() {
   if (ocExeInput) ocExeInput.value = s.opencode?.exe || '';
   $('#chkDock').checked = Boolean(s.photocraft.dock);
   $('#pcRoots').textContent = `read root ${s.photocraft.readRoot} · write root ${s.photocraft.writeRoot}`;
-  $('#modelsDir').textContent = S.engine?.modelsDir ? `Folder: ${S.engine.modelsDir}` : '';
+  const modelsDir = S.engine?.modelsDir || s.modelsDir || '';
+  const modelsDirEl = $('#modelsDir');
+  if (modelsDirEl) {
+    modelsDirEl.textContent = modelsDir || 'Not set';
+    modelsDirEl.title = modelsDir || '';
+  }
 
   renderAspects();
   renderModels();
@@ -1734,7 +1739,6 @@ function renderModels() {
     box.innerHTML = '<p class="note">Model status unavailable.</p>';
     return;
   }
-  renderModelRoles('modelRoles', data.entries);
   // A failed download that the user repaired outside the app (or a finished
   // transfer whose models refresh raced its event) must not stay red forever.
   for (const entry of data.entries) {
@@ -1754,126 +1758,96 @@ function renderModels() {
 }
 
 function paintModelRow(row, entry) {
-  const exists = entry.exists;
-  const currentVariant = entry.variants.find((v) => v.current) || entry.variants[0];
+  const activeDl = S.modelDl.get(entry.id) || entry.download || null;
+  const busy = Boolean(activeDl && ['running', 'queued'].includes(activeDl.status));
+  const currentVariant = entry.variants.find((v) => v.current) || null;
   const beta = currentVariant?.beta ? '<span class="model-beta">BETA</span>' : '';
+  const noteAttr = entry.note ? ` title="${esc(entry.note)}"` : '';
+  const statusClass = entry.exists ? 'ok' : entry.required ? 'miss' : 'warn';
+  const statusText = entry.exists
+    ? entry.sizeText || 'Ready'
+    : entry.required
+      ? 'Missing'
+      : 'Optional';
   row.innerHTML = `
-    <div class="model-top">
-      <span class="dot ${exists ? 'on' : entry.required ? 'err' : 'warn'}"></span>
-      <div class="model-name">${esc(entry.label)}${beta}<small>${esc(entry.file)}</small></div>
-      <span class="model-size">${exists ? esc(entry.sizeText) : entry.required ? 'missing' : 'optional'}</span>
+    <div class="model-head"${noteAttr}>
+      <span class="dot ${entry.exists ? 'on' : entry.required ? 'bad' : 'warn'}"></span>
+      <span class="model-label">${esc(entry.label)}${beta}</span>
+      <span class="model-status ${statusClass}">${esc(statusText)}</span>
     </div>
-    <div class="model-actions"></div>
-    <div class="model-note">${esc(entry.note || '')}</div>`;
+    <div class="model-select-row">
+      <select class="model-file-select" aria-label="${esc(entry.label)} file"></select>
+      <button class="mini" data-role="browse" title="Use a file from anywhere">Browse…</button>
+    </div>
+    <div class="model-file-path ${entry.exists ? '' : 'missing'}" title="${esc(entry.path || '')}">${esc(entry.path || '')}</div>`;
 
-  const actions = row.querySelector('.model-actions');
-  if (!exists) {
-    if (entry.variants.length > 1) {
-      const select = document.createElement('select');
-      select.className = 'mini';
-      select.style.maxWidth = '190px';
-      for (const v of entry.variants) {
-        // Locally-installed variants have no remote source, so they cannot be
-        // offered as a download target.
-        if (!v.downloadable) continue;
-        const opt = document.createElement('option');
-        opt.value = v.id;
-        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
-        select.appendChild(opt);
-      }
-      // Keep the user's choice: progress events repaint this row every 400 ms
-      // and used to reset the dropdown to the first variant mid-download.
-      const wanted = row.dataset.variant;
-      select.value = [...select.options].some((o) => o.value === wanted)
-        ? wanted
-        : select.options[0]?.value || entry.variants[0].id;
-      select.onchange = () => {
-        row.dataset.variant = select.value;
-      };
-      row.dataset.variant = select.value;
-      actions.appendChild(select);
-    }
-    const btn = document.createElement('button');
-    btn.className = 'mini primary';
-    btn.textContent = 'Download';
-    btn.onclick = async () => {
+  const select = row.querySelector('.model-file-select');
+  const browse = row.querySelector('[data-role="browse"]');
+
+  // One dropdown does everything: pick an existing file from the model
+  // folders, or start a missing variant download from the same place.
+  const files = Array.isArray(entry.files) ? entry.files : [];
+  const knownNames = new Set(files.map((file) => file.name.toLowerCase()));
+  const fileOptions = files
+    .map(
+      (file) =>
+        `<option value="${esc(file.path)}" ${file.current ? 'selected' : ''}>${esc(file.name)}${
+          file.sizeText ? ` · ${esc(file.sizeText)}` : ''
+        }</option>`,
+    )
+    .join('');
+  const variants = Array.isArray(entry.variants) ? entry.variants : [];
+  const missingVariants = variants.filter(
+    (v) => v.downloadable && !knownNames.has(String(v.file || '').toLowerCase()),
+  );
+  const variantOptions = missingVariants
+    .map((v) => `<option value="variant:${esc(v.id)}">Download ${esc(v.label)}${v.beta ? ' · Beta' : ''}</option>`)
+    .join('');
+  select.innerHTML = `
+    ${fileOptions ? `<optgroup label="In this folder">${fileOptions}</optgroup>` : ''}
+    ${variantOptions ? `<optgroup label="Download">${variantOptions}</optgroup>` : ''}
+    ${!fileOptions && !variantOptions ? '<option value="">No files found</option>' : ''}
+  `;
+  if (!entry.exists) {
+    const wanted = String(entry.file || '').split('/').pop().toLowerCase();
+    const match = missingVariants.find((v) => String(v.file || '').toLowerCase() === wanted);
+    if (match) select.value = `variant:${match.id}`;
+  }
+  select.disabled = busy;
+  browse.disabled = busy;
+  select.onchange = async () => {
+    const value = select.value;
+    if (!value) return;
+    if (value.startsWith('variant:')) {
       try {
-        await api.downloadModels([entry.id], row.dataset.variant || entry.variants[0]?.id);
+        await api.downloadModels([entry.id], value.slice('variant:'.length));
         toast(`Downloading ${entry.label}…`);
       } catch (err) {
         toast(friendly(err), 'error');
       }
-    };
-    actions.appendChild(btn);
-  } else {
-    // Several quantisations may be on disk at once — let the user switch the
-    // engine between them without downloading anything again.
-    const installed = entry.variants.filter((v) => v.installed);
-    if (installed.length > 1) {
-      const select = document.createElement('select');
-      select.className = 'mini';
-      select.style.maxWidth = '190px';
-      select.title = 'Switch the engine to another installed variant';
-      for (const v of installed) {
-        const opt = document.createElement('option');
-        opt.value = v.file;
-        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
-        select.appendChild(opt);
-      }
-      const current = installed.find((v) => v.current) || installed[0];
-      select.value = current.file;
-      select.onchange = async () => {
-        select.disabled = true;
-        try {
-          S.models = await api.useModel(entry.id, select.value);
-          renderModels();
-          toast(`${entry.label} switched`, 'ok');
-        } catch (err) {
-          toast(friendly(err), 'error');
-          select.value = current.file;
-        } finally {
-          select.disabled = false;
-        }
-      };
-      actions.appendChild(select);
+      return;
     }
-    const ok = document.createElement('span');
-    ok.className = 'model-note';
-    ok.textContent = 'in use';
-    actions.appendChild(ok);
-
-    // A user with FP8 installed still needs a way to add Q4_K_M (or another
-    // quantisation) without deleting the working model first. The old UI only
-    // listed installed variants once the entry existed.
-    const missing = entry.variants.filter((v) => v.downloadable && !v.installed);
-    if (missing.length) {
-      const addSelect = document.createElement('select');
-      addSelect.className = 'mini';
-      addSelect.style.maxWidth = '150px';
-      addSelect.title = 'Download another model variant';
-      for (const v of missing) {
-        const opt = document.createElement('option');
-        opt.value = v.id;
-        opt.textContent = `${v.label}${v.beta ? ' · Beta' : ''}`;
-        addSelect.appendChild(opt);
-      }
-      const add = document.createElement('button');
-      add.className = 'mini';
-      add.textContent = 'Install';
-      add.title = 'Download this variant';
-      add.onclick = async () => {
-        add.disabled = true;
-        try {
-          await api.downloadModels([entry.id], addSelect.value);
-          toast(`Downloading ${entry.label}…`);
-        } catch (err) {
-          toast(friendly(err), 'error');
-          add.disabled = false;
-        }
-      };
-      actions.append(addSelect, add);
+    try {
+      await api.setModelFile(entry.key, value);
+      S.models = await api.models();
+      renderModels();
+      toast(`${entry.label} selected.`, 'ok');
+    } catch (err) {
+      toast(friendly(err), 'error');
     }
-  }
+  };
+  browse.onclick = async () => {
+    const file = await api.pickModel();
+    if (!file) return;
+    try {
+      await api.setModelFile(entry.key, file);
+      S.models = await api.models();
+      renderModels();
+      toast(`${entry.label} selected.`, 'ok');
+    } catch (err) {
+      toast(friendly(err), 'error');
+    }
+  };
 }
 
 function updateModelRow(id, dl) {
@@ -1885,7 +1859,6 @@ function updateModelRow(id, dl) {
 }
 
 function paintDownload(row, entry, dl) {
-  const actions = row.querySelector('.model-actions');
   let wrap = row.querySelector('.dl');
   if (!wrap) {
     wrap = document.createElement('div');
@@ -2569,18 +2542,6 @@ function bind() {
         await api.setModelsFolder(folder);
         await refreshRuntime();
         toast('Models folder updated.', 'ok');
-      } catch (err) {
-        toast(friendly(err), 'error');
-      }
-    };
-  }
-  const modelsFilesBtn = $('#btnModelsFiles');
-  if (modelsFilesBtn) {
-    modelsFilesBtn.onclick = async () => {
-      try {
-        await chooseModelFilesInteractive();
-        await refreshRuntime();
-        toast('Model files updated.', 'ok');
       } catch (err) {
         toast(friendly(err), 'error');
       }

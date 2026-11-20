@@ -163,14 +163,14 @@
                   <b>Models</b>
                   <button class="mini" id="btnDownloadMissing">Download missing</button>
                 </div>
-                <div class="model-roles" id="modelRoles"></div>
-                <div class="models" id="models"></div>
-                <div class="btnrow">
-                  <button class="mini" id="btnModelsFolder">Use existing folder…</button>
-                  <button class="mini" id="btnModelsFiles">Choose files…</button>
-                  <button class="mini" id="btnOpenModels">Open folder</button>
+                <div class="model-folder">
+                  <span class="model-folder-label">Folder</span>
+                  <code class="model-folder-path" id="modelsDir" title=""></code>
+                  <button class="mini" id="btnModelsFolder" title="Choose a different folder">Change…</button>
+                  <button class="mini" id="btnOpenModels" title="Open this folder">Open</button>
                 </div>
-                <p class="note" id="modelsDir"></p>
+                <p class="model-folder-hint">Downloads go into this folder. Each model keeps its own subfolder.</p>
+                <div class="models" id="models"></div>
               </section>
 
               <section class="card">
