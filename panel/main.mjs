@@ -245,6 +245,22 @@ function createWindow() {
 
   win.loadFile(path.join(PANEL_DIR, 'renderer', 'index.html'));
 
+  // Renderer visibility: console errors and crashes go to main.log, so a
+  // silent renderer failure (e.g. an exception that kills UI wiring) is
+  // diagnosable from the logs instead of "the panel cannot open".
+  win.webContents.on('console-message', (event) => {
+    const level = event.level || 'log';
+    if (level === 'error' || level === 'warning') {
+      trace(`renderer console ${level}: ${String(event.message || '').slice(0, 500)}`);
+    }
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    trace(`renderer gone: ${JSON.stringify(details).slice(0, 400)}`);
+  });
+  win.webContents.on('did-fail-load', (_event, code, desc, url) => {
+    trace(`renderer load failed: ${code} ${desc} ${url}`);
+  });
+
   win.once('ready-to-show', () => {
     try {
       win.setAlwaysOnTop(true, 'floating');

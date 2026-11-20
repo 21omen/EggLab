@@ -314,8 +314,10 @@ async function boot() {
     toast(friendly(err), 'error');
   }
   api.onEvent(handleEvent);
-  bind();
+  // The egg's click wiring goes FIRST: a failure anywhere later in bind()
+  // must never leave the shell unclickable (the "egg does not expand" bug).
   initShell();
+  bind();
   try {
     // The renderer may reload while the OS window is already expanded.
     const shellState = await api.eggState();
