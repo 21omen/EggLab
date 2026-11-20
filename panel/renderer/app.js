@@ -504,8 +504,7 @@ function handleChatEvent(ev) {
       S.nodeIndex.clear();
       renderTimeline();
       renderThreadLabel();
-      renderCanvasSwitch();
-      renderLinkChip();
+      renderCanvasTarget();
       break;
     case 'document':
       // PhotoCraft changed the active document. Phase A: the canvas no longer
@@ -516,8 +515,7 @@ function handleChatEvent(ev) {
         ? { key: ev.visibleDocKey || null, name: ev.visibleDocName || null }
         : null;
       renderThreadLabel();
-      renderCanvasSwitch();
-      renderLinkChip();
+      renderCanvasTarget();
       refreshPc();
       if (ev.docKey && ev.docKey !== S.docKey) loadThread();
       break;
@@ -537,8 +535,7 @@ async function loadThread() {
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
-    renderCanvasSwitch();
-    renderLinkChip();
+    renderCanvasTarget();
     renderAssetStrip();
     updateEmpty();
   } catch (err) {
@@ -603,47 +600,94 @@ function renderThreadLabel() {
 }
 
 /**
- * The canvas badge (Phase A): shown when PhotoCraft's visible canvas differs
- * from the chat's canvas. The chat never moves by itself; the user switches
- * explicitly. Clicking adopts the visible canvas's chat.
+ * The working-canvas scope selector (Phase C UX revision).
+ *
+ * ONE control at the composer replaces the old titlebar chips: it always shows
+ * where the agent will put its work, in plain language ("Working canvas: X" /
+ * "No canvas"). Clicking opens a single menu with the available moves —
+ * no link/detach jargon. When PhotoCraft shows a different canvas, the pill
+ * turns amber and offers the switch.
  */
-function renderCanvasSwitch() {
-  const el = $('#canvasSwitch');
-  if (!el) return;
-  const mismatch = S.visibleCanvas && S.visibleCanvas.key && S.visibleCanvas.key !== S.docKey;
-  el.classList.toggle('hidden', !mismatch);
-  if (!mismatch) return;
-  const name = sessionDocLabel({ docKey: S.visibleCanvas.key, docName: S.visibleCanvas.name });
-  el.textContent = `Canvas: ${name} — switch chat`;
-  el.title = 'PhotoCraft shows a different canvas than this chat is linked to. Click to switch to that canvas\'s chat.';
+function canvasTargetState() {
+  const attached = Boolean(S.docKey && S.docKey !== 'no-document');
+  const visible = S.visibleCanvas && S.visibleCanvas.key && S.visibleCanvas.key !== S.docKey
+    ? S.visibleCanvas
+    : null;
+  return { attached, visible };
 }
 
-/**
- * The link chip (Phase C): shows and controls the chat's canvas link.
- * Attached chats can detach; detached chats can link the visible canvas.
- * Renders/previews are never linkable (they are not chat scopes).
- */
-function renderLinkChip() {
-  const el = $('#linkChip');
+function renderCanvasTarget() {
+  const el = $('#canvasTarget');
   if (!el) return;
-  const attached = S.docKey && S.docKey !== 'no-document';
-  const visibleKey = S.pcDoc?.key || null;
-  const linkable =
-    visibleKey &&
-    (visibleKey.startsWith('untitled:') || /\.(pcraft|psd|psb)$/i.test(visibleKey));
-  if (attached) {
-    el.textContent = `Linked: ${sessionDocLabel({ docKey: S.docKey })} ✕`;
-    el.title = 'This chat is linked to that canvas. Click to detach — the transcript stays with the chat.';
-    el.dataset.mode = 'detach';
-    el.classList.remove('hidden');
-  } else if (linkable && visibleKey !== S.docKey) {
-    el.textContent = `+ Link ${sessionDocLabel({ docKey: visibleKey, docName: S.pcDoc.name || null })}`;
-    el.title = 'Link this chat to the canvas PhotoCraft is showing.';
-    el.dataset.mode = 'link';
-    el.classList.remove('hidden');
+  const { attached, visible } = canvasTargetState();
+  const name = attached ? sessionDocLabel({ docKey: S.docKey }) : null;
+  el.classList.remove('warn');
+  if (attached && visible) {
+    el.textContent = `${name} · canvas changed`;
+    el.title = 'PhotoCraft now shows a different canvas than this chat works on. Click to switch.';
+    el.classList.add('warn');
+  } else if (attached) {
+    el.textContent = `Working canvas: ${name}`;
+    el.title = 'Where the agent puts its work. Click to change.';
+  } else if (visible) {
+    el.textContent = `No canvas — ${sessionDocLabel({ docKey: visible.key, docName: visible.name })} is open`;
+    el.title = 'Results go to the asset tray only. Click to use the open canvas.';
+    el.classList.add('warn');
   } else {
-    el.classList.add('hidden');
+    el.textContent = 'No canvas';
+    el.title = 'Results go to the asset tray only. Click to pick a canvas.';
   }
+}
+
+function renderCanvasMenu() {
+  const menu = $('#canvasMenu');
+  if (!menu) return;
+  const { attached, visible } = canvasTargetState();
+  const items = [];
+  if (visible) {
+    items.push({
+      label: `Use ${sessionDocLabel({ docKey: visible.key, docName: visible.name })}`,
+      title: 'Point this chat at the canvas PhotoCraft is showing.',
+      run: async () => {
+        await api.sessionUseDocument(visible.key, visible.name || null);
+        toast('Canvas set.', 'ok');
+      },
+    });
+  }
+  if (attached) {
+    items.push({
+      label: 'No canvas — tray only',
+      title: 'Renders land in the asset tray; nothing is placed on a canvas until you pick one.',
+      run: async () => {
+        await api.sessionMove(S.threadKey, 'no-document', null);
+        toast('This chat no longer targets a canvas.', 'ok');
+      },
+    });
+  }
+  items.push({ label: 'All chats…', title: 'Open the chat list.', run: () => openSessions() });
+  menu.innerHTML = items
+    .map((it, i) => `<button class="canvas-menu-item" data-mi="${i}" title="${esc(it.title || '')}">${esc(it.label)}</button>`)
+    .join('');
+  const actions = items;
+  menu.querySelectorAll('[data-mi]').forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      closeCanvasMenu();
+      try {
+        await actions[Number(btn.dataset.mi)]?.run?.();
+        S.visibleCanvas = null;
+        renderCanvasTarget();
+        await loadThread();
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  });
+}
+
+function closeCanvasMenu() {
+  const menu = $('#canvasMenu');
+  if (menu) menu.classList.add('hidden');
 }
 
 /* ------------------------------------------------------------------ */
@@ -2612,38 +2656,23 @@ function bind() {
     e.stopPropagation();
     openSessions();
   };
-  $('#canvasSwitch').onclick = async (e) => {
+  $('#canvasTarget').onclick = (e) => {
     e.stopPropagation();
-    const target = S.visibleCanvas;
-    if (!target?.key) return;
-    try {
-      await api.sessionUseDocument(target.key, target.name || null);
-      S.visibleCanvas = null;
-      renderCanvasSwitch();
-      await loadThread();
-      toast('Switched to the canvas chat.', 'ok');
-    } catch (err) {
-      toast(friendly(err), 'error');
+    const menu = $('#canvasMenu');
+    const hidden = menu.classList.contains('hidden');
+    if (hidden) {
+      renderCanvasMenu();
+      menu.classList.remove('hidden');
+    } else {
+      closeCanvasMenu();
     }
   };
-  $('#linkChip').onclick = async (e) => {    e.stopPropagation();
-    const el = $('#linkChip');
-    const mode = el?.dataset.mode;
-    if (!mode) return;
-    try {
-      if (mode === 'detach') {
-        await api.sessionMove(S.threadKey, 'no-document', null);
-        toast('Chat detached from the canvas. The transcript stays with the chat.', 'ok');
-      } else {
-        await api.sessionMove(S.threadKey, S.pcDoc.key, S.pcDoc.name || null);
-        toast('Chat linked to the canvas.', 'ok');
-      }
-      S.visibleCanvas = null;
-      await loadThread();
-    } catch (err) {
-      toast(friendly(err), 'error');
-    }
-  };
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#canvasTargetWrap')) closeCanvasMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCanvasMenu();
+  });
   $('#assetStrip').onclick = (e) => {
     const id = e.target.closest('[data-asset]')?.dataset.asset;
     if (id) placeAsset(id);

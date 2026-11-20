@@ -41,8 +41,6 @@
               <div class="panel-titles">
                 <b class="panel-name">EggLab</b>
                 <button class="thread-label" id="threadLabel" type="button" title="Chats">No document open</button>
-                <button class="canvas-switch hidden" id="canvasSwitch" type="button"></button>
-                <button class="link-chip hidden" id="linkChip" type="button"></button>
               </div>
             </div>
             <div class="panel-actions">
@@ -98,6 +96,10 @@
             </div>
             <div class="asset-strip hidden" id="assetStrip" title="This chat's renders — click one to place it on the canvas"></div>
             <div class="composer-foot">
+              <div class="canvas-target-wrap" id="canvasTargetWrap">
+                <button class="canvas-target" id="canvasTarget" type="button" title="Working canvas — where the agent puts its work"></button>
+                <div class="canvas-menu hidden" id="canvasMenu"></div>
+              </div>
               <button class="mini" id="btnShowCanvas" title="Send the current PhotoCraft canvas to the agent as a reference">Canvas</button>
               <button class="mini" id="btnDirect" title="Render with the current settings without asking the agent">Render</button>
               <label class="mini check"><input type="checkbox" id="chkTransparent" /> Transparent</label>

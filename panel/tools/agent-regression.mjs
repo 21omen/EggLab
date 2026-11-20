@@ -491,13 +491,29 @@ check(
     /agentOfThread === 'egglab-beta' \? AGENT_BETA_DIR : AGENT_DIR/.test(chatSource),
 );
 check('the canvas badge switch endpoint exists', /sessions:useDocument/.test(mainSource) && /sessionUseDocument/.test(read('preload.cjs')));
+const appJs = read('renderer/app.js');
+const indexHtml = read('renderer/index.html');
+check(
+  'one scope selector at the composer replaces the titlebar chips',
+  /id="canvasTarget"/.test(indexHtml) && /canvas-target-wrap/.test(indexHtml) &&
+    !/canvas-switch|link-chip|id="canvasSwitch"|id="linkChip"/.test(indexHtml) &&
+    !/renderCanvasSwitch|renderLinkChip/.test(appJs),
+);
+check(
+  'the selector speaks plain language, no link/detach jargon',
+  /Working canvas:/.test(appJs) && /No canvas/.test(appJs) && !/Chat detached|Chat linked to the canvas/.test(appJs),
+);
+check(
+  'the selector opens a single unified menu',
+  /renderCanvasMenu/.test(appJs) && /canvas-menu-item/.test(read('renderer/app.css')),
+);
 
 // ---- Phase C: explicit links + beta canvas creation --------------------
 const httpSource2 = read('service/http.mjs');
 const mcpSource2 = read('mcp-server.mjs');
 check(
   'the link chip shows and toggles the canvas link',
-  /renderLinkChip/.test(read('renderer/app.js')) && /sessionMove/.test(read('preload.cjs')),
+  /renderCanvasTarget/.test(appJs) && /sessionMove/.test(read('preload.cjs')),
 );
 check(
   'the chat list marks the canvas on screen',
