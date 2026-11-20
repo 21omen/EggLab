@@ -2,7 +2,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
-import { AGENT_DIR, BIN_DIR, DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
+import { AGENT_DIR, BIN_DIR, DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, TMP_DIR, readJson, writeJson } from './paths.mjs';
+import { IS_WIN, exeName, photocraftEnv, whichAll } from './platform.mjs';
 
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
@@ -31,6 +32,10 @@ export const ASPECTS = {
  * first-run wizard then asks the user to locate it (or skip).
  */
 export function detectPhotoCraft() {
+  if (!IS_WIN) {
+    const exe = detectPhotoCraftExe();
+    return exe ? path.dirname(exe) : '';
+  }
   const candidates = [
     path.join(ROOT, '..', 'photocraft-app'),
     path.join(ROOT, '..', 'photocraft'),
@@ -48,10 +53,123 @@ export function detectPhotoCraft() {
   return '';
 }
 
+const isAppImage = (file) => /\.appimage$/i.test(String(file || ''));
+
+/** Version tuple from a file name like photocraft-0.23.1-linux-x86_64.AppImage. */
+function nameVersion(name) {
+  const m = String(name).match(/(\d+)\.(\d+)\.(\d+)/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
+}
+
+/**
+ * The PhotoCraft executable on this machine, or ''. On Linux PhotoCraft ships
+ * as an AppImage (often kept in ~/Applications by the ArtCraft launcher) or
+ * as a distro package; the newest AppImage wins over an older one.
+ */
+export function detectPhotoCraftExe() {
+  if (IS_WIN) {
+    const dir = detectPhotoCraft();
+    return dir ? path.join(dir, 'photocraft.exe') : '';
+  }
+  const home = os.homedir();
+  const images = [];
+  for (const dir of [
+    path.join(home, 'Applications'),
+    path.join(home, '.local', 'bin'),
+    path.join(home, 'AppImages'),
+    path.join(home, 'Downloads'),
+  ]) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (/^photocraft.*\.appimage$/i.test(name)) images.push(path.join(dir, name));
+    }
+  }
+  images.sort((a, b) => {
+    const va = nameVersion(path.basename(a));
+    const vb = nameVersion(path.basename(b));
+    for (let i = 0; i < 3; i++) if (va[i] !== vb[i]) return vb[i] - va[i];
+    return 0;
+  });
+  if (images.length) return images[0];
+  const installed = [
+    path.join(ROOT, '..', 'photocraft-app', 'photocraft'),
+    path.join(ROOT, '..', 'photocraft', 'photocraft'),
+    '/opt/photocraft/photocraft',
+    '/opt/PhotoCraft/photocraft',
+    ...whichAll('photocraft'),
+  ];
+  for (const file of installed) {
+    try {
+      if (fs.statSync(file).isFile()) return file;
+    } catch {}
+  }
+  return '';
+}
+
+/**
+ * Where photocraft-cli lives for a given PhotoCraft executable. Next to the
+ * app for regular installs; for an AppImage it is unpacked once into EggLab's
+ * own bin folder (keyed by the AppImage name, so an update gets a fresh copy).
+ */
+export function photocraftCliFor(exe) {
+  if (!exe) return '';
+  if (isAppImage(exe)) {
+    const key = path.basename(exe).replace(/\.appimage$/i, '');
+    return path.join(BIN_DIR, 'photocraft-cli', key, 'photocraft-cli');
+  }
+  const sibling = path.join(path.dirname(exe), exeName('photocraft-cli'));
+  if (fs.existsSync(sibling)) return sibling;
+  if (!IS_WIN) {
+    const onPath = whichAll('photocraft-cli')[0];
+    if (onPath) return onPath;
+  }
+  return sibling;
+}
+
+/**
+ * Make sure photocraft-cli exists for the configured PhotoCraft. Unpacks it
+ * from the AppImage when needed (only that one file). Returns the path.
+ */
+export function ensurePhotoCraftCli(pc = settings.photocraft) {
+  const exe = pc?.exe || '';
+  const cli = isAppImage(exe) ? photocraftCliFor(exe) : pc?.cli || photocraftCliFor(exe);
+  if (!cli || fs.existsSync(cli) || !isAppImage(exe) || !fs.existsSync(exe)) return cli;
+  const stage = fs.mkdtempSync(path.join(TMP_DIR, 'pc-extract-'));
+  try {
+    execFileSync(exe, ['--appimage-extract', 'usr/bin/photocraft-cli'], {
+      cwd: stage,
+      env: photocraftEnv(),
+      stdio: 'ignore',
+      timeout: 120000,
+    });
+    const found = path.join(stage, 'squashfs-root', 'usr', 'bin', 'photocraft-cli');
+    if (!fs.existsSync(found)) throw new Error('photocraft-cli is not inside this AppImage.');
+    fs.mkdirSync(path.dirname(cli), { recursive: true });
+    fs.copyFileSync(found, cli);
+    fs.chmodSync(cli, 0o755);
+    // Older unpacked copies belong to AppImages that were replaced.
+    const root = path.dirname(path.dirname(cli));
+    for (const name of fs.readdirSync(root)) {
+      if (name !== path.basename(path.dirname(cli))) {
+        fs.rmSync(path.join(root, name), { recursive: true, force: true });
+      }
+    }
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true });
+  }
+  return cli;
+}
+
 // OpenCode: prefer the npm global install's real .exe (a .cmd shim cannot be
 // spawned without a shell since Node's CVE-2024-27980 hardening), then other
 // common locations, then PATH via where.exe. See resolveOpenCode().
 function defaultOpenCodeExe() {
+  if (!IS_WIN) return '';
   const npmExe = process.env.APPDATA
     ? path.join(process.env.APPDATA, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')
     : '';
@@ -64,7 +182,7 @@ function defaultOpenCodeExe() {
 // The dev workspace root: the checkout's parent (PhotoCraft requires the
 // automation roots to contain the projects folder).
 const DEV_ROOT = path.dirname(ROOT);
-const PHOTO_DIR = detectPhotoCraft();
+const PHOTO_EXE = detectPhotoCraftExe();
 
 export const DEFAULTS = {
   // First-run wizard: shown until the user finishes (or dismisses) it.
@@ -98,8 +216,8 @@ export const DEFAULTS = {
   // progress estimate only (the engine has no step counter on stdout).
   perStepSec: { quality: 4.5, turbo: 5.5 },
   photocraft: {
-    exe: PHOTO_DIR ? path.join(PHOTO_DIR, 'photocraft.exe') : '',
-    cli: PHOTO_DIR ? path.join(PHOTO_DIR, 'photocraft-cli.exe') : '',
+    exe: PHOTO_EXE,
+    cli: photocraftCliFor(PHOTO_EXE),
     controlPort: 7878,
     tokenFile: path.join(DATA_DIR, 'photocraft.token'),
     // PhotoCraft refuses paths outside the automation roots. Dev anchors them
@@ -132,6 +250,14 @@ export const DEFAULTS = {
     customProviders: ['inferx'],
     // Declare image input for the selected custom-provider model.
     vision: true,
+    // Local models through Ollama. Its models appear in the model list as
+    // `ollama/<name>` whenever the server answers; nothing leaves the machine.
+    // A 24 GB card cannot hold a chat model and Qwen-Image at once, so the
+    // chat model is unloaded before each render and reloads on the next turn.
+    ollama: {
+      baseURL: 'http://127.0.0.1:11434',
+      unloadBeforeRender: true,
+    },
     // One turn may hold a render plus several tool round trips. Must exceed
     // download_models' 60-minute wait, so a large model download does not get
     // killed by the turn timeout first.
@@ -196,6 +322,13 @@ function sanitize(target) {
 
 sanitize(settings);
 
+// AppImage updates replace the file under a new versioned name. Follow the
+// newest copy instead of reporting PhotoCraft as missing (Linux only; Windows
+// installs keep a fixed path and the wizard handles a moved app).
+if (!IS_WIN && (!settings.photocraft.exe || !fs.existsSync(settings.photocraft.exe)) && PHOTO_EXE) {
+  settings = merge(settings, { photocraft: { exe: PHOTO_EXE, cli: photocraftCliFor(PHOTO_EXE) } });
+}
+
 export function getSettings() {
   return settings;
 }
@@ -212,7 +345,7 @@ export function visionForModel(model = settings.opencode.model, current = settin
   const slash = id.indexOf('/');
   const provider = slash > 0 ? id.slice(0, slash) : '';
   const custom = (current.opencode?.customProviders || []).map(String);
-  if (provider && custom.includes(provider)) return true;
+  if (provider && (custom.includes(provider) || provider === 'ollama')) return true;
   return VISION_CAPABLE.test(id);
 }
 
@@ -496,17 +629,7 @@ export function clearOpenCodeCache() {
 
 function whereOpenCode() {
   if (whereCache !== undefined) return whereCache;
-  whereCache = [];
-  try {
-    const out = execFileSync('where.exe', ['opencode'], {
-      windowsHide: true,
-      encoding: 'utf8',
-      timeout: 5000,
-    });
-    whereCache = String(out).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  } catch {
-    whereCache = [];
-  }
+  whereCache = whichAll('opencode');
   return whereCache;
 }
 
@@ -553,7 +676,7 @@ function managedOpenCodeCandidates() {
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) scan(full, depth + 1);
-      else if (/^opencode(-cli)?\.exe$/i.test(entry.name)) found.push(full);
+      else if (IS_WIN ? /^opencode(-cli)?\.exe$/i.test(entry.name) : /^opencode(-cli)?$/.test(entry.name)) found.push(full);
     }
   };
   scan(BIN_DIR);
@@ -566,13 +689,15 @@ function managedOpenCodeCandidates() {
 
 /** CLIs bundled with the OpenCode desktop app (newest first). */
 function desktopOpenCodeCandidates() {
-  const roaming = process.env.APPDATA || '';
+  const roaming = IS_WIN
+    ? process.env.APPDATA || ''
+    : process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   if (!roaming) return [];
   const root = path.join(roaming, 'ai.opencode.desktop', 'cli');
   try {
     return fs
       .readdirSync(root)
-      .map((name) => ({ name, file: path.join(root, name, 'opencode-cli.exe') }))
+      .map((name) => ({ name, file: path.join(root, name, exeName('opencode-cli')) }))
       .filter((entry) => {
         try {
           return fs.statSync(entry.file).isFile();
@@ -592,16 +717,25 @@ export function resolveOpenCode() {
   const home = process.env.USERPROFILE || os.homedir();
   const local = process.env.LOCALAPPDATA || '';
   const roaming = process.env.APPDATA || '';
-  const candidates = [
-    configured,
-    ...managedOpenCodeCandidates(),
-    ...desktopOpenCodeCandidates(),
-    home && path.join(home, '.opencode', 'bin', 'opencode.exe'),
-    roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
-    local && path.join(local, 'Programs', 'opencode', 'opencode.exe'),
-    home && path.join(home, 'scoop', 'shims', 'opencode.exe'),
-    ...whereOpenCode(),
-  ].filter(Boolean);
+  const candidates = (IS_WIN
+    ? [
+        configured,
+        ...managedOpenCodeCandidates(),
+        ...desktopOpenCodeCandidates(),
+        home && path.join(home, '.opencode', 'bin', 'opencode.exe'),
+        roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+        local && path.join(local, 'Programs', 'opencode', 'opencode.exe'),
+        home && path.join(home, 'scoop', 'shims', 'opencode.exe'),
+        ...whereOpenCode(),
+      ]
+    : [
+        configured,
+        ...managedOpenCodeCandidates(),
+        ...desktopOpenCodeCandidates(),
+        home && path.join(home, '.opencode', 'bin', 'opencode'),
+        ...whereOpenCode(),
+      ]
+  ).filter(Boolean);
 
   // An explicit user choice wins when it is a working v2 binary. Otherwise
   // pick the newest working v2 binary: every OpenCode client shares one data
@@ -613,13 +747,13 @@ export function resolveOpenCode() {
     } catch {
       return null;
     }
-    const version = /\.(cmd|bat)$/i.test(candidate) ? null : probeOpenCodeVersion(candidate);
+    const version = IS_WIN && /\.(cmd|bat)$/i.test(candidate) ? null : probeOpenCodeVersion(candidate);
     return version && version[0] >= 2 ? { candidate, version } : null;
   };
 
   const explicit = configured ? working(configured) : null;
   if (explicit) {
-    return { cmd: explicit.candidate, shell: /\.(cmd|bat)$/i.test(explicit.candidate), version: explicit.version };
+    return { cmd: explicit.candidate, shell: IS_WIN && /\.(cmd|bat)$/i.test(explicit.candidate), version: explicit.version };
   }
 
   let best = null;
@@ -638,7 +772,7 @@ export function resolveOpenCode() {
       bestOrder = order;
     }
   });
-  if (best) return { cmd: best, shell: /\.(cmd|bat)$/i.test(best), version: bestVersion };
+  if (best) return { cmd: best, shell: IS_WIN && /\.(cmd|bat)$/i.test(best), version: bestVersion };
   // Last resort: PATH lookup by CreateProcess (.exe only).
   return { cmd: 'opencode', shell: false, version: null };
 }
@@ -662,7 +796,7 @@ export function setOpenCodePath(file) {
     );
     const cli = candidates.find((candidate) => {
       const candidateVersion = probeOpenCodeVersion(candidate);
-      return candidateVersion && candidateVersion[0] >= 2 && /cli\.exe$/i.test(candidate);
+      return candidateVersion && candidateVersion[0] >= 2 && (IS_WIN ? /cli\.exe$/i : /cli$/).test(candidate);
     });
     if (cli) {
       patchSettings({ opencode: { exe: cli } });
@@ -813,6 +947,20 @@ export async function opencodeModels(force = false, options = {}) {
       finish({ providers: [], error: err.message, bin: oc.cmd, cwd, standalone, fetchedAt: Date.now() });
     });
   });
+  // Ollama's models come straight from its own API: OpenCode only lists a
+  // provider some config declares, and the workspace config declares it only
+  // for the model currently selected (see chat.buildWorkspace).
+  const local = await ollamaModels();
+  if (local.length) {
+    const existing = result.providers.find((p) => p.provider === 'ollama');
+    const have = new Set((existing?.models || []).map((m) => m.id));
+    const extra = local
+      .map((name) => ({ id: `ollama/${name}`, modelId: name, provider: 'ollama' }))
+      .filter((m) => !have.has(m.id));
+    if (existing) existing.models = [...existing.models, ...extra].sort((a, b) => a.modelId.localeCompare(b.modelId));
+    else result.providers.push({ provider: 'ollama', models: extra });
+    result.providers.sort((a, b) => a.provider.localeCompare(b.provider));
+  }
   // Cache only successful listings. A failed scan (opencode busy, provider
   // offline) should be retried on the next drawer open instead of showing an
   // empty list for the whole TTL.
@@ -825,7 +973,7 @@ export async function opencodeModels(force = false, options = {}) {
 }
 
 /** Run the selected OpenCode binary and return its text output. */
-function runOpenCodeText(oc, args, { cwd = process.env.USERPROFILE, timeout = 20000 } = {}) {
+function runOpenCodeText(oc, args, { cwd = process.env.USERPROFILE || os.homedir(), timeout = 20000 } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -1019,7 +1167,7 @@ export async function opencodeReport(force = false) {
       configuredPath,
       configuredMissing,
       version: oc.version ? oc.version.join('.') : null,
-      error: 'OpenCode v2 or newer was not found. Pick an existing opencode.exe or install it.',
+      error: 'OpenCode v2 or newer was not found. Pick an existing OpenCode binary or install it.',
       paths: null,
       auth: [],
       activeProviderIds: [],
@@ -1103,6 +1251,44 @@ export async function opencodeReport(force = false) {
   reportCache = value;
   reportCacheAt = now;
   return value;
+}
+
+/** Names of the models the local Ollama server has (empty when it is not running). */
+export async function ollamaModels() {
+  const base = String(settings.opencode?.ollama?.baseURL || '').replace(/\/+$/, '');
+  if (!base) return [];
+  try {
+    const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || [])
+      .map((m) => String(m.name || m.model || ''))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Free the GPU for a render: ask Ollama to unload the chat model now
+ * (keep_alive 0). The next agent turn loads it again.
+ */
+export async function unloadOllamaModel() {
+  const model = String(settings.opencode?.model || '');
+  if (!model.startsWith('ollama/') || settings.opencode?.ollama?.unloadBeforeRender === false) return false;
+  const base = String(settings.opencode?.ollama?.baseURL || '').replace(/\/+$/, '');
+  try {
+    const res = await fetch(`${base}/api/generate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: model.slice('ollama/'.length), keep_alive: 0 }),
+      signal: AbortSignal.timeout(15000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function ensureDirs() {

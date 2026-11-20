@@ -3,6 +3,7 @@ import path from 'node:path';
 import { emit } from './bus.mjs';
 import { engineConfig, getSettings, resolveModelPath, roleFolder, setEngineModel } from './settings.mjs';
 import { humanBytes, readJson, writeJson, DATA_DIR } from './paths.mjs';
+import { SD_CLI } from './platform.mjs';
 
 const STATE_FILE = path.join(DATA_DIR, 'downloads.json');
 const MODEL_FILE = /\.(safetensors|gguf)$/i;
@@ -194,7 +195,7 @@ export function modelStatus() {
   return {
     modelsDir: cfg.models,
     configPath: cfg.path,
-    engineReady: fs.existsSync(path.join(cfg.engine, 'sd-cli.exe')),
+    engineReady: fs.existsSync(path.join(cfg.engine, SD_CLI)),
     engineDir: cfg.engine,
     entries: registry().map((entry) => {
       const { configured } = targetFor(entry);

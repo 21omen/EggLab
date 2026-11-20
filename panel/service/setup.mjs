@@ -19,7 +19,7 @@ import { emit } from './bus.mjs';
 import {
   BIN_DIR,
   ENGINE_DIR,
-  ENGINE_INSTALL_PS1,
+  ENGINE_INSTALLER,
   TMP_DIR,
   humanBytes,
   readJson,
@@ -28,8 +28,9 @@ import {
 import {
   chooseDefaultOpenCodeModel,
   clearOpenCodeCache,
-  detectPhotoCraft,
+  detectPhotoCraftExe,
   engineConfig,
+  photocraftCliFor,
   getSettings,
   opencodeReport,
   patchSettings,
@@ -40,6 +41,7 @@ import {
   setOpenCodePath as storeOpenCodePath,
 } from './settings.mjs';
 import { modelStatus, useVariant, variantForFile } from './models.mjs';
+import { CURL, IS_WIN, curlTlsArgs, exeName } from './platform.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -153,12 +155,13 @@ export async function refreshDetection() {
   const s = getSettings();
   const patch = {};
   if (!s.photocraft?.exe || !fs.existsSync(s.photocraft.exe)) {
-    const dir = detectPhotoCraft();
-    if (dir) {
-      const cli = path.join(dir, 'photocraft-cli.exe');
+    const exe = detectPhotoCraftExe();
+    if (exe) {
+      const cli = photocraftCliFor(exe);
       patch.photocraft = {
-        exe: path.join(dir, 'photocraft.exe'),
-        ...(fs.existsSync(cli) ? { cli } : {}),
+        exe,
+        // An AppImage's CLI is unpacked on first use, so it may not exist yet.
+        ...(fs.existsSync(cli) || /\.appimage$/i.test(exe) ? { cli } : {}),
       };
     }
   }
@@ -182,12 +185,15 @@ export async function setPhotoCraft(filePath) {
     stat = fs.statSync(exe);
   } catch {}
   if (!stat || !stat.isFile()) throw new Error('That PhotoCraft executable does not exist.');
-  if (!/\.exe$/i.test(exe)) throw new Error('Pick the PhotoCraft .exe file.');
-  const cli = path.join(path.dirname(exe), 'photocraft-cli.exe');
+  if (IS_WIN && !/\.exe$/i.test(exe)) throw new Error('Pick the PhotoCraft .exe file.');
+  if (!IS_WIN && !/\.appimage$/i.test(exe) && !/photocraft/i.test(path.basename(exe))) {
+    throw new Error('Pick the PhotoCraft AppImage or its photocraft program.');
+  }
+  const cli = photocraftCliFor(exe);
   patchSettings({
     photocraft: {
       exe,
-      ...(fs.existsSync(cli) ? { cli } : {}),
+      ...(fs.existsSync(cli) || /\.appimage$/i.test(exe) ? { cli } : {}),
     },
   });
   emit('settings', { settings: getSettings() });
@@ -200,27 +206,34 @@ export async function setPhotoCraft(filePath) {
 
 export async function installEngine(variant = 'auto', force = false) {
   if (state.engine.running) return { started: false, running: true };
-  if (!fs.existsSync(ENGINE_INSTALL_PS1)) {
-    throw new Error(`Engine downloader missing: ${ENGINE_INSTALL_PS1}`);
+  if (!fs.existsSync(ENGINE_INSTALLER)) {
+    throw new Error(`Engine installer missing: ${ENGINE_INSTALLER}`);
   }
   const wanted = ['auto', 'cuda', 'vulkan', 'cpu'].includes(variant) ? variant : 'auto';
   state.engine = { running: true, variant: wanted, error: null, log: [] };
   emit('setup', { step: 'engine', status: 'running', variant: wanted });
 
-  const args = [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    ENGINE_INSTALL_PS1,
-    '-EngineDir',
-    ENGINE_DIR,
-    '-Variant',
-    wanted,
-  ];
-  if (force) args.push('-Force');
+  // Windows downloads a prebuilt engine; Linux builds the same pinned release
+  // (no Linux CUDA build is published).
+  const [cmd, args] = IS_WIN
+    ? [
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          ENGINE_INSTALLER,
+          '-EngineDir',
+          ENGINE_DIR,
+          '-Variant',
+          wanted,
+          ...(force ? ['-Force'] : []),
+        ],
+      ]
+    : ['bash', [ENGINE_INSTALLER, '--engine-dir', ENGINE_DIR, '--variant', wanted, ...(force ? ['--force'] : [])]];
 
-  const child = spawn('powershell.exe', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(cmd, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   const push = (chunk) => {
     for (const line of String(chunk).split(/\r?\n/)) {
       if (!line.trim()) continue;
@@ -239,7 +252,10 @@ export async function installEngine(variant = 'auto', force = false) {
   child.on('exit', (code) => {
     state.engine.running = false;
     if (code !== 0) {
-      state.engine.error = `Engine download failed (exit ${code}).`;
+      const last = [...state.engine.log].reverse().find((l) => /failed|not installed|not found/i.test(l));
+      state.engine.error = IS_WIN
+        ? `Engine download failed (exit ${code}).`
+        : `Engine build failed (exit ${code}).${last ? ` ${last}` : ''}`;
       emit('setup', { step: 'engine', status: 'error', error: state.engine.error });
     } else {
       state.engine.error = null;
@@ -265,9 +281,17 @@ export async function installEngine(variant = 'auto', force = false) {
 // OpenCode v2 (also shipped inside the desktop app). v1.x cannot read the v2
 // session schema, so the wizard installs a version that can.
 const OPENCODE_VERSION = '2.3.0';
-const OPENCODE_ZIP = `https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-windows-x64.zip`;
+// Linux builds are published to npm as a plain tarball with the binary inside.
+const OPENCODE_ZIP = IS_WIN
+  ? `https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-windows-x64.zip`
+  : `https://registry.npmjs.org/@opencode/cli-linux-${process.arch === 'arm64' ? 'arm64' : 'x64'}/-/cli-linux-${process.arch === 'arm64' ? 'arm64' : 'x64'}-${OPENCODE_VERSION}.tgz`;
+const OPENCODE_ARCHIVE = path.join(
+  TMP_DIR,
+  IS_WIN ? `opencode-windows-x64-${OPENCODE_VERSION}.zip` : `opencode-linux-${OPENCODE_VERSION}.tgz`,
+);
 
 function systemTar() {
+  if (!IS_WIN) return 'tar';
   const root = process.env.SystemRoot || 'C:\\Windows';
   return path.join(root, 'System32', 'tar.exe');
 }
@@ -293,7 +317,7 @@ function curlDownload(url, dest, resume) {
     const args = [
       '-L',
       '--fail',
-      '--ssl-no-revoke',
+      ...curlTlsArgs(),
       '--retry',
       '5',
       '--retry-all-errors',
@@ -306,7 +330,7 @@ function curlDownload(url, dest, resume) {
     ];
     if (resume) args.push('-C', '-');
     args.push('-o', dest, '--', url);
-    const child = spawn('curl.exe', args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(CURL, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => {
       stderr += chunk;
@@ -451,6 +475,10 @@ function findFile(dir, name) {
 
 async function extractZip(zip, destDir) {
   fs.mkdirSync(destDir, { recursive: true });
+  if (!IS_WIN) {
+    await spawnWait('tar', ['-xf', zip, '-C', destDir]);
+    return;
+  }
   if (fs.existsSync(systemTar())) {
     await spawnWait(systemTar(), ['-xf', zip, '-C', destDir]);
     return;
@@ -482,7 +510,7 @@ export async function installOpencode() {
   emit('setup', { step: 'opencode', status: 'downloading' });
 
   (async () => {
-    const zip = path.join(TMP_DIR, `opencode-windows-x64-${OPENCODE_VERSION}.zip`);
+    const zip = OPENCODE_ARCHIVE;
     await downloadFile(OPENCODE_ZIP, zip, (received, total) => {
       state.opencode.received = received;
       state.opencode.total = total;
@@ -501,8 +529,9 @@ export async function installOpencode() {
     fs.mkdirSync(dest, { recursive: true });
     await extractZip(zip, dest);
 
-    const exe = findFile(dest, 'opencode.exe');
-    if (!exe) throw new Error('opencode.exe was not found inside the downloaded archive.');
+    const exe = findFile(dest, exeName('opencode'));
+    if (!exe) throw new Error(`${exeName('opencode')} was not found inside the downloaded archive.`);
+    if (!IS_WIN) fs.chmodSync(exe, 0o755);
     const version = await openCodeVersion(exe);
     if (!version) throw new Error('The downloaded OpenCode binary did not start correctly.');
     if (Number(String(version).match(/(\d+)\./)?.[1] || 0) < 2) {
@@ -532,7 +561,7 @@ export async function installOpencode() {
     .finally(() => {
       state.opencode.running = false;
       try {
-        fs.rmSync(path.join(TMP_DIR, `opencode-windows-x64-${OPENCODE_VERSION}.zip`), { force: true });
+        fs.rmSync(OPENCODE_ARCHIVE, { force: true });
       } catch {}
     });
 

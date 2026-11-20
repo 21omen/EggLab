@@ -13,6 +13,7 @@
     "dist": "electron-builder --win nsis",
     "dist:dir": "electron-builder --win dir",
     "test:agent": "node tools/agent-regression.mjs && node tools/mcp-contract-test.mjs && node tools/mask-layer-test.mjs && node tools/region-composite-test.mjs && node tools/history-name-test.mjs && node tools/inspect-security-test.mjs && node tools/setup-regression.mjs && node tools/model-config-test.mjs && node tools/outcome-checks.mjs",
+    "start:linux": "electron . --ozone-platform=x11",
     "test:surface": "node tools/agent-surface-test.mjs",
     "test:live": "node tools/agent-live-eval.mjs",
     "test:setup": "node tools/setup-regression.mjs"
@@ -73,6 +74,14 @@
       {
         "from": "build/engine-install.ps1",
         "to": "engine-install.ps1"
+      },
+      {
+        "from": "../egglab-run.mjs",
+        "to": "egglab-run.mjs"
+      },
+      {
+        "from": "build/engine-install.sh",
+        "to": "engine-install.sh"
       },
       {
         "from": "mcp-server.mjs",

@@ -3,7 +3,8 @@ import net from 'node:net';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { getSettings, patchSettings } from './settings.mjs';
+import { ensurePhotoCraftCli, getSettings, patchSettings } from './settings.mjs';
+import { photocraftEnv } from './platform.mjs';
 import { TMP_DIR, DATA_DIR, stamp, readJson, writeJson } from './paths.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -22,7 +23,14 @@ class Bridge {
 
   async start() {
     const s = getSettings().photocraft;
-    if (!fs.existsSync(s.cli)) throw new Error(`photocraft-cli not found at ${s.cli}`);
+    // An AppImage install carries the CLI inside; unpack it on first use.
+    let cli = s.cli;
+    try {
+      cli = ensurePhotoCraftCli(s) || s.cli;
+    } catch (err) {
+      throw new Error(`photocraft-cli could not be unpacked from ${s.exe}: ${err.message}`);
+    }
+    if (!cli || !fs.existsSync(cli)) throw new Error(`photocraft-cli not found at ${cli}`);
     if (!(await portOpen(s.controlPort))) {
       throw new Error(`PhotoCraft control port ${s.controlPort} is closed. Start PhotoCraft from EggLab first.`);
     }
@@ -31,9 +39,9 @@ class Bridge {
       fs.writeFileSync(s.tokenFile, crypto.randomBytes(32).toString('hex'), 'utf8');
     }
     const child = spawn(
-      s.cli,
+      cli,
       ['mcp', '--bridge', `127.0.0.1:${s.controlPort}`, '--control-token-file', s.tokenFile],
-      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env: photocraftEnv() },
     );
     this.child = child;
     this.buf = '';
@@ -189,7 +197,8 @@ export async function status() {
     port: s.controlPort,
     exe: s.exe,
     exeExists: fs.existsSync(s.exe),
-    cliExists: fs.existsSync(s.cli),
+    // An AppImage's CLI is unpacked on demand, so the AppImage itself counts.
+    cliExists: fs.existsSync(s.cli) || /\.appimage$/i.test(s.exe || ''),
     bridge: Boolean(bridge?.child),
     version: bridge?.version || null,
     document: null,
@@ -256,7 +265,7 @@ export async function launch() {
     '--automation-write-root',
     s.writeRoot,
   ];
-  const child = spawn(s.exe, args, { detached: true, stdio: 'ignore', windowsHide: false });
+  const child = spawn(s.exe, args, { detached: true, stdio: 'ignore', windowsHide: false, env: photocraftEnv() });
   child.unref();
   const deadline = Date.now() + 25000;
   while (Date.now() < deadline) {

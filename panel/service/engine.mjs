@@ -3,10 +3,11 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { nativeImage } from 'electron';
 import { emit } from './bus.mjs';
-import { engineConfig, getSettings, resolveModelPath, patchSettings, workflowParams } from './settings.mjs';
+import { engineConfig, getSettings, resolveModelPath, patchSettings, unloadOllamaModel, workflowParams } from './settings.mjs';
 import { alphaStats } from './imagecheck.mjs';
 import { decodePng } from './pngfeather.mjs';
-import { EGGLAB_PS1, LOG_DIR, OUT_DIR, TMP_DIR, clamp, readJson, round32, stamp, stripAnsi, uid } from './paths.mjs';
+import { IS_WIN, SD_CLI, killByExecutable, killTree as killProcessTree } from './platform.mjs';
+import { EGGLAB_PS1, EGGLAB_RUN_MJS, LOG_DIR, OUT_DIR, TMP_DIR, clamp, readJson, round32, stamp, stripAnsi, uid } from './paths.mjs';
 
 const jobs = new Map();
 // One engine process at a time: a second sd-cli on 8 GB dies while loading
@@ -31,10 +32,7 @@ let stopGuardUntil = 0;
 
 /** Kill a process and its children. Safe when it already exited. */
 function killTree(pid) {
-  if (!pid) return;
-  try {
-    spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
-  } catch {}
+  killProcessTree(pid);
 }
 
 let lastSweep = 0;
@@ -60,11 +58,9 @@ export function cleanupStaleEngines(force = false) {
   // running; this is the deterministic equivalent.
   // Fire-and-forget: taskkill exits non-zero when the process is already gone,
   // which is the common case at the end of a successful render.
+  // Elsewhere: only processes running this engine folder's sd-cli binary.
   try {
-    spawn('taskkill', ['/F', '/IM', 'sd-cli.exe', '/T'], {
-      windowsHide: true,
-      stdio: 'ignore',
-    }).unref?.();
+    killByExecutable(path.join(engineConfig().engine, SD_CLI));
   } catch {}
 }
 
@@ -261,9 +257,7 @@ export function cancelJob(id) {
     return true;
   }
   if (job.status !== 'running' || !job.child) return false;
-  try {
-    spawn('taskkill', ['/pid', String(job.child.pid), '/t', '/f'], { windowsHide: true });
-  } catch {}
+  killTree(job.child.pid);
   job.canceled = true;
   setPhase(job, 'canceling', 'Stopping…');
   return true;
@@ -290,7 +284,7 @@ export function cancelAllJobs() {
 export function engineStatus() {
   const cfg = engineConfig();
   const s = getSettings();
-  const cli = path.join(cfg.engine, 'sd-cli.exe');
+  const cli = path.join(cfg.engine, SD_CLI);
   const models = {
     diffusion: Boolean(resolveModelPath(cfg, 'diffusion')) && fs.existsSync(resolveModelPath(cfg, 'diffusion')),
     vae: Boolean(resolveModelPath(cfg, 'vae')) && fs.existsSync(resolveModelPath(cfg, 'vae')),
@@ -381,7 +375,7 @@ export function startJob(input = {}) {
   const transparent = kind === 't2i' ? Boolean(input.transparent ?? s.transparent) : Boolean(input.transparent);
 
   const problems = [];
-  if (!fs.existsSync(path.join(cfg.engine, 'sd-cli.exe'))) problems.push('Engine missing — run install.ps1');
+  if (!fs.existsSync(path.join(cfg.engine, SD_CLI))) problems.push(IS_WIN ? 'Engine missing — run install.ps1' : 'Engine missing — install it in Setup');
   const diffusionPath = resolveModelPath(cfg, 'diffusion');
   if (!diffusionPath || !fs.existsSync(diffusionPath)) problems.push(`Diffusion model missing: ${cfg.diffusion}`);
   const vaePath = resolveModelPath(cfg, 'vae');
@@ -949,8 +943,18 @@ if (Array.isArray(images) && images.length) {
     // A stray sd-cli from an earlier run holds VRAM and turns this job into a
     // random capacity failure. Sweep ours first (throttled internally).
     cleanupStaleEngines();
-    child = spawn('powershell.exe', args, {
+    // Windows runs egglab.ps1; elsewhere the Node port of it (same parameter
+    // names, so `args` is shared) under the Electron binary in Node mode.
+    const [cmd, cmdArgs, env] = IS_WIN
+      ? ['powershell.exe', args, process.env]
+      : [
+          process.execPath,
+          [EGGLAB_RUN_MJS, ...args.slice(args.indexOf(EGGLAB_PS1) + 1)],
+          { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        ];
+    child = spawn(cmd, cmdArgs, {
       cwd: s.engineRoot,
+      env,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -968,14 +972,28 @@ if (Array.isArray(images) && images.length) {
     update(job);
   };
 
+  // A local chat model (Ollama) shares the GPU with the engine. Unload it
+  // first; the agent's next request loads it again. A no-op for cloud models.
+  const launchFreed = () => {
+    engineBusy = true;
+    job.detail = 'Freeing the GPU';
+    update(job);
+    unloadOllamaModel()
+      .catch(() => {})
+      .finally(() => {
+        engineBusy = false;
+        launchNow();
+      });
+  };
+
   if (engineBusy) {
     job.status = 'queued';
     job.phase = 'queued';
     job.detail = 'Waiting for the running job…';
     update(job);
-    launchQueue.push({ job, launch: launchNow });
+    launchQueue.push({ job, launch: launchFreed });
   } else {
-    launchNow();
+    launchFreed();
   }
 
   return publicJob(job);

@@ -817,7 +817,11 @@ ipcMain.handle('dialog:pickApp', async () => {
   const res = await dialog.showOpenDialog(win, {
     title: 'Locate PhotoCraft',
     properties: ['openFile'],
-    filters: [{ name: 'Applications', extensions: ['exe'] }],
+    // Linux: PhotoCraft is an AppImage or an extension-less binary.
+    filters:
+      process.platform === 'win32'
+        ? [{ name: 'Applications', extensions: ['exe'] }]
+        : [{ name: 'Applications', extensions: ['AppImage', 'appimage', '*'] }],
   });
   return res.canceled ? '' : res.filePaths[0] || '';
 });
@@ -834,7 +838,10 @@ ipcMain.handle('dialog:pickOpenCode', async () => {
   const res = await dialog.showOpenDialog(win, {
     title: 'OpenCode executable',
     properties: ['openFile'],
-    filters: [{ name: 'Applications', extensions: ['exe'] }],
+    filters:
+      process.platform === 'win32'
+        ? [{ name: 'Applications', extensions: ['exe'] }]
+        : [{ name: 'Applications', extensions: ['*'] }],
   });
   return res.canceled ? '' : res.filePaths[0] || '';
 });

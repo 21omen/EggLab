@@ -250,7 +250,8 @@ function askToRestart() {
 }
 
 export async function checkForUpdates({ userInitiated = false } = {}) {
-  if (!app.isPackaged) return { ...updateStatus(), status: 'dev' };
+  // Releases ship a Windows installer only; other platforms update from git.
+  if (!app.isPackaged || process.platform !== 'win32') return { ...updateStatus(), status: 'dev' };
   if (checking || downloading) return updateStatus();
   checking = true;
   publish({ status: 'checking', error: null, percent: 0 });
@@ -302,7 +303,7 @@ export function installUpdate() {
 }
 
 export function initUpdater() {
-  if (initialized || !app.isPackaged) return false;
+  if (initialized || !app.isPackaged || process.platform !== 'win32') return false;
   initialized = true;
 
   // Leftovers from an interrupted download: keep the finished installer (it is

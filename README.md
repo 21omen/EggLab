@@ -119,6 +119,58 @@ runs the agent gate, builds the installer on a Windows runner, and uploads the
 installer, `latest.yml` and `SHA256SUMS.txt` to the release. Bump the version in
 `panel/package.json`, commit, then push the matching tag.
 
+## Linux (from source)
+
+EggLab also runs on Linux (tested on Arch/CachyOS with Hyprland). There is no
+installer; it runs from a checkout:
+
+```bash
+git clone <this repo> ~/egglab && cd ~/egglab
+./egglab.sh                    # first run installs the npm dependencies
+./egglab.sh --install-desktop  # optional: app-menu entry for this checkout
+```
+
+Requirements: Node 20+ and npm, `git`, `cmake` and a C++ compiler (the engine
+is built locally), and PhotoCraft — the AppImage (EggLab finds it in
+`~/Applications`, `~/AppImages`, `~/Downloads` or `~/.local/bin`, newest version
+first) or a packaged `photocraft` on `PATH`. For an AppImage, EggLab unpacks
+`photocraft-cli` from it once and refreshes that copy when the AppImage is
+updated.
+
+The setup wizard works as on Windows, with two differences:
+
+- **Engine.** stable-diffusion.cpp publishes no Linux CUDA build, so the wizard
+  builds the same pinned release from source
+  ([`panel/build/engine-install.sh`](panel/build/engine-install.sh)):
+  CUDA when an NVIDIA GPU and the CUDA toolkit (`nvcc`) are present, otherwise
+  Vulkan (needs `glslc` and the Vulkan headers), otherwise CPU. The CUDA build
+  targets only the installed GPU and takes a few minutes.
+- **OpenCode** is fetched from its npm release tarball (v2.3.0).
+
+Renders go through [`egglab-run.mjs`](egglab-run.mjs), a Node port of
+`egglab.ps1` that takes the same parameters.
+
+**Local agent model (Ollama).** When an Ollama server runs on
+`127.0.0.1:11434` (change it in `settings.json` → `opencode.ollama.baseURL`),
+its models appear in the model list as `ollama/<name>`; nothing leaves the
+machine. Pick a model with tool calling (and vision, for reference images).
+The agent prompt plus tool schemas need a large context window — start Ollama
+with `OLLAMA_CONTEXT_LENGTH=32768` or more. Before each render EggLab unloads
+the chat model so Qwen-Image gets the whole GPU; the next agent turn loads it
+again (`opencode.ollama.unloadBeforeRender: false` turns that off).
+
+**Wayland.** The floating egg positions itself with screen coordinates and
+stays on top, which native Wayland windows cannot do, so `egglab.sh` runs it
+through XWayland. Set `EGGLAB_WAYLAND=1` to try native Wayland. Tiling
+compositors may need a rule to float and pin the `EggLab` window.
+
+| Path (Linux, checkout layout) | Contents |
+|---|---|
+| `<checkout>/engine` | Image engine (built locally) |
+| `~/.local/share/egglab/models` | Models — or the folder you choose |
+| `<checkout>/panel` | Chats, settings, logs (git-ignored) |
+| `<checkout>/out` | Renders |
+
 ## Project layout
 
 ```

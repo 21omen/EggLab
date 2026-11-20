@@ -7,6 +7,7 @@ import { getSettings, patchSettings, engineConfig, workflowParams, visionForMode
 import { AGENT_DIR, AGENT_BETA_DIR, CHATS_DIR, DATA_DIR, KNOWLEDGE_DIR, KNOWLEDGE_BETA_DIR, LOG_DIR, OUT_DIR, PACKAGED, PANEL_DIR, TMP_DIR, readJson, uid, writeJson } from './paths.mjs';
 import * as sessions from './sessions.mjs';
 import { recordAsset } from './assets.mjs';
+import { killTree } from './platform.mjs';
 
 // The knowledge package is the single source of truth for prompts and the
 // skill index: the repo checkout in dev, resources\knowledge when packaged
@@ -347,7 +348,43 @@ export function buildWorkspace({ url, token, beta = false }) {
   const slash = model.indexOf('/');
   const provider = slash > 0 ? model.slice(0, slash) : '';
   const custom = (s.opencode.customProviders || []).map(String);
-  if (s.opencode.vision !== false && provider && custom.includes(provider)) {
+  // Local models through Ollama's OpenAI-compatible endpoint. OpenCode only
+  // knows a provider some config declares, so declare it here for this
+  // workspace; the user's own OpenCode config stays untouched.
+  if (provider === 'ollama') {
+    const modelId = model.slice(slash + 1);
+    const base = String(s.opencode.ollama?.baseURL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+    const vision = s.opencode.vision !== false;
+    config.provider = {
+      ollama: {
+        npm: '@ai-sdk/openai-compatible',
+        name: 'Ollama (local)',
+        options: {
+          baseURL: `${base}/v1`,
+          timeout: false,
+          // A cold model load (after a render unloaded it) can take a while.
+          headerTimeout: Math.max(120, Number(s.opencode.firstByteSec) || 100) * 1000,
+          chunkTimeout: Math.max(60, Number(s.opencode.idleSec) || 600) * 1000,
+        },
+        models: {
+          [modelId]: {
+            name: modelId,
+            attachment: vision,
+            tool_call: true,
+            reasoning: false,
+            temperature: true,
+            modalities: { input: vision ? ['text', 'image'] : ['text'], output: ['text'] },
+            capabilities: {
+              input: vision ? ['text', 'image'] : ['text'],
+              output: ['text'],
+              tools: true,
+              temperature: true,
+            },
+          },
+        },
+      },
+    };
+  } else if (s.opencode.vision !== false && provider && custom.includes(provider)) {
     const modelId = model.slice(slash + 1);
     config.provider = {
       [provider]: {
@@ -1454,7 +1491,7 @@ export function stop() {
   if (current) {
     current.stopped = true;
     try {
-      spawn('taskkill', ['/pid', String(current.child.pid), '/t', '/f'], { windowsHide: true });
+      killTree(current.child.pid);
     } catch {
       try {
         current.child.kill();
@@ -1653,7 +1690,7 @@ export async function send(text, files = [], refMap = {}) {
         stalled = why;
         active.error = `${model} stopped responding (${why}).`;
         try {
-          spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+          killTree(child.pid);
         } catch {}
       };
       const armIdle = () => {
@@ -1728,7 +1765,7 @@ export async function send(text, files = [], refMap = {}) {
         if (active && active.child === child) {
           active.error = 'The agent took too long. Try a shorter request.';
           try {
-            spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+            killTree(child.pid);
           } catch {}
         }
       }, Math.max(120, Number(s.opencode.timeoutSec) || 600) * 1000);

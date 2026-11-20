@@ -582,6 +582,14 @@ export function threadsFor(docKey) {
  */
 export function isTransientDocKey(key) {
   const value = String(key || '');
+  if (process.platform !== 'win32') {
+    // POSIX paths are case-sensitive and use '/'.
+    if (!value.startsWith('/')) return false;
+    return [OUT_DIR, TMP_DIR]
+      .filter(Boolean)
+      .map((root) => `${String(root).replace(/\/+$/, '')}/`)
+      .some((root) => value.startsWith(root));
+  }
   if (/^[A-Za-z]:[\\/]/.test(value) === false) return false;
   const normalized = value.replace(/\//g, '\\').toLowerCase();
   const roots = [OUT_DIR, TMP_DIR]

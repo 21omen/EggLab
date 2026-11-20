@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { IS_WIN, userDirs } from './platform.mjs';
 
 export const PANEL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const ROOT = path.dirname(PANEL_DIR);
@@ -18,6 +19,9 @@ export const ROOT = path.dirname(PANEL_DIR);
  *                           config.json, control.json (small, may roam)
  *   %LOCALAPPDATA%\EggLab   engine binaries, models, bin (large, never roam)
  *
+ * On Linux the same split follows XDG: ~/.config/egglab and
+ * ~/.local/share/egglab (see platform.userDirs).
+ *
  * Dev keeps the historic repo layout byte-for-byte, so nothing changes while
  * developing. PACKAGED is detected from the module's own location rather than
  * `app.isPackaged`, because this file also loads under plain node (tools,
@@ -25,25 +29,22 @@ export const ROOT = path.dirname(PANEL_DIR);
  * ------------------------------------------------------------------------ */
 export const PACKAGED = /app\.asar/.test(fileURLToPath(import.meta.url));
 
-const localAppData =
-  process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-const roamingAppData =
-  process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+const USER = userDirs('EggLab');
 /** User data root: `%APPDATA%\EggLab` when packaged, the panel dir in dev. */
-export const DATA_DIR = PACKAGED ? path.join(roamingAppData, 'EggLab') : PANEL_DIR;
+export const DATA_DIR = PACKAGED ? USER.data : PANEL_DIR;
 
 /** Where the downloaded engine (sd-cli + backend DLLs) lives. */
 export const ENGINE_DIR = PACKAGED
-  ? path.join(localAppData, 'EggLab', 'engine')
+  ? path.join(USER.local, 'engine')
   : path.join(ROOT, 'engine');
 /** Where an on-demand OpenCode install would be extracted (wizard, Phase 2). */
 export const BIN_DIR = PACKAGED
-  ? path.join(localAppData, 'EggLab', 'bin')
+  ? path.join(USER.local, 'bin')
   : path.join(ROOT, 'bin');
 
 /** Downloaded update installers (large, local-only) until they are applied. */
 export const UPDATES_DIR = PACKAGED
-  ? path.join(localAppData, 'EggLab', 'updates')
+  ? path.join(USER.local, 'updates')
   : path.join(ROOT, '.updates');
 
 // Default models folder: the sibling `Models` directory the dev checkout has
@@ -52,7 +53,7 @@ export const UPDATES_DIR = PACKAGED
 const siblingModels = path.join(ROOT, '..', 'Models');
 export const MODELS_DIR = fs.existsSync(siblingModels)
   ? siblingModels
-  : path.join(localAppData, 'EggLab', 'models');
+  : path.join(USER.local, 'models');
 
 // Where the Electron shell keeps its immutable payload (app.asar + the files we
 // ship as extraResources). Null in dev, where everything lives in the checkout.
@@ -65,6 +66,14 @@ const RESOURCES_DIR = PACKAGED
 export const EGGLAB_PS1 = PACKAGED
   ? path.join(RESOURCES_DIR, 'egglab.ps1')
   : path.join(ROOT, 'egglab.ps1');
+/**
+ * The same runner in Node, used where PowerShell is not available (Linux).
+ * It takes the egglab.ps1 parameter names, so the panel builds one argument
+ * list for both.
+ */
+export const EGGLAB_RUN_MJS = PACKAGED
+  ? path.join(RESOURCES_DIR, 'egglab-run.mjs')
+  : path.join(ROOT, 'egglab-run.mjs');
 
 /**
  * The shared engine downloader (installer + first-run wizard). The NSIS
@@ -73,6 +82,12 @@ export const EGGLAB_PS1 = PACKAGED
 export const ENGINE_INSTALL_PS1 = PACKAGED
   ? path.join(RESOURCES_DIR, 'engine-install.ps1')
   : path.join(PANEL_DIR, 'build', 'engine-install.ps1');
+/** Linux engine installer (builds the pinned stable-diffusion.cpp). */
+export const ENGINE_INSTALL_SH = PACKAGED
+  ? path.join(RESOURCES_DIR, 'engine-install.sh')
+  : path.join(PANEL_DIR, 'build', 'engine-install.sh');
+/** The engine installer for this platform. */
+export const ENGINE_INSTALLER = IS_WIN ? ENGINE_INSTALL_PS1 : ENGINE_INSTALL_SH;
 
 export const OUT_DIR = PACKAGED ? path.join(DATA_DIR, 'out') : path.join(ROOT, 'out');
 export const LOG_DIR = PACKAGED ? path.join(DATA_DIR, 'logs') : path.join(PANEL_DIR, 'logs');
