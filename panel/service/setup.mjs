@@ -26,6 +26,7 @@ import {
   writeJson,
 } from './paths.mjs';
 import {
+  chooseDefaultOpenCodeModel,
   clearOpenCodeCache,
   detectPhotoCraft,
   engineConfig,
@@ -647,6 +648,15 @@ export async function setOpenCode(file) {
   const selected = storeOpenCodePath(file);
   emit('settings', { settings: getSettings() });
   return { ...(await setupStatus()), selected };
+}
+
+/**
+ * Suggest a default chat model from connected providers, but never silently
+ * change the user's selection: provider-side free models can still be blocked
+ * by balances/limits. The Setup/Settings UI asks the user to choose.
+ */
+export async function chooseDefaultModel(force = false) {
+  return await chooseDefaultOpenCodeModel(force);
 }
 
 /** Provider/model report for the selected OpenCode binary. */

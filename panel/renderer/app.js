@@ -2004,21 +2004,32 @@ function renderOcStatus() {
     ? `${report.configuredMissing ? 'selected path missing; using ' : ''}${report.bin}`
     : report.bin;
   add(`OpenCode ${version} · ${pathLabel}`);
-  add(`${report.providers?.length || 0} providers · ${report.modelCount || 0} models · ${report.auth?.length || 0} accounts`);
+  add(
+    `${report.providers?.length || 0} providers · ${report.modelCount || 0} models · ${
+      report.auth?.length || 0
+    } accounts`,
+  );
+  const connectedCount = report.connectedProviderIds?.length || 0;
+  if (!connectedCount) {
+    add('No provider is connected in OpenCode yet. Connect a provider, then refresh.', 'warn');
+  } else {
+    add(`${connectedCount} connected provider${connectedCount === 1 ? '' : 's'}`);
+  }
   if (report.modelsError) add(report.modelsError, 'bad');
   if (report.authError) add(`Accounts unavailable: ${report.authError}`, 'warn');
   if (selected) {
-    add(
-      report.selectedAvailable
-        ? `Selected model available: ${selected}`
-        : `Selected model is not in the current list: ${selected}`,
-      report.selectedAvailable ? 'dim' : 'warn',
-    );
+    if (!report.selectedAvailable) {
+      add(`Selected model is not in the current list: ${selected}`, 'warn');
+    } else if (!report.selectedConnected) {
+      add(`Selected model provider is not connected: ${selected}`, 'warn');
+    } else {
+      add(`Selected model available: ${selected}`, 'dim');
+    }
     if (/(?:^|\/)[^/]*-free(?:$|#)/i.test(selected) || /-free/i.test(selected)) {
       add('Free model selected. Provider/free limits can pause chats.', 'warn');
     }
   } else {
-    add('No chat model selected yet.', 'warn');
+    add('No chat model selected yet. Connect a provider, then choose one.', 'warn');
   }
   if (report.configError) add(report.configError, 'warn');
   box.innerHTML = rows.join('');
@@ -2060,6 +2071,7 @@ function renderProviders() {
   )
     ? {
         provider: currentModel.split('/')[0] || 'current',
+        connected: false,
         models: [{ id: currentModel, modelId: currentModel.split('/').slice(1).join('/') || currentModel, provider: currentModel.split('/')[0] || 'current' }],
       }
     : null;
@@ -2098,6 +2110,9 @@ function renderProviders() {
     head.innerHTML = `
       <span class="provider-chev">${expanded ? '▾' : '▸'}</span>
       <span class="provider-id">${esc(prov.provider)}</span>
+      <span class="provider-state${prov.connected ? ' connected' : ''}">${
+        prov.connected ? 'connected' : 'not connected'
+      }</span>
       <span class="model-count">${prov.models.length}</span>`;
     head.onclick = () => {
       if (searching) return;

@@ -117,10 +117,12 @@ export const DEFAULTS = {
   opencode: {
     exe: defaultOpenCodeExe(),
     agent: 'egglab',
-    // Public default: the provider ships with OpenCode v2, so a fresh install
-    // has a working (and vision-capable) chat model before the user opens
-    // Settings. Private/custom providers remain available in the model list.
-    model: 'opencode-go/deepseek-v4.1-flash',
+    // No hard-coded paid default. A fresh user may not have OpenCode Go,
+    // Console credits, or any provider connected; `opencode models` can list
+    // catalog entries that are not actually routable. Setup/Settings choose a
+    // model from an activated provider (preferring a free one) after the
+    // OpenCode report is available.
+    model: '',
     // Providers whose models come from a live list without capability metadata
     // (so opencode would treat them as text-only and drop image attachments).
     customProviders: ['inferx'],
@@ -683,6 +685,42 @@ export function setOpenCodePath(file) {
   return { exe: abs, version: version.join('.') };
 }
 
+/**
+ * Report the best default chat model candidate, but do not silently change the
+ * user's selection. Provider "free" models can still fail with provider-side
+ * balances/limits, so Setup asks the user to choose from the connected list.
+ */
+export async function chooseDefaultOpenCodeModel(force = false) {
+  const report = await opencodeReport(force);
+  const current = String(settings.opencode?.model || '');
+  if (!report.ok) {
+    return {
+      selected: current,
+      suggested: '',
+      changed: false,
+      available: false,
+      reason: report.error || 'OpenCode unavailable',
+      report,
+    };
+  }
+  const connected = (report.providers || []).filter((provider) => provider.connected);
+  const pool = connected
+    .flatMap((provider) => (provider.models || []).map((model) => ({ ...model, provider: provider.provider })))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const free = pool.filter((model) => /-free(?:$|#)/i.test(model.id) || /-free/i.test(model.modelId));
+  const fast = pool.filter((model) => /flash/i.test(model.id) || /flash/i.test(model.modelId));
+  const suggested = free[0]?.id || fast[0]?.id || pool[0]?.id || '';
+  return {
+    selected: current,
+    suggested,
+    changed: false,
+    available: Boolean(current && report.selectedAvailable),
+    connected: Boolean(current && report.selectedConnected),
+    reason: pool.length ? 'Choose a model from a connected provider.' : 'No provider is connected in OpenCode yet.',
+    report,
+  };
+}
+
 let modelsCache = null;
 let modelsCacheAt = 0;
 let modelsCacheKey = '';
@@ -834,24 +872,43 @@ export async function opencodeDebugPaths(oc = resolveOpenCode()) {
   return { ...paths, ok: out.ok, error: out.error || null };
 }
 
-/** `opencode auth list` → provider account rows (never secrets). */
+/** `opencode auth list --format json` → provider accounts (never secrets). */
 export async function opencodeAuthList(oc = resolveOpenCode()) {
-  const out = await runOpenCodeText(oc, ['auth', 'list']);
-  const rows = [];
+  const major = oc.version?.[0] ?? 1;
+  const args = [];
+  if (major >= 2) args.push('--standalone');
+  args.push('auth', 'list', '--format', 'json');
+  const out = await runOpenCodeText(oc, args);
+  let providers = [];
   if (out.ok) {
-    for (const line of out.stdout.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      const parts = line.trim().split(/\s{2,}/);
-      if (parts.length < 2) continue;
-      rows.push({
-        name: parts[0],
-        method: parts.slice(1, -1).join(' '),
-        status: parts[parts.length - 1],
-        raw: line.trim(),
-      });
+    try {
+      const parsed = JSON.parse(out.stdout.trim() || '[]');
+      if (Array.isArray(parsed)) {
+        providers = parsed
+          .filter((entry) => entry && typeof entry === 'object' && entry.id)
+          .map((entry) => ({
+            id: String(entry.id),
+            name: String(entry.name || entry.id),
+            connections: Array.isArray(entry.connections) ? entry.connections : [],
+            active: Array.isArray(entry.connections) && entry.connections.length > 0,
+            raw: entry,
+          }));
+      }
+    } catch (err) {
+      return {
+        providers,
+        activeProviderIds: [],
+        ok: false,
+        error: `Could not read OpenCode accounts: ${err.message}`,
+      };
     }
   }
-  return { rows, ok: out.ok, error: out.error || null };
+  return {
+    providers,
+    activeProviderIds: providers.filter((provider) => provider.active).map((provider) => provider.id),
+    ok: out.ok,
+    error: out.error || null,
+  };
 }
 
 /** JSONC (comments/trailing commas) → object, without eval. */
@@ -961,7 +1018,11 @@ export async function opencodeReport(force = false) {
       error: 'OpenCode v2 or newer was not found. Pick an existing opencode.exe or install it.',
       paths: null,
       auth: [],
+      activeProviderIds: [],
+      configuredProviderIds: [],
+      connectedProviderIds: [],
       providers: [],
+      connectedModelCount: 0,
       modelsError: null,
       activeModel: null,
       configPath: null,
@@ -976,9 +1037,36 @@ export async function opencodeReport(force = false) {
     opencodeConfigInfo(oc),
   ]);
   const selectedModel = settings.opencode?.model || null;
-  const providers = models.providers || [];
+  const activeProviderIds = new Set(auth.activeProviderIds || []);
+  const configuredProviderIds = new Set(Object.keys(config.providers || {}));
+  const connectedProviderIds = new Set([...activeProviderIds, ...configuredProviderIds]);
+  const providers = (models.providers || []).map((provider) => {
+    const connected = connectedProviderIds.has(provider.provider);
+    return {
+      ...provider,
+      connected,
+      active: connected,
+    };
+  });
+  // Local runtimes and OpenCode's own free tier do not need a saved account,
+  // but they are still routable when their models are present.
+  for (const provider of providers) {
+    if (
+      ['ollama', 'lmstudio', 'vllm'].includes(provider.provider) ||
+      provider.provider === 'opencode'
+    ) {
+      if ((provider.models || []).length) connectedProviderIds.add(provider.provider);
+    }
+  }
+  for (const provider of providers) {
+    provider.connected = connectedProviderIds.has(provider.provider);
+    provider.active = provider.connected;
+  }
   const selectedAvailable = Boolean(
     selectedModel && providers.some((provider) => provider.models.some((model) => model.id === selectedModel)),
+  );
+  const selectedConnected = Boolean(
+    selectedModel && providers.some((provider) => provider.connected && provider.models.some((model) => model.id === selectedModel)),
   );
   const value = {
     ok: true,
@@ -987,10 +1075,17 @@ export async function opencodeReport(force = false) {
     configuredMissing,
     version: oc.version.join('.'),
     paths,
-    auth: auth.rows,
+    auth: auth.providers,
     authError: auth.error,
+    activeProviderIds: [...activeProviderIds],
+    configuredProviderIds: [...configuredProviderIds],
+    connectedProviderIds: [...connectedProviderIds],
     providers,
     modelCount: providers.reduce((sum, provider) => sum + provider.models.length, 0),
+    connectedModelCount: providers.reduce(
+      (sum, provider) => sum + (provider.connected ? provider.models.length : 0),
+      0,
+    ),
     modelsError: models.error,
     modelsCwd: models.cwd,
     activeModel: config.model,
@@ -998,6 +1093,7 @@ export async function opencodeReport(force = false) {
     configError: config.error,
     selectedModel,
     selectedAvailable,
+    selectedConnected,
   };
   if (models.error) return value;
   reportCache = value;

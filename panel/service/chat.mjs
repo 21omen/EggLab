@@ -1383,6 +1383,12 @@ export async function send(text, files = [], refMap = {}) {
   if (active || turnRunning) throw new Error('The agent is still working. Wait or press stop.');
 
   const s = getSettings();
+  const model = String(s.opencode.model || '');
+  if (!model) {
+    throw new Error(
+      'No agent model is selected. Connect a provider in OpenCode, then choose a model in Settings.',
+    );
+  }
   const cleanFiles = files.filter(Boolean);
 
   // One OpenCode session per THREAD: the agent's memory follows the
@@ -1615,7 +1621,6 @@ export async function send(text, files = [], refMap = {}) {
       }, Math.max(120, Number(s.opencode.timeoutSec) || 600) * 1000);
     });
 
-  const model = s.opencode.model; // single primary model — no fallback model
   const maxRetries = Math.max(0, Number(s.opencode.retries) || 0);
   const baseMs = Math.max(1, Number(s.opencode.retryBaseSec) || 8) * 1000;
   const maxMs = Math.max(1, Number(s.opencode.retryMaxSec) || 60) * 1000;
@@ -1630,7 +1635,7 @@ export async function send(text, files = [], refMap = {}) {
   // actual fix immediately: connect a provider, add credits, or change model.
   const freeLimit = (r) =>
     !r.stopped &&
-    /free usage limit|freeusage(?:limit|error)|provider\.free-limit|free limit|free-models-per-day|per-day limit|daily (?:limit|quota)|add \d+ credits|payment required|\b402\b/i.test(
+    /free usage limit|freeusage(?:limit|error)|provider\.free-limit|free limit|free-models-per-day|per-day limit|daily (?:limit|quota)|free model requires|requires team balance|balance greater than|add \d+ credits|payment required|\b402\b/i.test(
       `${r.text} ${r.stderr} ${r.error || ''}`,
     );
   const authError = (r) =>
@@ -1640,7 +1645,7 @@ export async function send(text, files = [], refMap = {}) {
     );
   const modelUnavailable = (r) =>
     !r.stopped &&
-    /no model is available|model unavailable|model not found|no such model|unknown model|invalid model/i.test(
+    /provider\.no-route|no model is available|model unavailable|model not found|no such model|unknown model|invalid model/i.test(
       `${r.text} ${r.stderr} ${r.error || ''}`,
     );
   const dailyQuota = (r) => freeLimit(r);

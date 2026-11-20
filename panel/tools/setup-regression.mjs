@@ -68,8 +68,8 @@ check(
   /settings\.modelsDir !== raw\.models/.test(settingsSource),
 );
 check(
-  'fresh settings default to a bundled OpenCode provider',
-  /model: 'opencode-go\//.test(settingsSource) && !/model: 'inferx\//.test(settingsSource),
+  'fresh settings do not hard-code a paid default model',
+  /model: ''/.test(settingsSource) && !/model: 'opencode-go\//.test(settingsSource),
 );
 check('setup status exposes the config path', /config:\s*cfg\.path/.test(setup));
 const mainSource = read('main.mjs', PANEL);
@@ -176,6 +176,12 @@ check(
   /freeLimit\(r\)/.test(read('panel/service/chat.mjs')) &&
     /!freeLimit\(result\)/.test(read('panel/service/chat.mjs')) &&
     /free limit reached/.test(read('panel/service/chat.mjs')),
+);
+check(
+  'fresh installs do not auto-select an unavailable model',
+  /model: ''/.test(settingsSource) &&
+    /No agent model is selected/.test(read('panel/service/chat.mjs')) &&
+    /never\s+change the user's selection|do not silently change/i.test(settingsSource),
 );
 
 // ---- PowerShell parse (Windows only) ----------------------------------
