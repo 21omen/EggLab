@@ -161,21 +161,27 @@ if ([string]::IsNullOrWhiteSpace($Prompt)) {
 $engine = Join-Path $conf.engine 'sd-cli.exe'
 if (-not (Test-Path $engine)) { throw "Engine not found at $engine. Run install.ps1 first." }
 
-function Resolve-Model([string]$folder, [string]$name) {
+function Resolve-Model([string]$folder, [string]$name, [string]$roleDir = '') {
   # A role may be a bare filename inside $folder or a full path chosen by the
   # user (another drive, UNC, models kept outside EggLab). Join-Path turns an
   # absolute child into a broken path, so handle both forms explicitly.
   $p = if ([IO.Path]::IsPathRooted($name)) { $name } else { Join-Path $folder $name }
+  # Downloads land in a role subfolder (diffusion\, vae\, ...); a bare name is
+  # also looked up there, like the panel's resolveModelPath().
+  if (-not (Test-Path $p) -and $roleDir -and -not [IO.Path]::IsPathRooted($name)) {
+    $nested = Join-Path (Join-Path $folder $roleDir) (Split-Path -Leaf $name)
+    if (Test-Path $nested) { $p = $nested }
+  }
   if (-not (Test-Path $p)) { throw "Model not found: $p`nRun install.ps1 to check/download models." }
   return (Resolve-Path $p).Path
 }
 
-$diffusion = Resolve-Model $conf.models $conf.diffusion
-$vae       = Resolve-Model $conf.models $conf.vae
-$llm       = Resolve-Model $conf.models $conf.llm
+$diffusion = Resolve-Model $conf.models $conf.diffusion 'diffusion'
+$vae       = Resolve-Model $conf.models $conf.vae 'vae'
+$llm       = Resolve-Model $conf.models $conf.llm 'text_encoder'
 $llmVision = $null
 if ($Image -and $Image.Count -gt 0) {
-  $llmVision = Resolve-Model $conf.models $conf.llmVision
+  $llmVision = Resolve-Model $conf.models $conf.llmVision 'vision'
   foreach ($img in $Image) {
     if (-not (Test-Path $img)) { throw "Reference image not found: $img" }
   }
@@ -202,7 +208,7 @@ $promptText = $Prompt
 if ($Turbo) {
   $turboLora = 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors'
   if ($conf.turbo -and $conf.turbo.lora) { $turboLora = [string]$conf.turbo.lora }
-  $loraPath = Resolve-Model $conf.models $turboLora
+  $loraPath = Resolve-Model $conf.models $turboLora 'lora'
   $loraName = [System.IO.Path]::GetFileNameWithoutExtension($loraPath)
   $loraDir = if ($conf.turbo -and $conf.turbo.dir) { [string]$conf.turbo.dir } else { Split-Path -Parent $loraPath }
   $sdArgs += @('--lora-model-dir', $loraDir)

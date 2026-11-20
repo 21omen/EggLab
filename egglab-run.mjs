@@ -151,19 +151,30 @@ async function main() {
   const engine = path.join(conf.engine, SD_CLI);
   if (!fs.existsSync(engine)) throw new Error(`Engine not found at ${engine}. Install it in EggLab's setup.`);
 
-  // A role may be a bare file name inside the models folder or a full path
-  // the user chose (models kept outside EggLab).
-  const model = (name) => {
-    const p = name && path.isAbsolute(name) ? name : path.join(conf.models, name || '');
-    if (!name || !fs.existsSync(p)) throw new Error(`Model not found: ${p}\nDownload it in EggLab's Models card.`);
-    return path.resolve(p);
+  // A role may be a bare file name, a path relative to the models folder, or a
+  // full path the user chose (models kept outside EggLab). Downloads land in a
+  // role subfolder (diffusion/, vae/, ...), so a bare name is also looked up
+  // there, like the panel's resolveModelPath().
+  const ROLE_FOLDERS = { diffusion: 'diffusion', vae: 'vae', llm: 'text_encoder', llmVision: 'vision', turbo: 'lora' };
+  const model = (name, role) => {
+    if (!name) throw new Error(`No model configured for ${role}.\nPick it in EggLab's Models card.`);
+    if (path.isAbsolute(name)) {
+      if (!fs.existsSync(name)) throw new Error(`Model not found: ${name}\nDownload it in EggLab's Models card.`);
+      return name;
+    }
+    const direct = path.join(conf.models, name);
+    if (fs.existsSync(direct)) return path.resolve(direct);
+    const folder = ROLE_FOLDERS[role];
+    const nested = folder ? path.join(conf.models, folder, path.basename(name)) : '';
+    if (nested && fs.existsSync(nested)) return path.resolve(nested);
+    throw new Error(`Model not found: ${direct}\nDownload it in EggLab's Models card.`);
   };
-  const diffusion = model(conf.diffusion);
-  const vae = model(conf.vae);
-  const llm = model(conf.llm);
+  const diffusion = model(conf.diffusion, 'diffusion');
+  const vae = model(conf.vae, 'vae');
+  const llm = model(conf.llm, 'llm');
   let llmVision = null;
   if (images.length) {
-    llmVision = model(conf.llmVision);
+    llmVision = model(conf.llmVision, 'llmVision');
     for (const img of images) if (!fs.existsSync(img)) throw new Error(`Reference image not found: ${img}`);
   }
 
@@ -182,7 +193,7 @@ async function main() {
   // The engine picks LoRAs from prompt tags, so Turbo is appended to the prompt.
   let promptText = prompt;
   if (opts.turbo) {
-    const loraPath = model(conf.turbo?.lora || 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors');
+    const loraPath = model(conf.turbo?.lora || 'qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors', 'turbo');
     const loraName = path.basename(loraPath).replace(/\.[^.]+$/, '');
     args.push('--lora-model-dir', conf.turbo?.dir ? String(conf.turbo.dir) : path.dirname(loraPath));
     promptText = `${prompt}<lora:${loraName}:1>`;
