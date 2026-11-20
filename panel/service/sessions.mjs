@@ -144,6 +144,13 @@ for (const [id, entry] of Object.entries(registry.threads)) {
   if (!entry || typeof entry !== 'object') continue;
   entry.id = id;
   if (!entry.docKey) entry.docKey = id;
+  // Threads bound before the beta agent existed have no `agent` field; every
+  // one of them was driven by the official agent. Seed it so the fork-on-agent
+  // switch in bind() actually fires for their first beta message — otherwise
+  // the old OFFICIAL-project session id is reused with cwd agent-beta and
+  // OpenCode resolves the official project, where only `egglab` exists
+  // ("Agent not found: egglab-beta").
+  if (!entry.agent) entry.agent = 'egglab';
 }
 // Drop active pointers whose thread is gone or now belongs to another document.
 for (const [doc, id] of Object.entries(registry.activeThreads)) {
@@ -364,6 +371,7 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
     entry.updatedAt = Date.now();
   }
   if (model) entry.model = model;
+  if (agent) entry.agent = agent;
   if (vision !== null) entry.vision = Boolean(vision);
   if (docName) entry.docName = docName;
   entry.docKey = doc;

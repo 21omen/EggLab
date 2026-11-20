@@ -446,6 +446,11 @@ check('beta chat runs its own workspace', /betaAgent \? AGENT_BETA_DIR : AGENT_D
 check('beta knowledge root override', /EGGLAB_KNOWLEDGE_ROOT/.test(chatSource) && /EGGLAB_KNOWLEDGE_ROOT/.test(toolSource));
 check('beta sessions fork on agent switch', /agentChanged/.test(sessionsSource));
 check('session listing covers both agent projects', /AGENT_BETA_DIR/.test(sessionsSource));
+check(
+  'legacy threads are seeded as official so the agent switch forks',
+  /if \(!entry\.agent\) entry\.agent = 'egglab';/.test(sessionsSource),
+);
+check('bind records the driving agent on every send', /if \(agent\) entry\.agent = agent;/.test(sessionsSource));
 check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);
