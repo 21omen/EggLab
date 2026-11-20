@@ -2916,6 +2916,9 @@ function snap(value) {
 /* ------------------------------------------------------------------ */
 
 function showSetup() {
+  // The wizard lives inside the panel. On first run the window still has the
+  // egg's size, so open the panel first or the wizard is squeezed into it.
+  if (!shell.expanded) expandEgg();
   $('#setup').classList.add('on');
   $('#setupScrim').classList.add('on');
   $('#setup').setAttribute('aria-hidden', 'false');
