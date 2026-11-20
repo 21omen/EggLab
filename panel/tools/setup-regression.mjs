@@ -166,6 +166,17 @@ check(
   'agent model panel can download the setup CLI',
   /btnInstallOpenCode/.test(rendererSource) && /case 'opencode':/.test(read('panel/main.mjs')),
 );
+check(
+  'OpenCode desktop app resolves to its CLI',
+  /desktopOpenCodeCandidates\(\), \.\.\.managedOpenCodeCandidates\(\)/.test(settingsSource) &&
+    /desktopApp/.test(settingsSource),
+);
+check(
+  'OpenCode free limits do not retry',
+  /freeLimit\(r\)/.test(read('panel/service/chat.mjs')) &&
+    /!freeLimit\(result\)/.test(read('panel/service/chat.mjs')) &&
+    /free limit reached/.test(read('panel/service/chat.mjs')),
+);
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {

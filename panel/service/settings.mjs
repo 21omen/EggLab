@@ -637,7 +637,7 @@ export function resolveOpenCode() {
   return { cmd: 'opencode', shell: false, version: null };
 }
 
-/** Save the user's own OpenCode binary. Rejects v1 and non-binaries. */
+/** Save the user's own OpenCode binary. Accepts the desktop app and resolves it to its CLI. */
 export function setOpenCodePath(file) {
   const abs = path.resolve(String(file || ''));
   let stat = null;
@@ -646,7 +646,32 @@ export function setOpenCodePath(file) {
   } catch {}
   if (!stat || !stat.isFile()) throw new Error('That OpenCode executable does not exist.');
   const version = probeOpenCodeVersion(abs);
-  if (!version) throw new Error('That file did not start as OpenCode. Pick opencode.exe.');
+
+  // The OpenCode desktop app is an Electron GUI: `--version` prints nothing
+  // and opens the app instead. Users naturally pick it. Resolve it to the CLI
+  // that the desktop app itself uses; never store the GUI binary.
+  if (!version && /^opencode/i.test(path.basename(abs))) {
+    const candidates = [...desktopOpenCodeCandidates(), ...managedOpenCodeCandidates()].filter(
+      (candidate) => path.resolve(candidate) !== path.resolve(abs),
+    );
+    const cli = candidates.find((candidate) => {
+      const candidateVersion = probeOpenCodeVersion(candidate);
+      return candidateVersion && candidateVersion[0] >= 2 && /cli\.exe$/i.test(candidate);
+    });
+    if (cli) {
+      patchSettings({ opencode: { exe: cli } });
+      clearOpenCodeCache();
+      modelsCache = null;
+      modelsCacheKey = '';
+      reportCache = null;
+      return { exe: cli, version: probeOpenCodeVersion(cli).join('.'), desktopApp: abs };
+    }
+    throw new Error(
+      'That is the OpenCode desktop app. EggLab needs its CLI (opencode-cli.exe), but none was found. Pick opencode-cli.exe or install the CLI.',
+    );
+  }
+
+  if (!version) throw new Error('That file did not start as OpenCode. Pick opencode.exe or opencode-cli.exe.');
   if (version[0] < 2) {
     throw new Error(`OpenCode ${version.join('.')} found. EggLab needs OpenCode v2 or newer.`);
   }

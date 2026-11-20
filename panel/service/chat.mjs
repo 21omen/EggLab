@@ -1625,17 +1625,29 @@ export async function send(text, files = [], refMap = {}) {
   lastRunAt = startedTurn;
   lastRunDocKey = docKey;
 
-  // A daily free-tier quota ("free-models-per-day", "add N credits") cannot
-  // heal inside one turn. Retrying it only burns the whole retry budget on
-  // ~75 s runs, so the caller times out and the real reason is buried behind
-  // a generic "at capacity". Surface it immediately instead.
-  const dailyQuota = (r) =>
+  // Provider/account limits cannot heal inside one turn. Retrying them burns
+  // the whole retry budget while the user waits on "retrying 1/6". Surface the
+  // actual fix immediately: connect a provider, add credits, or change model.
+  const freeLimit = (r) =>
     !r.stopped &&
-    /free-models-per-day|per-day|daily (?:limit|quota)|add \d+ credits|payment required|\b402\b/i.test(
+    /free usage limit|freeusage(?:limit|error)|provider\.free-limit|free limit|free-models-per-day|per-day limit|daily (?:limit|quota)|add \d+ credits|payment required|\b402\b/i.test(
       `${r.text} ${r.stderr} ${r.error || ''}`,
     );
+  const authError = (r) =>
+    !r.stopped &&
+    /\b40[13]\b|unauthorized|forbidden|invalid api key|missing api key|api key (?:is )?(?:invalid|missing|required)|authentication (?:failed|required)|not authenticated/i.test(
+      `${r.text} ${r.stderr} ${r.error || ''}`,
+    );
+  const modelUnavailable = (r) =>
+    !r.stopped &&
+    /no model is available|model unavailable|model not found|no such model|unknown model|invalid model/i.test(
+      `${r.text} ${r.stderr} ${r.error || ''}`,
+    );
+  const dailyQuota = (r) => freeLimit(r);
   const atCapacity = (r) =>
-    !dailyQuota(r) &&
+    !freeLimit(r) &&
+    !authError(r) &&
+    !modelUnavailable(r) &&
     !r.stopped &&
     /too many requests|at capacity|\b429\b|rate limit|rate_limit|usage limit|quota|insufficient/i.test(
       `${r.text} ${r.stderr} ${r.error || ''}`,
@@ -1674,6 +1686,9 @@ export async function send(text, files = [], refMap = {}) {
   while (
     !turnStopped &&
     attempts < maxRetries &&
+    !freeLimit(result) &&
+    !authError(result) &&
+    !modelUnavailable(result) &&
     (atCapacity(result) || transient(result) || stalled(result)) &&
     !didWork(result) &&
     Date.now() - startedTurn < budgetMs
@@ -1694,6 +1709,15 @@ export async function send(text, files = [], refMap = {}) {
 
   if (stalled(result) && !result.error) {
     result.error = `${model} stopped responding — no response from the model`;
+  } else if (freeLimit(result) && !didWork(result)) {
+    result.error =
+      `${model} free limit reached — connect a provider, subscribe to OpenCode Go, or choose another model in Settings.`;
+  } else if (authError(result) && !didWork(result)) {
+    result.error =
+      `${model} could not authenticate — connect the provider in OpenCode or update its credentials.`;
+  } else if (modelUnavailable(result) && !didWork(result)) {
+    result.error =
+      `${model} is not available from this OpenCode installation — pick another model in Settings.`;
   } else if (dailyQuota(result) && !didWork(result)) {
     // The provider's raw text is a wall of URL parameters; keep the cause and
     // the two things the user can actually do about it.

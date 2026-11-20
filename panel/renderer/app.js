@@ -2014,6 +2014,9 @@ function renderOcStatus() {
         : `Selected model is not in the current list: ${selected}`,
       report.selectedAvailable ? 'dim' : 'warn',
     );
+    if (/(?:^|\/)[^/]*-free(?:$|#)/i.test(selected) || /-free/i.test(selected)) {
+      add('Free model selected. Provider/free limits can pause chats.', 'warn');
+    }
   } else {
     add('No chat model selected yet.', 'warn');
   }
@@ -2633,12 +2636,16 @@ function bind() {
       const file = await api.pickOpenCode();
       if (!file) return;
       try {
-        await api.setOpenCode(file);
+        const result = await api.setOpenCode(file);
         S.ocReport = null;
         S.providersLoaded = false;
         await refreshRuntime();
         await refreshProviders(true);
-        toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
+        if (result?.desktopApp) {
+          toast(`Using the OpenCode desktop CLI: ${result.exe}`, 'ok');
+        } else {
+          toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
+        }
       } catch (err) {
         toast(friendly(err), 'error');
       }
@@ -3005,7 +3012,12 @@ async function onSetupAction(action) {
       case 'use-opencode': {
         const file = await api.pickOpenCode();
         if (!file) return;
-        await api.setupAction('opencode-path', { path: file });
+        const result = await api.setupAction('opencode-path', { path: file });
+        if (result?.selected?.desktopApp) {
+          toast(`Using the OpenCode desktop CLI: ${result.selected.exe}`, 'ok');
+        } else {
+          toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
+        }
         S.ocReport = null;
         S.providersLoaded = false;
         S.setupOcModels = [];
@@ -3013,7 +3025,6 @@ async function onSetupAction(action) {
         await loadSetup();
         await refreshRuntime();
         await refreshProviders(true);
-        toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
         break;
       }
       case 'refresh-setup-models': {
