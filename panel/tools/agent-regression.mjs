@@ -538,6 +538,21 @@ check(
   'the renderer shows a clickable asset strip',
   /renderAssetStrip/.test(read('renderer/app.js')) && /asset-thumb/.test(read('renderer/app.css')),
 );
+
+// ---- Phase E: session UX polish ---------------------------------------
+check(
+  'context resets are counted per chat',
+  /forkCount: existing \? \(existing\.forkCount \|\| 0\) \+ 1 : 0/.test(sessionsSource) &&
+    /forkCount: entry\.forkCount \|\| 0/.test(sessionsSource),
+);
+check(
+  'the chat list shows the agent and reset count',
+  /' · beta'/.test(read('renderer/app.js')) && /context reset/.test(read('renderer/app.js')),
+);
+check(
+  'the chat list footer describes the new model',
+  /independent of canvases/.test(read('renderer/app.js')),
+);
 check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);

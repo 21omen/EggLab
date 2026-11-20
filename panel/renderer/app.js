@@ -734,7 +734,9 @@ async function renderSessions() {
           <div class="s-title">${esc(s.title || 'Untitled chat')}</div>
           <div class="s-sub">
             <span class="s-dot${s.exists ? '' : ' dead'}">${s.exists ? '●' : '○'}</span>
-            ${esc(timeAgo(s.updatedAt) || 'new')} · ${esc((s.model || '').split('/').pop() || 'no model')}
+            ${esc(timeAgo(s.updatedAt) || 'new')} · ${esc((s.model || '').split('/').pop() || 'no model')}${
+              s.agent === 'egglab-beta' ? ' · beta' : ''
+            }${s.forkCount ? ` · ${s.forkCount} context reset${s.forkCount === 1 ? '' : 's'}` : ''}
             ${s.docKey && s.docKey === S.pcDoc?.key ? '<span class="s-onscreen">on screen</span>' : ''}
           </div>
         </div>
@@ -758,7 +760,7 @@ async function renderSessions() {
   }
   const current = docs.find((d) => d.current);
   foot.innerHTML = current
-    ? 'Chats are grouped by PhotoCraft document. The active document comes first.'
+    ? 'Chats are independent of canvases: the badge marks the canvas PhotoCraft shows. Click a chat to resume it.'
     : '';
 }
 

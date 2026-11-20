@@ -365,6 +365,9 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       forkedFrom: modelChanged || lostVision || visionChanged || agentChanged ? existing?.sessionId || null : null,
+      // Phase E: a visible count of how many times this chat's agent context
+      // was reset (model / vision / agent switch). Shown in the chat list.
+      forkCount: existing ? (existing.forkCount || 0) + 1 : 0,
     };
     registry.threads[id] = entry;
   }
@@ -615,6 +618,8 @@ export async function list(limit = 40) {
       title: entry.title || liveEntry?.title || entry.docName || 'Untitled chat',
       sessionId: entry.sessionId || null,
       model: entry.model || null,
+      agent: entry.agent || 'egglab',
+      forkCount: entry.forkCount || 0,
       exists: Boolean(liveEntry),
       current: id === registry.currentKey,
       createdAt: entry.createdAt,
