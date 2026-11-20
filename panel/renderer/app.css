@@ -207,6 +207,30 @@ button { cursor: pointer; }
   margin-left: 4px;
   white-space: nowrap;
 }
+/* Asset tray (Phase D): this chat's renders as placeable thumbnails. */
+.asset-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.asset-strip::-webkit-scrollbar { height: 4px; }
+.asset-thumb {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  background: var(--panel2);
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+}
+.asset-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-thumb:hover { border-color: var(--gold); }
 
 .sessions {
   position: absolute;

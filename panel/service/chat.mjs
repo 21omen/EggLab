@@ -6,6 +6,7 @@ import { emit } from './bus.mjs';
 import { getSettings, patchSettings, engineConfig, workflowParams, visionForModel, resolveOpenCode } from './settings.mjs';
 import { AGENT_DIR, AGENT_BETA_DIR, CHATS_DIR, DATA_DIR, KNOWLEDGE_DIR, KNOWLEDGE_BETA_DIR, LOG_DIR, OUT_DIR, PACKAGED, PANEL_DIR, TMP_DIR, readJson, uid, writeJson } from './paths.mjs';
 import * as sessions from './sessions.mjs';
+import { recordAsset } from './assets.mjs';
 
 // The knowledge package is the single source of truth for prompts and the
 // skill index: the repo checkout in dev, resources\knowledge when packaged
@@ -1349,6 +1350,19 @@ export function upsertJobCard(job, persist = true) {
   };
   if (idx >= 0) history.items[idx] = item;
   else history.items.push(item);
+  // Phase D: a finished render/edit is an asset of this chat — one record per
+  // job, pointing at the exact pixels the card reported.
+  if (job.status === 'done' && job.outPath) {
+    recordAsset({
+      threadId,
+      docKey,
+      path: job.outPath,
+      kind: job.localEdit ? 'edit' : 'render',
+      prompt: job.prompt,
+      seed: job.seed,
+      jobId: job.id,
+    });
+  }
   if (persist) saveHistory();
   emit('chat', { action: 'job', item });
 }

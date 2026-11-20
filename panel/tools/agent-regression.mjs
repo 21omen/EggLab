@@ -520,6 +520,24 @@ check(
   /A new piece may have its own canvas \(beta\)/.test(read('beta-agent/AGENT.md')) &&
     /conversation follows that piece/.test(mcpSource2),
 );
+
+// ---- Phase D: assets ---------------------------------------------------
+check(
+  'finished renders are recorded as chat assets',
+  exists('service/assets.mjs') && /recordAsset/.test(chatSource) && /job\.status === 'done' && job\.outPath/.test(chatSource),
+);
+check(
+  'one asset per job, newest-first tray',
+  /a\.jobId === jobId/.test(read('service/assets.mjs')) && /assetsForChat/.test(read('service/assets.mjs')),
+);
+check(
+  'the asset tray lists and places',
+  /assets:list/.test(mainSource) && /assets:place/.test(mainSource) && /assetPlace/.test(read('preload.cjs')),
+);
+check(
+  'the renderer shows a clickable asset strip',
+  /renderAssetStrip/.test(read('renderer/app.js')) && /asset-thumb/.test(read('renderer/app.css')),
+);
 check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);

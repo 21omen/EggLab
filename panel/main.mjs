@@ -10,6 +10,7 @@ import { modelStatus, startDownloads, cancelDownload, cancelAgentDownloads, retr
 import * as pc from './service/photocraft.mjs';
 import * as chat from './service/chat.mjs';
 import * as sessions from './service/sessions.mjs';
+import * as assets from './service/assets.mjs';
 import * as setup from './service/setup.mjs';
 import * as updater from './service/updater.mjs';
 import { CONTROL_FILE, DATA_DIR, LOG_DIR, OUT_DIR, PANEL_DIR, TMP_DIR, pruneScratch } from './service/paths.mjs';
@@ -853,6 +854,14 @@ ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJo
 ipcMain.handle('chat:clear', () => chat.clearHistory());
 ipcMain.handle('chat:history', () => chat.getHistory());
 ipcMain.handle('sessions:list', () => sessions.list());
+// Phase D: the per-chat asset tray — finished renders/edits as placeable assets.
+ipcMain.handle('assets:list', () => assets.assetsForChat(chat.currentThreadId(), 12));
+ipcMain.handle('assets:place', async (e, { id }) => {
+  const asset = assets.assetFor(id);
+  if (!asset || !fs.existsSync(asset.path)) throw new Error('That asset is gone (its file was removed).');
+  const result = await pc.place(asset.path, {});
+  return { ok: true, result, path: asset.path, prompt: asset.prompt, seed: asset.seed };
+});
 ipcMain.handle('sessions:rename', (e, { key, title }) => sessions.rename(key, title));
 ipcMain.handle('sessions:delete', (e, key) => chat.deleteThread(key));
 ipcMain.handle('sessions:move', (e, { key, docKey, title }) => chat.moveThread(key, docKey, title || null));
