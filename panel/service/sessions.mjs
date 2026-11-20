@@ -464,17 +464,12 @@ export function ensureEntry(key, { docKey = null, docName = null, title = null }
  */
 export function newThread({ docKey = null, docName = null } = {}) {
   const doc = docKey || 'no-document';
-  const taken = new Set(Object.keys(registry.threads));
-  let id = doc;
-  if (taken.has(id)) {
-    // The primary thread already exists, so this is an additional stream over
-    // the same document scope.
-    let n = 2;
-    while (taken.has(`${doc}#${n}`)) n++;
-    id = `${doc}#${n}`;
-  }
-  // The primary id can be minted again after the user deleted that chat.
-  clearDeleted(id);
+  // Stable identity (Phase B): a new conversation mints its own uid and never
+  // derives its id from the document key (which changes on first save) or a
+  // `#2` suffix (which made ids reusable across deleted chats). The document
+  // is only a link the chat points at; renaming the document never renames
+  // the chat.
+  const id = `chat_${uid()}`;
   const entry = {
     id,
     docKey: doc,

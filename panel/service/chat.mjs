@@ -762,9 +762,11 @@ export function useDocument(key, title = null) {
   const resumed = sessions.threadFor(next);
   docKey = next;
   docTitle = title || resumed?.docName || null;
-  // No thread yet for this document: fall back to its primary thread id (the
-  // document key), which is minted on first contact by bind()/saveHistory().
-  threadId = resumed ? resumed.id : next;
+  // No thread yet for this document: mint a stable uid chat (Phase B). The
+  // document key is never used as a thread id — it changes on first save, and
+  // a uid keeps the transcript and session bound to the chat, not the path.
+  if (resumed) threadId = resumed.id;
+  else threadId = sessions.newThread({ docKey: next, docName: docTitle }).id;
   const res = adoptThread({ title });
   return { ...res, changed: true };
 }
@@ -938,7 +940,8 @@ export async function deleteThread(key) {
   // sibling thread survives.
   if (target === threadId) {
     const fallback = sessions.threadFor(docKey);
-    threadId = fallback ? fallback.id : docKey;
+    if (fallback) threadId = fallback.id;
+    else threadId = sessions.newThread({ docKey, docName: docTitle }).id;
     adoptThread();
   }
   agentLog(

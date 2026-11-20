@@ -450,6 +450,21 @@ check(
   'legacy threads are seeded as official so the agent switch forks',
   /if \(!entry\.agent\) entry\.agent = 'egglab';/.test(sessionsSource),
 );
+
+// ---- Phase B: stable chat identities ----------------------------------
+check(
+  'new conversations mint stable uid identities',
+  /const id = `chat_\$\{uid\(\)\}`/.test(sessionsSource) && !/`\$\{doc\}#\$\{n\}`/.test(sessionsSource),
+);
+check(
+  'a document without a chat mints a uid chat, never a doc-key id',
+  /sessions\.newThread\(\{ docKey: next, docName: docTitle \}\)/.test(chatSource) &&
+    !/threadId = resumed \? resumed\.id : next/.test(chatSource),
+);
+check(
+  'the delete fallback mints a uid chat too',
+  /sessions\.newThread\(\{ docKey, docName: docTitle \}\)\.id/.test(chatSource),
+);
 check('bind records the driving agent on every send', /if \(agent\) entry\.agent = agent;/.test(sessionsSource));
 
 // ---- Phase A: chat/doc management stabilization ------------------------
