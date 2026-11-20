@@ -369,15 +369,45 @@ export function modelFileFor(key) {
 }
 
 /**
- * Absolute path of one model role. A role may be a bare filename (resolved
- * inside `models`) or a full path chosen by the user. This is the one place
- * both the panel and `egglab.ps1` agree on.
+ * Subfolder for each engine role. Downloads go here, and the Models UI lists
+ * the files found in the same folder. A flat folder chosen by the user still
+ * works: the resolver and the picker also look in the root.
+ */
+const ROLE_FOLDERS = {
+  diffusion: 'diffusion',
+  vae: 'vae',
+  llm: 'text_encoder',
+  llmVision: 'vision',
+  turbo: 'lora',
+};
+
+export function roleFolder(key) {
+  return ROLE_FOLDERS[key] || '';
+}
+
+/**
+ * Absolute path of one model role. A role may be a bare filename, a relative
+ * path such as `diffusion/file.gguf`, or a full path chosen by the user. When
+ * the configured value is a bare filename, also look in the role subfolder so
+ * old flat configs keep working after the folder layout changes.
  */
 export function resolveModelPath(cfg, key) {
   const value = key === 'turbo' ? cfg?.turbo?.lora : cfg?.[key];
   if (!value) return null;
   const text = String(value);
-  return path.isAbsolute(text) ? text : path.join(cfg.models, text);
+  if (path.isAbsolute(text)) return text;
+  const direct = path.join(cfg.models, text);
+  try {
+    if (fs.existsSync(direct)) return direct;
+  } catch {}
+  const folder = roleFolder(key);
+  if (folder) {
+    const nested = path.join(cfg.models, folder, path.basename(text));
+    try {
+      if (fs.existsSync(nested)) return nested;
+    } catch {}
+  }
+  return direct;
 }
 
 /**
@@ -418,10 +448,15 @@ export function setModelFile(role, filePath) {
   if (!stat || !stat.isFile()) throw new Error('That model file does not exist.');
   const cfg = engineConfig();
   const raw = cfg.raw || ensureEngineConfig();
+  // Keep files inside the models root as a portable relative path
+  // (`diffusion/file.gguf`); files on another drive stay absolute.
+  const relative = path.relative(cfg.models, abs);
+  const inside = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+  const stored = inside ? relative.split(path.sep).join('/') : abs;
   if (key === 'turbo') {
-    raw.turbo = { ...(raw.turbo || {}), lora: abs, dir: path.dirname(abs) };
+    raw.turbo = { ...(raw.turbo || {}), lora: stored, dir: path.dirname(abs) };
   } else {
-    raw[key] = abs;
+    raw[key] = stored;
   }
   writeJson(cfg.path, raw);
   return raw;
@@ -898,7 +933,14 @@ export function ensureDirs() {
   try {
     modelsDir = engineConfig().models || modelsDir;
   } catch {}
-  for (const dir of [modelsDir]) {
+  const dirs = [modelsDir];
+  // The managed default gets the role layout up front. A user-provided
+  // existing folder is left exactly as it is; downloads create role folders
+  // only when needed.
+  if (PACKAGED && path.resolve(modelsDir) === path.resolve(MODELS_DIR)) {
+    for (const folder of Object.values(ROLE_FOLDERS)) dirs.push(path.join(modelsDir, folder));
+  }
+  for (const dir of dirs) {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch {}

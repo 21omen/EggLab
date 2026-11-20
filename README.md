@@ -67,6 +67,8 @@ Both the Models and OpenCode steps accept an existing installation:
 
 - **Models** → **Use existing folder…** points EggLab at the folder you already
   use (no copy). **Choose files…** maps individual files if their names differ.
+  The default folder is created with `diffusion`, `vae`, `text_encoder`,
+  `vision` and `lora` subfolders; **Download missing** writes into them.
 - **OpenCode** → **Use existing…** selects your own `opencode.exe`; **Refresh
   models** reads the providers and models from that exact binary.
 
@@ -93,7 +95,7 @@ chats, settings, models and the engine are kept. You can also trigger a check fr
 |---|---|
 | `%LOCALAPPDATA%\Programs\egglab` | Program files |
 | `%LOCALAPPDATA%\EggLab\engine` | Image engine (downloaded, never packaged) |
-| `%LOCALAPPDATA%\EggLab\models` | Models — or the folder you choose |
+| `%LOCALAPPDATA%\EggLab\models` | Models, grouped into `diffusion`, `vae`, `text_encoder`, `vision`, `lora` — or the folder you choose |
 | `%APPDATA%\EggLab` | Chats, settings, logs, renders (`out`) |
 
 Uninstalling removes the app and the engine, keeps your chats/settings, and asks before

@@ -66,6 +66,24 @@ Add a **Models folder** row to both:
   `config.json`. This is for users whose files have different names or live in
   different folders. No validation; just existence.
 
+### Folder layout
+
+The managed default folder is created with one subfolder per role:
+
+```text
+%LOCALAPPDATA%\EggLab\models\
+  diffusion\
+  vae\
+  text_encoder\
+  vision\
+  lora\
+```
+
+Downloads go into the matching subfolder. A user-selected existing folder is
+left as-is: the dropdown lists the role subfolder and the root, so a flat
+folder keeps working. Files inside the root are stored relatively
+(`diffusion/file.gguf`); files on another drive stay absolute.
+
 ### File names
 
 The default config already names the files EggLab expects. The folder picker
@@ -439,6 +457,9 @@ Screenshot:
 - Per-role absolute paths: `resolveModelPath()`, `setModelFile()`,
   `setModelsFolder()`; `egglab.ps1` handles rooted paths and a separate
   `turbo.dir`.
+- Default folder layout with `diffusion/`, `vae/`, `text_encoder/`, `vision/`
+  and `lora/`; downloads go into the role folder; five dropdowns list the files
+  in each folder; flat folders still work.
 - Setup/Settings: **Use existing folderâ€¦**, **Choose filesâ€¦**, folder status,
   downloads into the chosen folder, Open folder.
 - OpenCode: explicit path wins; `setOpenCodePath()` rejects v1; `debug paths`,

@@ -1679,6 +1679,53 @@ function renderAspects() {
 
 /* ------------------------------ models ----------------------------- */
 
+async function selectRoleModel(role, file) {
+  if (!role || !file) return;
+  try {
+    await api.setModelFile(role, file);
+    S.models = await api.models();
+    renderModels();
+    if (S.setup) await loadSetup();
+    toast('Model selected.', 'ok');
+  } catch (err) {
+    toast(friendly(err), 'error');
+  }
+}
+
+function renderModelRoles(containerId, entries) {
+  const box = document.getElementById(containerId);
+  if (!box || !Array.isArray(entries)) return;
+  box.innerHTML = '';
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'model-role';
+    const files = Array.isArray(entry.files) ? entry.files : [];
+    const options = files.length
+      ? files
+          .map(
+            (file) =>
+              `<option value="${esc(file.path)}" ${file.current ? 'selected' : ''}>${esc(file.name)}</option>`,
+          )
+          .join('')
+      : '<option value="">No files found</option>';
+    row.innerHTML = `
+      <span class="model-role-label">${esc(entry.label)}</span>
+      <select data-role-select="${esc(entry.key)}" ${files.length ? '' : 'disabled'}>${options}</select>
+      <button class="mini" data-role-browse="${esc(entry.key)}">Browse…</button>`;
+    box.appendChild(row);
+    const select = row.querySelector('select');
+    if (select) {
+      select.onchange = () => selectRoleModel(entry.key, select.value);
+    }
+    const browse = row.querySelector('button');
+    browse.onclick = async () => {
+      const file = await api.pickModel();
+      if (!file) return;
+      await selectRoleModel(entry.key, file);
+    };
+  }
+}
+
 function renderModels() {
   const data = S.models;
   const box = $('#models');
@@ -1687,6 +1734,7 @@ function renderModels() {
     box.innerHTML = '<p class="note">Model status unavailable.</p>';
     return;
   }
+  renderModelRoles('modelRoles', data.entries);
   // A failed download that the user repaired outside the app (or a finished
   // transfer whose models refresh raced its event) must not stay red forever.
   for (const entry of data.entries) {
@@ -2808,6 +2856,7 @@ function renderSetup() {
       <div class="setup-step-head"><span class="setup-dot"></span><b>Models</b>${setupBadge(missing.length === 0, 'All present', `${missing.length} missing`)}</div>
       <p class="setup-note">${esc(mo.dir)}</p>
       <div class="setup-model">${modelLine}</div>
+      <div class="model-roles" id="setupModelRoles"></div>
       <div class="setup-actions">
         <button class="mini" data-setup="use-models-folder">Use existing folder…</button>
         <button class="mini" data-setup="choose-model-files">Choose files…</button>
@@ -2816,6 +2865,7 @@ function renderSetup() {
       </div>
     </div>
   `;
+  renderModelRoles('setupModelRoles', mo.entries);
 }
 
 async function refreshRuntime() {

@@ -33,6 +33,7 @@ import {
   opencodeReport,
   patchSettings,
   resolveOpenCode,
+  roleFolder,
   setModelFile as storeModelFile,
   setModelsFolder as storeModelsFolder,
   setOpenCodePath as storeOpenCodePath,
@@ -129,11 +130,14 @@ export async function setupStatus() {
       entries: status.entries.map((entry) => ({
         id: entry.id,
         label: entry.label,
+        key: entry.key,
         required: entry.required,
         exists: entry.exists,
         sizeText: entry.sizeText,
         file: entry.file,
         path: entry.path,
+        dir: entry.dir,
+        files: entry.files,
       })),
       importing: { ...state.importing },
     },
@@ -560,12 +564,12 @@ export async function importModelFile(filePath) {
   }
 
   const cfg = engineConfig();
-  const dest = path.join(cfg.models, base);
+  const dest = path.join(cfg.models, roleFolder(target.key), base);
   if (path.resolve(dest) !== src) {
     state.importing = { running: true, file: base, received: 0, total: stat.size, error: null };
     emit('setup', { step: 'import', status: 'copying', file: base, received: 0, total: stat.size });
     try {
-      fs.mkdirSync(cfg.models, { recursive: true });
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
       const part = `${dest}.part`;
       const input = fs.createReadStream(src);
       const output = fs.createWriteStream(part);

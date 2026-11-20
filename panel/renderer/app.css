@@ -990,6 +990,12 @@ button { cursor: pointer; }
 
 /* model rows */
 .models { display: flex; flex-direction: column; gap: 7px; }
+.model-roles { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px; }
+.model-role { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.model-role-label { font-size: 9.6px; color: var(--dim); }
+.model-role select { min-width: 0; width: 100%; }
+.model-role .mini { white-space: nowrap; }
+@media (max-width: 420px) { .model-role { grid-template-columns: 72px minmax(0, 1fr) auto; } }
 .model {
   border: 1px solid var(--line);
   border-radius: var(--radius-element);

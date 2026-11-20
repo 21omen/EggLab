@@ -1,10 +1,74 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { emit } from './bus.mjs';
-import { engineConfig, getSettings, resolveModelPath, setEngineModel } from './settings.mjs';
+import { engineConfig, getSettings, resolveModelPath, roleFolder, setEngineModel } from './settings.mjs';
 import { humanBytes, readJson, writeJson, DATA_DIR } from './paths.mjs';
 
 const STATE_FILE = path.join(DATA_DIR, 'downloads.json');
+const MODEL_FILE = /\.(safetensors|gguf)$/i;
+
+/** Folder that owns one role (diffusion/, vae/, text_encoder/, vision/, lora/). */
+function roleDir(cfg, key) {
+  const folder = roleFolder(key);
+  return folder ? path.join(cfg.models, folder) : cfg.models;
+}
+
+/** Store a file inside the models root as a portable relative path. */
+function relativeToModels(cfg, abs) {
+  const rel = path.relative(cfg.models, abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return abs;
+  return rel.split(path.sep).join('/');
+}
+
+/**
+ * Files the Models dropdown can offer for one role: the role subfolder and
+ * the models root (so a user's existing flat folder keeps working). No
+ * scanning/classification; just the files in those folders.
+ */
+function listRoleFiles(cfg, key, currentPath) {
+  const dirs = [];
+  const nested = roleDir(cfg, key);
+  const roots = [nested, cfg.models];
+  for (const dir of roots) {
+    if (!dir || dirs.some((seen) => path.resolve(seen) === path.resolve(dir))) continue;
+    try {
+      if (fs.statSync(dir).isDirectory()) dirs.push(dir);
+    } catch {}
+  }
+  const seen = new Set();
+  const files = [];
+  const add = (full) => {
+    const resolved = path.resolve(full);
+    if (seen.has(resolved)) return;
+    seen.add(resolved);
+    let size = 0;
+    try {
+      const stat = fs.statSync(full);
+      if (!stat.isFile()) return;
+      size = stat.size;
+    } catch {
+      return;
+    }
+    files.push({
+      name: path.basename(full),
+      path: full,
+      size,
+      current: Boolean(currentPath && path.resolve(currentPath) === resolved),
+    });
+  };
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {}
+    for (const name of names) {
+      if (MODEL_FILE.test(name)) add(path.join(dir, name));
+    }
+  }
+  // A custom file outside both folders is still a valid current choice.
+  if (currentPath && !seen.has(path.resolve(currentPath))) add(currentPath);
+  return files.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 const HF = 'https://huggingface.co';
 
@@ -142,6 +206,12 @@ export function modelStatus() {
       // user picked from another folder. Resolve both the same way the engine
       // script does; never assume one models directory.
       const full = resolveModelPath(cfg, entry.key) || path.join(cfg.models, file);
+      let dir = path.dirname(full);
+      try {
+        if (!fs.existsSync(full)) dir = roleDir(cfg, entry.key);
+      } catch {
+        dir = roleDir(cfg, entry.key);
+      }
       let size = 0;
       try {
         size = fs.statSync(full).size;
@@ -153,9 +223,14 @@ export function modelStatus() {
       // successful just because FP8 exists.
       let dlExists = false;
       if (dl?.file) {
-        try {
-          dlExists = fs.statSync(path.join(cfg.models, dl.file)).size > 0;
-        } catch {}
+        for (const candidate of [path.join(roleDir(cfg, entry.key), dl.file), path.join(cfg.models, dl.file)]) {
+          try {
+            if (fs.statSync(candidate).size > 0) {
+              dlExists = true;
+              break;
+            }
+          } catch {}
+        }
       }
       // A persisted "running"/"queued" record with no live download means the
       // app died mid-transfer. Surface it as an error instead of silently
@@ -176,19 +251,29 @@ export function modelStatus() {
         key: entry.key,
         file,
         path: full,
+        dir,
+        files: listRoleFiles(cfg, entry.key, full),
         exists: size > 0,
         size,
         sizeText: size ? humanBytes(size) : '',
         variant: variant.id,
         variants: entry.variants.map((v) => {
           let installed = false;
-          try {
-            installed =
-              fs.statSync(path.join(cfg.models, v.file)).size > 0 ||
-              (path.isAbsolute(String(configured || '')) &&
-                path.basename(String(configured)) === v.file &&
-                fs.statSync(String(configured)).size > 0);
-          } catch {}
+          const candidates = [
+            path.join(roleDir(cfg, entry.key), v.file),
+            path.join(cfg.models, v.file),
+          ];
+          if (path.isAbsolute(String(configured || '')) && path.basename(String(configured)) === v.file) {
+            candidates.push(String(configured));
+          }
+          for (const candidate of candidates) {
+            try {
+              if (fs.statSync(candidate).size > 0) {
+                installed = true;
+                break;
+              }
+            } catch {}
+          }
           return {
             id: v.id,
             label: v.label,
@@ -222,17 +307,23 @@ export function useVariant(entryId, fileOrId) {
   if (!entry) throw new Error(`Unknown model: ${entryId}`);
   const variant = entry.variants.find((v) => v.file === fileOrId || v.id === fileOrId);
   if (!variant) throw new Error(`Unknown variant for ${entry.label}`);
-  const configured = entry.key === 'turbo' ? cfg.turbo?.lora : cfg[entry.key];
-  const full =
-    path.isAbsolute(String(configured || '')) && path.basename(String(configured)) === variant.file
-      ? String(configured)
-      : path.join(cfg.models, variant.file);
+  const candidates = [];
+  const resolved = resolveModelPath(cfg, entry.key);
+  if (resolved && path.basename(resolved) === variant.file) candidates.push(resolved);
+  candidates.push(path.join(roleDir(cfg, entry.key), variant.file), path.join(cfg.models, variant.file));
+  const full = candidates.find((candidate) => {
+    try {
+      return fs.statSync(candidate).size > 0;
+    } catch {
+      return false;
+    }
+  }) || candidates[0];
   let size = 0;
   try {
     size = fs.statSync(full).size;
   } catch {}
   if (!size) throw new Error(`${variant.file} is not installed`);
-  setEngineModel(entry.key, variant.file);
+  setEngineModel(entry.key, relativeToModels(cfg, full));
   const status = modelStatus();
   emit('models', { status });
   return status;
@@ -281,9 +372,9 @@ function publicState(dl) {
 
 async function downloadOne(entry, variant, existing = null) {
   const cfg = engineConfig();
-  const dest = path.join(cfg.models, variant.file);
+  const dest = path.join(roleDir(cfg, entry.key), variant.file);
   const part = `${dest}.part`;
-  fs.mkdirSync(cfg.models, { recursive: true });
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   const dl = existing || {
     id: entry.id,
@@ -419,8 +510,9 @@ async function downloadOne(entry, variant, existing = null) {
     currentExists = current ? fs.statSync(current).size > 0 : false;
   } catch {}
   if (!currentExists) {
-    if (entry.id === 'turbo') setEngineModel('turbo', variant.file);
-    else setEngineModel(entry.key, variant.file);
+    const stored = relativeToModels(cfg, dest);
+    if (entry.id === 'turbo') setEngineModel('turbo', stored);
+    else setEngineModel(entry.key, stored);
   }
 
   emit('model', { id: entry.id, download: publicState(dl) });
@@ -438,9 +530,20 @@ export function startDownloads(ids, variantId = null, source = 'manual') {
     if (!variant) continue;
     if (!variant.url) continue;
     // Already on disk: do not re-download a multi-GB file because the agent
-    // asked for it again. Delete/repair explicitly if the file is corrupt.
+    // asked for it again. Check both the role folder and a flat models root.
     try {
-      if (fs.statSync(path.join(engineConfig().models, variant.file)).size > 0) continue;
+      const cfg = engineConfig();
+      const candidates = [path.join(roleDir(cfg, entry.key), variant.file), path.join(cfg.models, variant.file)];
+      let exists = false;
+      for (const candidate of candidates) {
+        try {
+          if (fs.statSync(candidate).size > 0) {
+            exists = true;
+            break;
+          }
+        } catch {}
+      }
+      if (exists) continue;
     } catch {}
     if (['running', 'queued'].includes(downloads.get(id)?.status)) continue;
     // Register the job synchronously, before the queue runs. The MCP

@@ -70,6 +70,21 @@ try {
     resolveModelPath(engineConfig(), 'vae') === path.join(settings.modelsDir, 'managed-vae.safetensors'),
     resolveModelPath(engineConfig(), 'vae'),
   );
+
+  // Role subfolder is the default layout: select a file there, then a legacy
+  // bare filename must still resolve into that role folder.
+  const nested = path.join(settings.modelsDir, 'vae', 'nested-vae.safetensors');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, 'x');
+  setModelFile('vae', nested);
+  check('file inside the role folder is stored relatively', engineConfig().vae === 'vae/nested-vae.safetensors', engineConfig().vae);
+  check('role-folder file resolves', resolveModelPath(engineConfig(), 'vae') === nested);
+  setEngineModel('vae', 'nested-vae.safetensors');
+  check(
+    'legacy bare filename falls back to the role folder',
+    resolveModelPath(engineConfig(), 'vae') === nested,
+    resolveModelPath(engineConfig(), 'vae'),
+  );
 } finally {
   settings.engineRoot = originalRoot;
   settings.modelsDir = originalModels;

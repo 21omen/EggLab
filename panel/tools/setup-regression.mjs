@@ -136,6 +136,13 @@ check(
     /opencodeReport/.test(read('preload.cjs', PANEL)) &&
     /setOpenCode/.test(read('preload.cjs', PANEL)),
 );
+check(
+  'models have role subfolders and dropdowns',
+  /ROLE_FOLDERS/.test(settingsSource) &&
+    /text_encoder/.test(settingsSource) &&
+    /data-role-select/.test(rendererSource) &&
+    /roleDir\(cfg, entry\.key\)/.test(read('panel/service/models.mjs')),
+);
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {
