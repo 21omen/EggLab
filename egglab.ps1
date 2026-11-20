@@ -162,7 +162,10 @@ $engine = Join-Path $conf.engine 'sd-cli.exe'
 if (-not (Test-Path $engine)) { throw "Engine not found at $engine. Run install.ps1 first." }
 
 function Resolve-Model([string]$folder, [string]$name) {
-  $p = Join-Path $folder $name
+  # A role may be a bare filename inside $folder or a full path chosen by the
+  # user (another drive, UNC, models kept outside EggLab). Join-Path turns an
+  # absolute child into a broken path, so handle both forms explicitly.
+  $p = if ([IO.Path]::IsPathRooted($name)) { $name } else { Join-Path $folder $name }
   if (-not (Test-Path $p)) { throw "Model not found: $p`nRun install.ps1 to check/download models." }
   return (Resolve-Path $p).Path
 }
@@ -201,7 +204,8 @@ if ($Turbo) {
   if ($conf.turbo -and $conf.turbo.lora) { $turboLora = [string]$conf.turbo.lora }
   $loraPath = Resolve-Model $conf.models $turboLora
   $loraName = [System.IO.Path]::GetFileNameWithoutExtension($loraPath)
-  $sdArgs += @('--lora-model-dir', $conf.models)
+  $loraDir = if ($conf.turbo -and $conf.turbo.dir) { [string]$conf.turbo.dir } else { Split-Path -Parent $loraPath }
+  $sdArgs += @('--lora-model-dir', $loraDir)
   $promptText = $Prompt + '<lora:' + $loraName + ':1>'
 }
 if ($llmVision) { $sdArgs += @('--llm_vision', $llmVision) }

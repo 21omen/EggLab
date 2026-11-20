@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { nativeImage } from 'electron';
 import { emit } from './bus.mjs';
-import { engineConfig, getSettings, patchSettings, workflowParams } from './settings.mjs';
+import { engineConfig, getSettings, resolveModelPath, patchSettings, workflowParams } from './settings.mjs';
 import { alphaStats } from './imagecheck.mjs';
 import { EGGLAB_PS1, LOG_DIR, OUT_DIR, TMP_DIR, clamp, readJson, round32, stamp, stripAnsi, uid } from './paths.mjs';
 
@@ -291,11 +291,11 @@ export function engineStatus() {
   const s = getSettings();
   const cli = path.join(cfg.engine, 'sd-cli.exe');
   const models = {
-    diffusion: fs.existsSync(path.join(cfg.models, cfg.diffusion)),
-    vae: fs.existsSync(path.join(cfg.models, cfg.vae)),
-    llm: fs.existsSync(path.join(cfg.models, cfg.llm)),
-    mmproj: fs.existsSync(path.join(cfg.models, cfg.llmVision)),
-    turbo: fs.existsSync(path.join(cfg.models, cfg.turbo?.lora || '')),
+    diffusion: Boolean(resolveModelPath(cfg, 'diffusion')) && fs.existsSync(resolveModelPath(cfg, 'diffusion')),
+    vae: Boolean(resolveModelPath(cfg, 'vae')) && fs.existsSync(resolveModelPath(cfg, 'vae')),
+    llm: Boolean(resolveModelPath(cfg, 'llm')) && fs.existsSync(resolveModelPath(cfg, 'llm')),
+    mmproj: Boolean(resolveModelPath(cfg, 'llmVision')) && fs.existsSync(resolveModelPath(cfg, 'llmVision')),
+    turbo: Boolean(resolveModelPath(cfg, 'turbo')) && fs.existsSync(resolveModelPath(cfg, 'turbo')),
   };
   const quality = workflowParams('quality');
   const turbo = workflowParams('turbo');
@@ -381,13 +381,17 @@ export function startJob(input = {}) {
 
   const problems = [];
   if (!fs.existsSync(path.join(cfg.engine, 'sd-cli.exe'))) problems.push('Engine missing — run install.ps1');
-  if (!fs.existsSync(path.join(cfg.models, cfg.diffusion))) problems.push(`Diffusion model missing: ${cfg.diffusion}`);
-  if (!fs.existsSync(path.join(cfg.models, cfg.vae))) problems.push(`VAE missing: ${cfg.vae}`);
-  if (!fs.existsSync(path.join(cfg.models, cfg.llm))) problems.push(`Text encoder missing: ${cfg.llm}`);
-  if (kind === 'edit' && !fs.existsSync(path.join(cfg.models, cfg.llmVision))) problems.push('Vision projector missing (needed for edits)');
+  const diffusionPath = resolveModelPath(cfg, 'diffusion');
+  if (!diffusionPath || !fs.existsSync(diffusionPath)) problems.push(`Diffusion model missing: ${cfg.diffusion}`);
+  const vaePath = resolveModelPath(cfg, 'vae');
+  if (!vaePath || !fs.existsSync(vaePath)) problems.push(`VAE missing: ${cfg.vae}`);
+  const llmPath = resolveModelPath(cfg, 'llm');
+  if (!llmPath || !fs.existsSync(llmPath)) problems.push(`Text encoder missing: ${cfg.llm}`);
+  const visionPath = resolveModelPath(cfg, 'llmVision');
+  if (kind === 'edit' && (!visionPath || !fs.existsSync(visionPath))) problems.push('Vision projector missing (needed for edits)');
   if (params.workflow === 'turbo') {
-    const lora = cfg.turbo?.lora;
-    if (!lora || !fs.existsSync(path.join(cfg.models, lora))) problems.push('Turbo LoRA missing — download it in Models');
+    const loraPath = resolveModelPath(cfg, 'turbo');
+    if (!loraPath || !fs.existsSync(loraPath)) problems.push('Turbo LoRA missing — download it in Models');
   }
   if (problems.length) {
     const err = new Error(problems.join('\n'));

@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('egglab', {
   cancelDownload: (id) => ipcRenderer.invoke('models:cancel', id),
   retryDownload: (id) => ipcRenderer.invoke('models:retry', id),
   useModel: (id, file) => ipcRenderer.invoke('models:use', { id, file }),
+  setModelsFolder: (folder) => ipcRenderer.invoke('models:setFolder', folder),
+  setModelFile: (role, path) => ipcRenderer.invoke('models:setPath', { role, path }),
+  opencodeReport: (force) => ipcRenderer.invoke('opencode:report', { force }),
+  setOpenCode: (path) => ipcRenderer.invoke('opencode:setPath', path),
+  pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
+  pickOpenCode: () => ipcRenderer.invoke('dialog:pickOpenCode'),
 
   setupStatus: () => ipcRenderer.invoke('setup:status'),
   setupAction: (action, payload) => ipcRenderer.invoke('setup:action', { action, payload }),

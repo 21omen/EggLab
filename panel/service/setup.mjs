@@ -30,8 +30,12 @@ import {
   detectPhotoCraft,
   engineConfig,
   getSettings,
+  opencodeReport,
   patchSettings,
   resolveOpenCode,
+  setModelFile as storeModelFile,
+  setModelsFolder as storeModelsFolder,
+  setOpenCodePath as storeOpenCodePath,
 } from './settings.mjs';
 import { modelStatus, useVariant, variantForFile } from './models.mjs';
 
@@ -129,6 +133,7 @@ export async function setupStatus() {
         exists: entry.exists,
         sizeText: entry.sizeText,
         file: entry.file,
+        path: entry.path,
       })),
       importing: { ...state.importing },
     },
@@ -612,6 +617,38 @@ export async function importModelFile(filePath) {
 /* ------------------------------------------------------------------ */
 /* completion                                                          */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Point the models folder at an existing directory without copying anything.
+ * Existing files with the configured names are used in place; downloads go
+ * into this folder when the user asks for them.
+ */
+export async function setModelsFolder(folder) {
+  storeModelsFolder(folder);
+  emit('settings', { settings: getSettings() });
+  emit('models', { status: modelStatus() });
+  return setupStatus();
+}
+
+/** Use one existing model file in place (advanced role-by-role mapping). */
+export async function setModelFile(role, file) {
+  storeModelFile(role, file);
+  emit('settings', { settings: getSettings() });
+  emit('models', { status: modelStatus() });
+  return setupStatus();
+}
+
+/** Use the user's own OpenCode binary. Rejects v1/non-binaries. */
+export async function setOpenCode(file) {
+  const selected = storeOpenCodePath(file);
+  emit('settings', { settings: getSettings() });
+  return { ...(await setupStatus()), selected };
+}
+
+/** Provider/model report for the selected OpenCode binary. */
+export async function opencodeInfo(force = false) {
+  return await opencodeReport(force);
+}
 
 export async function completeSetup() {
   patchSettings({ setup: { completed: true, at: new Date().toISOString() } });

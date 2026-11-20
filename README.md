@@ -63,6 +63,13 @@ After that, open **Settings** and pick a chat model under **Agent model**. EggLa
 your OpenCode providers — the free models that ship with OpenCode work, and paid
 providers/API keys are configured inside OpenCode itself.
 
+Both the Models and OpenCode steps accept an existing installation:
+
+- **Models** → **Use existing folder…** points EggLab at the folder you already
+  use (no copy). **Choose files…** maps individual files if their names differ.
+- **OpenCode** → **Use existing…** selects your own `opencode.exe`; **Refresh
+  models** reads the providers and models from that exact binary.
+
 ## Chats are scoped to your document
 
 ![Chat list grouped by document](docs/sessions.png)

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { emit } from './bus.mjs';
-import { engineConfig, getSettings, setEngineModel } from './settings.mjs';
+import { engineConfig, getSettings, resolveModelPath, setEngineModel } from './settings.mjs';
 import { humanBytes, readJson, writeJson, DATA_DIR } from './paths.mjs';
 
 const STATE_FILE = path.join(DATA_DIR, 'downloads.json');
@@ -134,9 +134,14 @@ export function modelStatus() {
     entries: registry().map((entry) => {
       const { configured } = targetFor(entry);
       const variant =
-        entry.variants.find((v) => v.file === configured) || entry.variants[0];
+        entry.variants.find(
+          (v) => v.file === configured || v.file === path.basename(String(configured || '')),
+        ) || entry.variants[0];
       const file = configured || variant.file;
-      const full = path.join(cfg.models, file);
+      // A role may be a bare filename in `models`, or an absolute path the
+      // user picked from another folder. Resolve both the same way the engine
+      // script does; never assume one models directory.
+      const full = resolveModelPath(cfg, entry.key) || path.join(cfg.models, file);
       let size = 0;
       try {
         size = fs.statSync(full).size;
@@ -178,7 +183,11 @@ export function modelStatus() {
         variants: entry.variants.map((v) => {
           let installed = false;
           try {
-            installed = fs.statSync(path.join(cfg.models, v.file)).size > 0;
+            installed =
+              fs.statSync(path.join(cfg.models, v.file)).size > 0 ||
+              (path.isAbsolute(String(configured || '')) &&
+                path.basename(String(configured)) === v.file &&
+                fs.statSync(String(configured)).size > 0);
           } catch {}
           return {
             id: v.id,
@@ -187,7 +196,8 @@ export function modelStatus() {
             note: v.note || '',
             beta: Boolean(v.beta),
             installed,
-            current: v.file === file,
+            current:
+              v.file === configured || v.file === path.basename(String(configured || '')),
             downloadable: Boolean(v.url),
           };
         }),
@@ -212,7 +222,11 @@ export function useVariant(entryId, fileOrId) {
   if (!entry) throw new Error(`Unknown model: ${entryId}`);
   const variant = entry.variants.find((v) => v.file === fileOrId || v.id === fileOrId);
   if (!variant) throw new Error(`Unknown variant for ${entry.label}`);
-  const full = path.join(cfg.models, variant.file);
+  const configured = entry.key === 'turbo' ? cfg.turbo?.lora : cfg[entry.key];
+  const full =
+    path.isAbsolute(String(configured || '')) && path.basename(String(configured)) === variant.file
+      ? String(configured)
+      : path.join(cfg.models, variant.file);
   let size = 0;
   try {
     size = fs.statSync(full).size;
@@ -399,10 +413,10 @@ async function downloadOne(entry, variant, existing = null) {
   // that is already working. Auto-select only when the configured file is
   // missing (first install or a broken install); otherwise the new variant
   // shows up in the picker and the user switches explicitly.
-  const { configured } = targetFor(entry);
+  const current = resolveModelPath(cfg, entry.key);
   let currentExists = false;
   try {
-    currentExists = fs.statSync(path.join(cfg.models, configured)).size > 0;
+    currentExists = current ? fs.statSync(current).size > 0 : false;
   } catch {}
   if (!currentExists) {
     if (entry.id === 'turbo') setEngineModel('turbo', variant.file);

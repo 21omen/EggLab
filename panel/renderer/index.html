@@ -164,6 +164,11 @@
                   <button class="mini" id="btnDownloadMissing">Download missing</button>
                 </div>
                 <div class="models" id="models"></div>
+                <div class="btnrow">
+                  <button class="mini" id="btnModelsFolder">Use existing folder…</button>
+                  <button class="mini" id="btnModelsFiles">Choose files…</button>
+                  <button class="mini" id="btnOpenModels">Open folder</button>
+                </div>
                 <p class="note" id="modelsDir"></p>
               </section>
 
@@ -187,6 +192,13 @@
                     <span class="pill" id="ocProviderPill">—</span>
                     <button class="mini" id="btnRefreshModels" title="Re-scan OpenCode providers">Refresh</button>
                   </span>
+                </div>
+                <label class="field">OpenCode path
+                  <input type="text" id="ocExe" readonly placeholder="Not selected" />
+                </label>
+                <div class="btnrow">
+                  <button class="mini" id="btnUseOpenCode">Use existing…</button>
+                  <button class="mini" id="btnOpenOcConfig">Open config</button>
                 </div>
                 <div class="oc-search">
                   <input type="text" id="ocSearch" placeholder="Filter models by provider or name…" spellcheck="false" />

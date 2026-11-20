@@ -108,6 +108,34 @@ check(
   'release workflow accepts signing secrets and verifies the signature',
   /WIN_CSC_LINK/.test(releaseWorkflow) && /Get-AuthenticodeSignature/.test(releaseWorkflow),
 );
+check(
+  'model roles accept absolute paths',
+  /export function resolveModelPath/.test(settingsSource) && /IsPathRooted/.test(read('egglab.ps1')),
+);
+check(
+  'setup can choose an existing models folder',
+  /export function setModelsFolder/.test(settingsSource) && /use-models-folder/.test(rendererSource),
+);
+check(
+  'setup can choose existing model files',
+  /export function setModelFile/.test(settingsSource) && /choose-model-files/.test(rendererSource),
+);
+check(
+  'OpenCode report reads paths, auth and models',
+  /opencodeDebugPaths/.test(settingsSource) &&
+    /opencodeAuthList/.test(settingsSource) &&
+    /--standalone/.test(settingsSource),
+);
+check(
+  'setup can select an existing OpenCode binary',
+  /export function setOpenCodePath/.test(settingsSource) && /use-opencode/.test(rendererSource),
+);
+check(
+  'preload exposes model and OpenCode actions',
+  /setModelsFolder/.test(read('preload.cjs', PANEL)) &&
+    /opencodeReport/.test(read('preload.cjs', PANEL)) &&
+    /setOpenCode/.test(read('preload.cjs', PANEL)),
+);
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {

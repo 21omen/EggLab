@@ -643,6 +643,36 @@ ipcMain.handle('settings:patch', (e, patch) => {
 ipcMain.handle('opencode:models', async (e, { force } = {}) => {
   return await opencodeModels(force);
 });
+ipcMain.handle('opencode:report', async (e, { force } = {}) => {
+  return await setup.opencodeInfo(Boolean(force));
+});
+ipcMain.handle('opencode:setPath', async (e, file) => {
+  const status = await setup.setOpenCode(file);
+  if (serviceUrl) {
+    try {
+      chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+    } catch {}
+  }
+  return status;
+});
+ipcMain.handle('models:setFolder', async (e, folder) => {
+  const status = await setup.setModelsFolder(folder);
+  if (serviceUrl) {
+    try {
+      chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+    } catch {}
+  }
+  return status;
+});
+ipcMain.handle('models:setPath', async (e, { role, path: file } = {}) => {
+  const status = await setup.setModelFile(role, file);
+  if (serviceUrl) {
+    try {
+      chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+    } catch {}
+  }
+  return status;
+});
 
 ipcMain.handle('job:start', (e, payload) => startJob(payload));
 ipcMain.handle('job:cancel', (e, id) => cancelJob(id));
@@ -685,6 +715,35 @@ ipcMain.handle('setup:action', async (e, { action, payload } = {}) => {
       return await setup.installOpencode();
     case 'import-model':
       return await setup.importModelFile(payload?.path);
+    case 'models-folder': {
+      const status = await setup.setModelsFolder(payload?.folder);
+      if (serviceUrl) {
+        try {
+          chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+        } catch {}
+      }
+      return status;
+    }
+    case 'model-file': {
+      const status = await setup.setModelFile(payload?.role, payload?.path);
+      if (serviceUrl) {
+        try {
+          chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+        } catch {}
+      }
+      return status;
+    }
+    case 'opencode-path': {
+      const status = await setup.setOpenCode(payload?.path);
+      if (serviceUrl) {
+        try {
+          chat.buildWorkspace({ url: serviceUrl, token: TOKEN });
+        } catch {}
+      }
+      return status;
+    }
+    case 'opencode-report':
+      return await setup.opencodeInfo(Boolean(payload?.force));
     case 'complete':
       return await setup.completeSetup();
     default:
@@ -705,9 +764,26 @@ ipcMain.handle('dialog:pickApp', async () => {
 });
 ipcMain.handle('dialog:pickModel', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Add a model file',
+    title: 'Choose a model file',
     properties: ['openFile'],
     filters: [{ name: 'Model files', extensions: ['safetensors', 'gguf'] }],
+  });
+  return res.canceled ? '' : res.filePaths[0] || '';
+});
+
+ipcMain.handle('dialog:pickOpenCode', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'OpenCode executable',
+    properties: ['openFile'],
+    filters: [{ name: 'Applications', extensions: ['exe'] }],
+  });
+  return res.canceled ? '' : res.filePaths[0] || '';
+});
+
+ipcMain.handle('dialog:pickFolder', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Choose a folder',
+    properties: ['openDirectory', 'createDirectory'],
   });
   return res.canceled ? '' : res.filePaths[0] || '';
 });

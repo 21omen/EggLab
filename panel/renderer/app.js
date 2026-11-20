@@ -1607,6 +1607,8 @@ function syncUI() {
   $('#pcPort').value = s.photocraft.controlPort;
   $('#pcWidth').value = s.photocraft.width;
   $('#pcExe').value = s.photocraft.exe;
+  const ocExeInput = $('#ocExe');
+  if (ocExeInput) ocExeInput.value = s.opencode?.exe || '';
   $('#chkDock').checked = Boolean(s.photocraft.dock);
   $('#pcRoots').textContent = `read root ${s.photocraft.readRoot} · write root ${s.photocraft.writeRoot}`;
   $('#modelsDir').textContent = S.engine?.modelsDir ? `Folder: ${S.engine.modelsDir}` : '';
@@ -2510,6 +2512,67 @@ function bind() {
     }
   };
 
+  const modelsFolderBtn = $('#btnModelsFolder');
+  if (modelsFolderBtn) {
+    modelsFolderBtn.onclick = async () => {
+      const folder = await api.pickFolder();
+      if (!folder) return;
+      try {
+        await api.setModelsFolder(folder);
+        await refreshRuntime();
+        toast('Models folder updated.', 'ok');
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  }
+  const modelsFilesBtn = $('#btnModelsFiles');
+  if (modelsFilesBtn) {
+    modelsFilesBtn.onclick = async () => {
+      try {
+        await chooseModelFilesInteractive();
+        await refreshRuntime();
+        toast('Model files updated.', 'ok');
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  }
+  const openModelsBtn = $('#btnOpenModels');
+  if (openModelsBtn) {
+    openModelsBtn.onclick = () => {
+      const dir = S.engine?.modelsDir || S.settings?.modelsDir;
+      if (dir) api.openPath(dir);
+    };
+  }
+  const useOpenCodeBtn = $('#btnUseOpenCode');
+  if (useOpenCodeBtn) {
+    useOpenCodeBtn.onclick = async () => {
+      const file = await api.pickOpenCode();
+      if (!file) return;
+      try {
+        await api.setOpenCode(file);
+        await refreshRuntime();
+        await refreshProviders(true);
+        toast('OpenCode linked. Your providers and models are listed above.', 'ok');
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  }
+  const openOcConfigBtn = $('#btnOpenOcConfig');
+  if (openOcConfigBtn) {
+    openOcConfigBtn.onclick = async () => {
+      try {
+        const report = await api.opencodeReport(false);
+        if (report.configPath) api.revealPath(report.configPath);
+        else toast('No global OpenCode config found yet.', 'error');
+      } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  }
+
   $('#btnLaunchPc').onclick = async () => {
     try {
       await api.pcLaunch();
@@ -2694,6 +2757,12 @@ function renderSetup() {
         : '';
   const pick = S.setupVariant || 'auto';
   const opt = (value, label) => `<option value="${value}" ${pick === value ? 'selected' : ''}>${label}</option>`;
+  const currentModel = S.settings?.opencode?.model || '';
+  const modelChoices = Array.isArray(S.setupOcModels) ? S.setupOcModels : [];
+  const setupModelOptions = (modelChoices.length ? modelChoices : currentModel ? [currentModel] : [])
+    .map((m) => `<option value="${esc(m)}" ${m === currentModel ? 'selected' : ''}>${esc(m)}</option>`)
+    .join('');
+  const ocReport = S.setupOcReport || null;
 
   $('#setupBody').innerHTML = `
     <div class="setup-step ${pc.found ? 'ok' : 'miss'}">
@@ -2707,11 +2776,19 @@ function renderSetup() {
     </div>
     <div class="setup-step ${oc.running ? 'busy' : oc.found ? 'ok' : 'miss'}">
       <div class="setup-step-head"><span class="setup-dot"></span><b>OpenCode</b>${oc.running ? '<span class="setup-pill">Working…</span>' : setupBadge(oc.found, 'Found', 'Not installed')}</div>
-      <p class="setup-note">${oc.found ? esc(oc.exe) : 'The agent runtime behind the chat. Install the standalone build here, or point EggLab at an existing opencode.exe.'}${oc.error ? `<br><span class="setup-err">${esc(oc.error)}</span>` : ''}</p>
+      <p class="setup-note">${oc.found ? `${esc(oc.exe)}${oc.version ? ` · v${esc(oc.version)}` : ''}` : 'The agent runtime behind the chat. Use the OpenCode you already have, or download the standalone CLI.'}${oc.error ? `<br><span class="setup-err">${esc(oc.error)}</span>` : ''}</p>
       ${oc.running ? `<div class="setup-progress"><i style="width:${ocPercent}%"></i></div><p class="setup-note">${esc(ocPhase || 'Preparing…')}</p>` : ''}
       <div class="setup-actions">
-        <button class="mini" data-setup="install-oc" ${oc.running ? 'disabled' : ''}>${oc.found ? 'Reinstall' : 'Install for me (78 MB)'}</button>
+        <button class="mini" data-setup="use-opencode">Use existing…</button>
+        <button class="mini" data-setup="install-oc" ${oc.running ? 'disabled' : ''}>${oc.found ? 'Reinstall' : 'Download CLI (78 MB)'}</button>
+        <button class="mini" data-setup="refresh-setup-models" ${oc.found ? '' : 'disabled'}>Refresh models</button>
       </div>
+      <div class="setup-model">
+        <select id="setupOcModel" ${oc.found ? '' : 'disabled'}>${setupModelOptions}</select>
+        <button class="mini" data-setup="save-setup-model" ${oc.found ? '' : 'disabled'}>Use this model</button>
+      </div>
+      ${ocReport ? `<p class="setup-note">${ocReport.providers?.length || 0} providers · ${ocReport.modelCount || 0} models · ${ocReport.auth?.length || 0} accounts${ocReport.modelsError ? ` · <span class="setup-err">${esc(ocReport.modelsError)}</span>` : ''}</p>` : ''}
+      <p class="setup-note">${S.settings?.opencode?.model ? `Current model: ${esc(S.settings.opencode.model)}` : 'Choose the chat model after OpenCode is connected.'}</p>
     </div>
     <div class="setup-step ${en.running ? 'busy' : en.installed ? 'ok' : 'miss'}">
       <div class="setup-step-head"><span class="setup-dot"></span><b>Image engine</b>${en.running ? '<span class="setup-pill">Downloading…</span>' : setupBadge(en.installed, en.variant ? `Installed · ${esc(en.variant)}` : 'Installed', 'Not installed')}</div>
@@ -2732,8 +2809,9 @@ function renderSetup() {
       <p class="setup-note">${esc(mo.dir)}</p>
       <div class="setup-model">${modelLine}</div>
       <div class="setup-actions">
+        <button class="mini" data-setup="use-models-folder">Use existing folder…</button>
+        <button class="mini" data-setup="choose-model-files">Choose files…</button>
         <button class="mini" data-setup="download-models" ${missing.length ? '' : 'disabled'}>Download missing</button>
-        <button class="mini" data-setup="import-model">Add from file…</button>
         <button class="mini" data-setup="open-models">Open folder</button>
       </div>
     </div>
@@ -2744,6 +2822,29 @@ async function refreshRuntime() {
   try {
     applyState(await api.state());
   } catch {}
+}
+
+async function chooseModelFilesInteractive() {
+  const roles = [
+    ['diffusion', 'diffusion model'],
+    ['vae', 'VAE'],
+    ['llm', 'text encoder'],
+    ['llmVision', 'vision projector'],
+    ['turbo', 'turbo LoRA (optional)'],
+  ];
+  for (const [role, label] of roles) {
+    const want = await askConfirm({
+      title: `Choose the ${label}?`,
+      note: 'Optional. EggLab uses the file as-is and does not inspect or validate its contents.',
+      ok: 'Choose file',
+      cancel: 'Skip',
+      danger: false,
+    });
+    if (!want) continue;
+    const file = await api.pickModel();
+    if (!file) continue;
+    await api.setModelFile(role, file);
+  }
 }
 
 async function onSetupAction(action) {
@@ -2784,6 +2885,54 @@ async function onSetupAction(action) {
         if (!ids.length) return;
         await api.downloadModels(ids);
         toast(`Downloading ${ids.length} model${ids.length === 1 ? '' : 's'}…`);
+        break;
+      }
+      case 'use-models-folder': {
+        const folder = await api.pickFolder();
+        if (!folder) return;
+        await api.setupAction('models-folder', { folder });
+        await loadSetup();
+        await refreshRuntime();
+        toast('Models folder updated.');
+        break;
+      }
+      case 'choose-model-files': {
+        await chooseModelFilesInteractive();
+        await loadSetup();
+        await refreshRuntime();
+        toast('Model files updated.');
+        break;
+      }
+      case 'use-opencode': {
+        const file = await api.pickOpenCode();
+        if (!file) return;
+        await api.setupAction('opencode-path', { path: file });
+        await loadSetup();
+        await refreshRuntime();
+        S.setupOcModels = [];
+        S.setupOcReport = null;
+        toast('OpenCode linked. Refresh models to load providers.');
+        break;
+      }
+      case 'refresh-setup-models': {
+        const report = await api.opencodeReport(true);
+        const models = [];
+        for (const provider of report.providers || []) {
+          for (const model of provider.models || []) models.push(model.id);
+        }
+        S.setupOcModels = models;
+        S.setupOcReport = report;
+        renderSetup();
+        if (report.modelsError) toast(report.modelsError, 'error');
+        else toast(`${models.length} model${models.length === 1 ? '' : 's'} from ${report.providers?.length || 0} provider${report.providers?.length === 1 ? '' : 's'}.`, 'ok');
+        break;
+      }
+      case 'save-setup-model': {
+        const model = document.getElementById('setupOcModel')?.value || '';
+        if (!model) return toast('Choose a model first.', 'error');
+        S.settings = await api.patchSettings({ opencode: { model } });
+        renderSetup();
+        toast('Agent model saved.', 'ok');
         break;
       }
       case 'import-model': {

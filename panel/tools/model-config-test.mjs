@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { engineConfig, ensureEngineConfig, getSettings, setEngineModel } from '../service/settings.mjs';
+import { engineConfig, ensureEngineConfig, getSettings, resolveModelPath, setEngineModel, setModelFile } from '../service/settings.mjs';
 
 let failures = 0;
 function check(label, ok, detail = '') {
@@ -54,6 +54,22 @@ try {
   fs.writeFileSync(configPath, JSON.stringify(partial));
   const repaired = ensureEngineConfig();
   check('a config with a missing models key is repaired', Boolean(repaired.models), repaired.models);
+
+  // Per-role absolute paths: a file outside the models folder must be used
+  // as-is, while a bare filename still resolves inside the folder.
+  const outside = path.join(tmp, 'elsewhere', 'custom-vae.safetensors');
+  fs.mkdirSync(path.dirname(outside), { recursive: true });
+  fs.writeFileSync(outside, 'x');
+  setModelFile('vae', outside);
+  const afterVae = engineConfig();
+  check('per-role absolute path is stored', afterVae.vae === outside, afterVae.vae);
+  check('per-role absolute path resolves as-is', resolveModelPath(afterVae, 'vae') === outside);
+  setEngineModel('vae', 'managed-vae.safetensors');
+  check(
+    'bare filename still resolves inside the models folder',
+    resolveModelPath(engineConfig(), 'vae') === path.join(settings.modelsDir, 'managed-vae.safetensors'),
+    resolveModelPath(engineConfig(), 'vae'),
+  );
 } finally {
   settings.engineRoot = originalRoot;
   settings.modelsDir = originalModels;

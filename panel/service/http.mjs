@@ -175,6 +175,33 @@ async function handle(req, res, url) {
     case 'POST /api/models/use':
       return json(res, 200, models.useVariant(body.id, body.file));
 
+    case 'POST /api/models/folder': {
+      const status = await setup.setModelsFolder(body.folder);
+      try {
+        chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+      } catch {}
+      return json(res, 200, status);
+    }
+
+    case 'POST /api/models/path': {
+      const status = await setup.setModelFile(body.role, body.path);
+      try {
+        chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+      } catch {}
+      return json(res, 200, status);
+    }
+
+    case 'GET /api/opencode':
+      return json(res, 200, await setup.opencodeInfo(url.searchParams.get('force') === '1'));
+
+    case 'POST /api/opencode/path': {
+      const status = await setup.setOpenCode(body.path);
+      try {
+        chat.buildWorkspace({ url: selfUrl, token: TOKEN });
+      } catch {}
+      return json(res, 200, status);
+    }
+
     case 'GET /api/jobs':
       return json(res, 200, { jobs: engine.listJobs() });
 

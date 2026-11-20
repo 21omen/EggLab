@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
-import { DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
+import { AGENT_DIR, DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
 
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
@@ -368,6 +368,65 @@ export function modelFileFor(key) {
   return { dir: cfg.models, file: cfg[key] };
 }
 
+/**
+ * Absolute path of one model role. A role may be a bare filename (resolved
+ * inside `models`) or a full path chosen by the user. This is the one place
+ * both the panel and `egglab.ps1` agree on.
+ */
+export function resolveModelPath(cfg, key) {
+  const value = key === 'turbo' ? cfg?.turbo?.lora : cfg?.[key];
+  if (!value) return null;
+  const text = String(value);
+  return path.isAbsolute(text) ? text : path.join(cfg.models, text);
+}
+
+/**
+ * Point EggLab at an existing models folder. Existing files named as the
+ * configured roles are used in place; nothing is copied. Downloads (if the
+ * user asks for them) go into this folder.
+ */
+export function setModelsFolder(folder) {
+  const abs = path.resolve(String(folder || ''));
+  let stat = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {}
+  if (!stat || !stat.isDirectory()) throw new Error('That models folder does not exist.');
+  const cfg = engineConfig();
+  const raw = cfg.raw || ensureEngineConfig();
+  raw.models = abs;
+  writeJson(cfg.path, raw);
+  patchSettings({ modelsDir: abs });
+  return { folder: abs, config: cfg.path };
+}
+
+/**
+ * Use one existing model file without copying it. `role` is the engine role,
+ * not a guessed model type: diffusion, vae, llm, llmVision or turbo. EggLab
+ * does not inspect the file; a wrong file will fail inside the engine.
+ */
+export function setModelFile(role, filePath) {
+  const key = String(role || '');
+  if (!['diffusion', 'vae', 'llm', 'llmVision', 'turbo'].includes(key)) {
+    throw new Error(`Unknown model role: ${key}`);
+  }
+  const abs = path.resolve(String(filePath || ''));
+  let stat = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {}
+  if (!stat || !stat.isFile()) throw new Error('That model file does not exist.');
+  const cfg = engineConfig();
+  const raw = cfg.raw || ensureEngineConfig();
+  if (key === 'turbo') {
+    raw.turbo = { ...(raw.turbo || {}), lora: abs, dir: path.dirname(abs) };
+  } else {
+    raw[key] = abs;
+  }
+  writeJson(cfg.path, raw);
+  return raw;
+}
+
 /* ------------------------------------------------------------------ */
 /* OpenCode model discovery                                           */
 /* ------------------------------------------------------------------ */
@@ -462,7 +521,7 @@ function desktopOpenCodeCandidates() {
 }
 
 export function resolveOpenCode() {
-  const configured = settings.opencode?.exe || '';
+  const configured = String(settings.opencode?.exe || '');
   const home = process.env.USERPROFILE || os.homedir();
   const local = process.env.LOCALAPPDATA || '';
   const roaming = process.env.APPDATA || '';
@@ -476,11 +535,25 @@ export function resolveOpenCode() {
     ...whereOpenCode(),
   ].filter(Boolean);
 
-  // Every OpenCode client on the machine shares one data directory, and a
-  // newer client migrates its schema forward. An older CLI then fails on every
-  // run with "no such column: project_id". So pick the NEWEST working CLI that
-  // exists instead of trusting the configured path: the newest client is the
-  // one that matches (or upgrades) the shared schema.
+  // An explicit user choice wins when it is a working v2 binary. Otherwise
+  // pick the newest working v2 binary: every OpenCode client shares one data
+  // directory, and an older client can fail on a newer schema. Never return a
+  // v1 binary just because it exists.
+  const working = (candidate) => {
+    try {
+      if (!fs.existsSync(candidate)) return null;
+    } catch {
+      return null;
+    }
+    const version = /\.(cmd|bat)$/i.test(candidate) ? null : probeOpenCodeVersion(candidate);
+    return version && version[0] >= 2 ? { candidate, version } : null;
+  };
+
+  const explicit = configured ? working(configured) : null;
+  if (explicit) {
+    return { cmd: explicit.candidate, shell: /\.(cmd|bat)$/i.test(explicit.candidate), version: explicit.version };
+  }
+
   let best = null;
   let bestVersion = null;
   let bestOrder = Number.POSITIVE_INFINITY;
@@ -488,22 +561,12 @@ export function resolveOpenCode() {
   candidates.forEach((candidate, order) => {
     if (!candidate || seen.has(candidate)) return;
     seen.add(candidate);
-    let exists = false;
-    try {
-      exists = fs.existsSync(candidate);
-    } catch {}
-    if (!exists) return;
-    const version = /\.(cmd|bat)$/i.test(candidate) ? null : probeOpenCodeVersion(candidate);
-    if (!best) {
-      best = candidate;
-      bestVersion = version;
-      bestOrder = order;
-      return;
-    }
-    const cmp = compareVersions(version, bestVersion);
-    if (cmp > 0 || (cmp === 0 && order < bestOrder)) {
-      best = candidate;
-      bestVersion = version;
+    const found = working(candidate);
+    if (!found) return;
+    const cmp = compareVersions(found.version, bestVersion);
+    if (!best || cmp > 0 || (cmp === 0 && order < bestOrder)) {
+      best = found.candidate;
+      bestVersion = found.version;
       bestOrder = order;
     }
   });
@@ -512,32 +575,57 @@ export function resolveOpenCode() {
   return { cmd: 'opencode', shell: false, version: null };
 }
 
+/** Save the user's own OpenCode binary. Rejects v1 and non-binaries. */
+export function setOpenCodePath(file) {
+  const abs = path.resolve(String(file || ''));
+  let stat = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {}
+  if (!stat || !stat.isFile()) throw new Error('That OpenCode executable does not exist.');
+  const version = probeOpenCodeVersion(abs);
+  if (!version) throw new Error('That file did not start as OpenCode. Pick opencode.exe.');
+  if (version[0] < 2) {
+    throw new Error(`OpenCode ${version.join('.')} found. EggLab needs OpenCode v2 or newer.`);
+  }
+  patchSettings({ opencode: { exe: abs } });
+  clearOpenCodeCache();
+  modelsCache = null;
+  modelsCacheKey = '';
+  return { exe: abs, version: version.join('.') };
+}
+
 let modelsCache = null;
 let modelsCacheAt = 0;
+let modelsCacheKey = '';
 const MODELS_CACHE_TTL = 30000; // 30 s — fresh enough for auto-sync
 
-export async function opencodeModels(force = false) {
+export async function opencodeModels(force = false, options = {}) {
+  const oc = options.oc || resolveOpenCode();
+  const cwd = options.cwd || process.env.HOME || process.env.USERPROFILE;
+  const standalone = Boolean(options.standalone) && (oc.version?.[0] ?? 1) >= 2;
+  const cacheKey = `${oc.cmd}|${(oc.version || []).join('.')}|${cwd}|${standalone}`;
   const now = Date.now();
-  if (!force && modelsCache && now - modelsCacheAt < MODELS_CACHE_TTL) {
+  if (!force && modelsCache && modelsCacheKey === cacheKey && now - modelsCacheAt < MODELS_CACHE_TTL) {
     return modelsCache;
   }
   const result = await new Promise((resolve) => {
-    // Same binary the chat will use: probing an older CLI can return a model
-    // list the chat process cannot actually run.
-    const oc = resolveOpenCode();
-    // Run from the user's home directory so OpenCode reads its global config
-    // (.jsonc) instead of the panel's shadowing old .json.
-    const cwd = process.env.HOME || process.env.USERPROFILE;
     // v1 needs --refresh to bypass its cache; v2 has no such flag.
     const major = oc.version?.[0] ?? 1;
-    const args = ['models'];
+    const args = standalone ? ['--standalone', 'models'] : ['models'];
     if (major < 2) args.push('--refresh');
-    const child = spawn(oc.cmd, args, {
-      cwd,
-      windowsHide: true,
-      shell: oc.shell,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let child;
+    try {
+      child = spawn(oc.cmd, args, {
+        cwd,
+        windowsHide: true,
+        shell: oc.shell,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      resolve({ providers: [], error: err.message, bin: oc.cmd, cwd, standalone, fetchedAt: Date.now() });
+      return;
+    }
     let stdout = '';
     let stderr = '';
     let done = false;
@@ -552,11 +640,18 @@ export async function opencodeModels(force = false) {
       try {
         child.kill();
       } catch {}
-      finish({ providers: [], error: 'opencode models timed out', fetchedAt: Date.now() });
-    }, 20000);
+      finish({
+        providers: [],
+        error: 'opencode models timed out',
+        bin: oc.cmd,
+        cwd,
+        standalone,
+        fetchedAt: Date.now(),
+      });
+    }, 25000);
     child.stdout.on('data', (d) => (stdout += d.toString()));
     child.stderr.on('data', (d) => (stderr += d.toString()));
-    child.on('close', () => {
+    child.on('close', (code) => {
       const byProvider = new Map();
       for (const line of stdout.trim().split(/\r?\n/).filter(Boolean)) {
         const slash = line.indexOf('/');
@@ -572,10 +667,17 @@ export async function opencodeModels(force = false) {
           models: models.sort((a, b) => a.modelId.localeCompare(b.modelId)),
         }))
         .sort((a, b) => a.provider.localeCompare(b.provider));
-      finish({ providers, error: null, fetchedAt: Date.now() });
+      finish({
+        providers,
+        error: code === 0 ? null : (stderr.trim() || `opencode models exited ${code}`),
+        bin: oc.cmd,
+        cwd,
+        standalone,
+        fetchedAt: Date.now(),
+      });
     });
     child.on('error', (err) => {
-      finish({ providers: [], error: err.message, fetchedAt: Date.now() });
+      finish({ providers: [], error: err.message, bin: oc.cmd, cwd, standalone, fetchedAt: Date.now() });
     });
   });
   // Cache only successful listings. A failed scan (opencode busy, provider
@@ -584,8 +686,211 @@ export async function opencodeModels(force = false) {
   if (!result.error) {
     modelsCache = result;
     modelsCacheAt = Date.now();
+    modelsCacheKey = cacheKey;
   }
   return result;
+}
+
+/** Run the selected OpenCode binary and return its text output. */
+function runOpenCodeText(oc, args, { cwd = process.env.USERPROFILE, timeout = 20000 } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let child;
+    try {
+      child = spawn(oc.cmd, args, {
+        cwd,
+        windowsHide: true,
+        shell: oc.shell,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      resolve({ ok: false, code: -1, stdout, stderr, error: err.message });
+      return;
+    }
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {}
+      finish({ ok: false, code: -1, stdout, stderr, error: `timed out after ${timeout}ms` });
+    }, timeout);
+    child.stdout.on('data', (d) => (stdout += d.toString()));
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('close', (code) => {
+      finish({ ok: code === 0, code, stdout, stderr, error: code === 0 ? null : stderr.trim() || `exited ${code}` });
+    });
+    child.on('error', (err) => finish({ ok: false, code: -1, stdout, stderr, error: err.message }));
+  });
+}
+
+/** `opencode debug paths` → { home, data, config, db, ... }. */
+export async function opencodeDebugPaths(oc = resolveOpenCode()) {
+  const out = await runOpenCodeText(oc, ['debug', 'paths']);
+  const paths = {};
+  if (out.ok) {
+    for (const line of out.stdout.split(/\r?\n/)) {
+      const match = line.match(/^\s*(\w+)\s+(.+?)\s*$/);
+      if (match) paths[match[1]] = match[2];
+    }
+  }
+  return { ...paths, ok: out.ok, error: out.error || null };
+}
+
+/** `opencode auth list` → provider account rows (never secrets). */
+export async function opencodeAuthList(oc = resolveOpenCode()) {
+  const out = await runOpenCodeText(oc, ['auth', 'list']);
+  const rows = [];
+  if (out.ok) {
+    for (const line of out.stdout.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const parts = line.trim().split(/\s{2,}/);
+      if (parts.length < 2) continue;
+      rows.push({
+        name: parts[0],
+        method: parts.slice(1, -1).join(' '),
+        status: parts[parts.length - 1],
+        raw: line.trim(),
+      });
+    }
+  }
+  return { rows, ok: out.ok, error: out.error || null };
+}
+
+/** JSONC (comments/trailing commas) → object, without eval. */
+function parseJsonc(text) {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (lineComment) {
+      if (ch === '\n') {
+        lineComment = false;
+        out += ch;
+      }
+      continue;
+    }
+    if (blockComment) {
+      if (ch === '*' && next === '/') {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      lineComment = true;
+      i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      blockComment = true;
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  out = out.replace(/,\s*([}\]])/g, '$1');
+  return JSON.parse(out);
+}
+
+/** Read the user's global OpenCode config (model + provider names). */
+export async function opencodeConfigInfo(oc = resolveOpenCode()) {
+  const paths = await opencodeDebugPaths(oc);
+  const dir = paths.config;
+  let file = null;
+  if (dir) {
+    for (const name of ['opencode.json', 'opencode.jsonc']) {
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.statSync(candidate).isFile()) {
+          file = candidate;
+          break;
+        }
+      } catch {}
+    }
+  }
+  if (!file) return { path: null, model: null, providers: {}, error: null };
+  try {
+    const raw = parseJsonc(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    let model = raw?.model;
+    if (model && typeof model === 'object') {
+      model = model.providerID && model.model ? `${model.providerID}/${model.model}` : null;
+    }
+    return {
+      path: file,
+      model: typeof model === 'string' ? model : null,
+      providers: raw?.providers && typeof raw.providers === 'object' ? raw.providers : {},
+      error: null,
+    };
+  } catch (err) {
+    return { path: file, model: null, providers: {}, error: `Could not read ${file}: ${err.message}` };
+  }
+}
+
+/**
+ * Everything Setup/Settings needs about the user's OpenCode:
+ * binary, real config paths, provider accounts, models and the configured
+ * default model. Read-only; no credential is read or returned.
+ */
+export async function opencodeReport(force = false) {
+  const oc = resolveOpenCode();
+  if (!oc.version || oc.version[0] < 2) {
+    return {
+      ok: false,
+      bin: oc.cmd,
+      version: oc.version ? oc.version.join('.') : null,
+      error: 'OpenCode v2 or newer was not found. Pick an existing opencode.exe or install it.',
+      paths: null,
+      auth: [],
+      providers: [],
+      modelsError: null,
+      activeModel: null,
+      configPath: null,
+    };
+  }
+  const [paths, auth, models, config] = await Promise.all([
+    opencodeDebugPaths(oc),
+    opencodeAuthList(oc),
+    opencodeModels(force, { oc, cwd: AGENT_DIR, standalone: true }),
+    opencodeConfigInfo(oc),
+  ]);
+  return {
+    ok: true,
+    bin: oc.cmd,
+    version: oc.version.join('.'),
+    paths,
+    auth: auth.rows,
+    authError: auth.error,
+    providers: models.providers,
+    modelCount: models.providers.reduce((sum, provider) => sum + provider.models.length, 0),
+    modelsError: models.error,
+    modelsCwd: models.cwd,
+    activeModel: config.model,
+    configPath: config.path,
+    configError: config.error,
+  };
 }
 
 export function ensureDirs() {
