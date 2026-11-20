@@ -36,15 +36,23 @@ Do not route an edit through `egl_generate`. `generate` has no source canvas and
 
 ## 3. Prompt formula for edits
 
-Write a short, imperative instruction with five parts:
+Qwen-Image-2.1 is trained on **detailed, imperative edit prompts** (the official
+prompt rewriter for edits produces long prompts). Write an imperative
+instruction with five parts, and be generous about the CHANGE:
 
 1. **Action** — replace/remove/add/change/relight.
-2. **Target** — object/person/material/region.
-3. **Source** — which image, mark, sketch or mask defines the change.
-4. **Preservation** — one blanket clause for identity, pose, framing, product geometry, background, count (only what matters).
-5. **Integration** — perspective, lighting, scale, contact shadow, material response.
+2. **Target** — object/person/material/region, named precisely.
+3. **Result state** — describe what the target should look like afterwards
+   (materials, colours, lighting integration, contact shadows). This is where
+   detail belongs; under-specified changes are the top cause of bad edits.
+4. **Preservation** — one blanket clause for identity, pose, framing, product
+   geometry, background, count (only what matters).
+5. **Integration** — perspective, lighting, scale, material response.
 
-Do **not** expand a simple edit into a full scene description. Do **not** describe preserved content in detail; concrete descriptions of untargeted content make it drift. Name untargeted content by type/position/role.
+Do not describe preserved content in detail — concrete descriptions of
+untargeted content make it drift. Name untargeted content by type/position/role.
+One-line prompts underperform on this model; a bare "make the sky sunset" is
+the input to the official rewriter, not the final prompt.
 
 Examples:
 
@@ -56,28 +64,30 @@ Fit the clothing naturally to the original lighting.
 ```
 
 ```text
-Remove the object in the red circle from <image1>.
+Remove the object inside the red circle from <image1>.
 Reconstruct the background and floor naturally, matching perspective, texture and light.
 Remove the red annotation and preserve all unmarked areas.
 ```
 
 ## 4. PhotoCraft annotations — marks drawn on the photo
 
-PhotoCraft already lets the user draw directly on the reference photo. Those marks are **guidance, not final artwork**. Do not ask the user to redraw them.
+The model is **trained on circle-guided and annotation-guided local editing**;
+on this engine the whole-marked-photo path is verified to be the strongest
+local edit (change applied inside the circle, marks removed, everything outside
+untouched). Do not reach for region/mask machinery when the marks themselves
+are the region selector.
 
 1. Inspect the active layer at native size. Identify each mark's colour/shape and the object or area it targets.
 2. Map each mark to one requested edit, in the user's order. Do not invent a semantic meaning for a colour unless the user assigned one.
-3. Use `egl_photocraft_edit_active` with the photo as the active layer:
-   - Whole marked photo: omit `region`; the exported active layer includes the marks.
-   - One marked object: pass `region:[x,y,width,height]` in document pixels and use `mode:"crop"` or `"inpaint"` depending on the surface.
-4. In the prompt, name the marks and their targets, explicitly say the annotation must be removed from the final result, and protect unmarked areas.
+3. **Preferred: whole-layer edit with the marks visible.** Use `egl_photocraft_edit_active` with the photo as the active layer and **omit `region` and `mask_layer`**: the exported layer includes the marks, and the model reads them as region selectors. In the prompt, name each mark (colour/shape → target), describe the intended result inside it, say the annotation must be removed, and protect unmarked areas.
+4. Only use a `region` edit when the marked photo contains something the marks must NOT touch nearby and the model keeps drifting (the crop hides the distractor). Then expand the region box well beyond the object for context, and prefer `mode:"inpaint"` on flat surfaces. A tight surgical crop is the last resort — it strips context the model needs.
 5. If the annotations are on a **separate layer** rather than the photo layer:
    - Export a marked composite with `egl_photocraft_export_flat` (do not pass the annotation layer alone as the canvas).
    - Run `egl_edit` with the flat marked image as `<image1>`.
    - Place the result back with `egl_photocraft_place` and keep the original layer as backup.
    - Still tell the model to remove the marks.
 
-Multiple marks example:
+Multiple marks example (verified pattern):
 
 ```text
 Use the drawn marks as edit guidance:
@@ -97,10 +107,19 @@ Use this when the user painted a mask on a **separate layer** (for example `Mask
 3. Call `egl_photocraft_edit_active` with:
    - `mask_layer: "Mask"` (the exact layer name).
    - `mask_invert: true` only when the mask uses black/opaque as the editable area and white/transparent as keep.
-   - `strength` 0.25–0.5 for a gentle retouch, higher for a full replacement.
-4. The tool exports the active canvas and the named mask layer, aligns the mask to the canvas bounds, and runs the engine with `--init-img --mask --strength`. The mask is not sent as a donor image.
-5. In the prompt: say the mask defines the editable region; describe what appears inside it; preserve everything outside it; the mask itself must not appear.
-6. Inspect the mask boundary at native size. The model can overfill a mask; raise `strength` only when needed, or ask the user to widen the mask (do not invent a new mask UI).
+   - `strength` **scaled to the task (verified on this engine)**:
+     | Task | strength |
+     |---|---|
+     | Replace/add/remove an object, rewrite a feature | **0.75–0.95** |
+     | Recolour, material/texture or lighting change | 0.4–0.6 |
+     | Subtle retouch (skin, blemish, tonal) | 0.25–0.35 |
+
+     The old 0.4 default was measured to leave a replacement almost unchanged —
+     a masked edit that "did nothing" almost always means strength was too low.
+     Pair a high strength with a `quality` run and inspect the seams.
+4. The tool exports the active canvas and the named mask layer, aligns the mask to the canvas bounds (white/opaque = repainted, black/transparent = kept), and runs the engine with `--init-img --mask --strength`. The mask is not sent as a donor image.
+5. In the prompt: describe the **final state inside the masked area** ("the masked area shows a small green potted fern matching the studio light"), preserve everything outside it in one clause, and note the mask itself must not appear. The mask is pixel-level guidance — the model does not see it as an image, so the prompt carries the content.
+6. Inspect the mask boundary at native size. If the change is weak, raise `strength` (not the prompt length). If edges show, the mask feather/blend is the issue — say so, or ask the user to widen the mask (do not invent a new mask UI).
 
 Example:
 
@@ -120,12 +139,25 @@ Mask conventions:
 
 ## 6. Sketch-guided work
 
-- A sketch is a **structure/composition reference**, not strict ControlNet geometry.
-- State the adherence level: loose concept, composition guide, or close structural reference.
-- For an edit: `<image1>` = base canvas, `<image2>` = sketch; preserve the base's identity/lighting while following the sketch's shape and arrangement.
-- For generation: send the sketch as a reference and describe materials/lighting/rendering; do not promise exact line tracing.
-- Translate only important structure into words: silhouette, floor count, major openings, object placement, camera angle.
-- Inspect for invented floors, warped proportions or ignored openings; correct them in the next pass.
+Sketch → photo is a **trained behaviour of this model** (the official docs turn
+a yacht line sketch into a photorealistic render). It is not loose concept
+guidance — it is structure to be translated.
+
+- **Translate the sketch's structure into words exhaustively**: enumerate the
+  silhouette/body shape, every major component, counts, openings, placements
+  and the camera angle, phrased as "Build <the photo> with the structure shown
+  in the input sketch: …". Then add materials, lighting and photorealistic
+  rendering. The official pattern pairs the sketch with a long structural
+  description; a short prompt that just says "make this sketch a photo"
+  underperforms badly.
+- For an edit: `<image1>` = base canvas, `<image2>` = sketch; preserve the
+  base's identity/lighting while following the sketch's shape and arrangement.
+- For generation from a sketch: send the sketch as the reference and describe
+  the structure it shows in detail, then the materials/light.
+- Sketches are structure, not texture: do not promise exact line tracing of
+  strokes, but DO promise the structural elements you name in words.
+- Inspect against the sketch for invented components, wrong counts, warped
+  proportions or ignored openings; correct them in the next pass.
 
 ## 7. Multi-reference composition
 

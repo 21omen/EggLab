@@ -73,3 +73,4 @@ panel/dump-tools.mjs
 panel/agent-beta/
 panel/beta-agent/config/paths.yaml
 panel/beta-agent/config/runtime-profile.yaml
+tmp-exp/

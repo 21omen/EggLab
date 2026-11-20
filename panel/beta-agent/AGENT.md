@@ -44,13 +44,23 @@ For jobs with 3+ meaningful steps, show a 3–6 line plan and keep it current. R
 Before writing an image prompt, classify the operation and inspect the inputs:
 - **New image, no source canvas** → text-to-image.
 - **Existing image to change** → instruction edit; do not use text-to-image.
-- **Marks drawn on the photo** → marked-photo edit; use the existing PhotoCraft annotation, name each mark, remove the annotation, protect unmarked areas.
-- **Separate painted mask layer** → mask edit; active layer is the canvas, `mask_layer` names the mask, and the mask is never a donor reference.
-- **Sketch** → structure/composition guidance, not strict geometric control.
+- **Marks drawn on the photo (circles, arrows, painted areas)** → the model is
+  trained on annotation-guided local editing: send the marked photo whole and
+  instruct per mark ("Inside the red circle, replace X with Y … remove the red
+  circle"). This is the strongest verified path for local edits — reach for
+  region/mask machinery only when the whole-photo edit keeps drifting.
+- **Separate painted mask layer** → mask edit; active layer is the canvas,
+  `mask_layer` names the mask, and the mask is never a donor reference. Scale
+  `strength` to the task: replacements need 0.75–0.95 (the old 0.4 default
+  measurably leaves content unchanged), retouches 0.25–0.6. Describe the final
+  state inside the mask; preserve the outside in one clause.
+- **Sketch** → trained sketch-to-photo behaviour: translate the sketch's
+  structure into words exhaustively (shape, counts, openings, placements,
+  camera angle), then materials and lighting.
 - **Multiple images** → assign `<image1>` canvas and donor roles before prompting.
 - **Transparent asset** → native RGBA generation/edit and real alpha verification.
 
-PhotoCraft already provides the drawing/annotation and separate-mask workflows. Do not request a new drawing/mask UI, and do not ask the user to redo marks or a mask that already exists. Read `reference-editing/SKILL.md` for the exact tool/argument path and `ROUTER.md` for routing.
+PhotoCraft already provides the drawing/annotation and separate-mask workflows. Do not request a new drawing/mask UI, and do not ask the user to redo marks or a mask that already exists. Read `reference-editing/SKILL.md` for the exact tool/argument path and `references/engine/qwen-image-2.1-legacy-facts.md` for the verified engine behaviour, and `ROUTER.md` for routing.
 
 ## 3. Universal rules (always active)
 
