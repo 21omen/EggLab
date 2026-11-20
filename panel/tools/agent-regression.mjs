@@ -495,21 +495,22 @@ check(
     !/renderCanvasSwitch|renderLinkChip|canvasTargetState/.test(appJs),
 );
 check(
-  'a chat whose canvas is not open prompts inline (banner, not modal)',
-  /renderCanvasNotice/.test(appJs) && /canvas-notice/.test(indexHtml) && /data-cn="dismiss"/.test(appJs),
+  'a chat whose canvas is gone gets one polite popup at switch time',
+  /showCanvasPopup/.test(appJs) && /canvas-popup/.test(indexHtml) && /canvas-popup-scrim\.on/.test(read('renderer/app.css')) &&
+    !/canvasNotice|canvas-notice/.test(appJs) && !/canvas-notice/.test(indexHtml),
 );
 check(
-  'the notice can open the canvas or make a fresh one',
-  /sessions:openDoc/.test(mainSource) && /chat:createCanvas/.test(mainSource) &&
-    /sessionOpenDoc/.test(read('preload.cjs')) && /chatCreateCanvas/.test(read('preload.cjs')),
+  'the popup offers a blank canvas or continues without asking again',
+  /canvasPopupMake/.test(appJs) && /chatCreateCanvas/.test(read('preload.cjs')) &&
+    /documentOpened === false/.test(appJs),
 );
 
 // ---- Phase C: explicit links + beta canvas creation --------------------
 const httpSource2 = read('service/http.mjs');
 const mcpSource2 = read('mcp-server.mjs');
 check(
-  'the link chip shows and toggles the canvas link',
-  /renderCanvasNotice/.test(appJs) && /sessionMove/.test(read('preload.cjs')),
+  'the popup can rebind the chat via the move endpoint',
+  /canvasPopupMake/.test(appJs) && /sessionMove/.test(read('preload.cjs')) && /sessions:move/.test(mainSource),
 );
 check(
   'the chat list marks the canvas on screen',

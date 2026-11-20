@@ -504,7 +504,7 @@ function handleChatEvent(ev) {
       S.nodeIndex.clear();
       renderTimeline();
       renderThreadLabel();
-      renderCanvasNotice();
+      
       break;
     case 'document':
       // PhotoCraft changed the active document. Phase A: the canvas no longer
@@ -515,7 +515,7 @@ function handleChatEvent(ev) {
         ? { key: ev.visibleDocKey || null, name: ev.visibleDocName || null }
         : null;
       renderThreadLabel();
-      renderCanvasNotice();
+      
       refreshPc();
       if (ev.docKey && ev.docKey !== S.docKey) loadThread();
       break;
@@ -535,7 +535,7 @@ async function loadThread() {
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
-    renderCanvasNotice();
+    
     renderAssetStrip();
     updateEmpty();
   } catch (err) {
@@ -608,54 +608,6 @@ function renderThreadLabel() {
  * no link/detach jargon. When PhotoCraft shows a different canvas, the pill
  * turns amber and offers the switch.
  */
-/**
- * The canvas notice (revised concept): when the open chat's canvas is not the
- * one PhotoCraft is showing, an inline banner offers to open it or to make a
- * fresh canvas for this chat — dismissible, because continuing the chat is
- * always allowed (the agent can create a canvas when it needs one).
- */
-function renderCanvasNotice() {
-  const el = $('#canvasNotice');
-  if (!el) return;
-  const mismatch =
-    S.docKey && S.docKey !== 'no-document' && S.pcDoc?.key && S.pcDoc.key !== S.docKey;
-  if (!mismatch || S.canvasNoticeHidden === S.threadKey) {
-    el.classList.add('hidden');
-    el.innerHTML = '';
-    return;
-  }
-  const name = sessionDocLabel({ docKey: S.docKey });
-  const isOpenable = /^[A-Za-z]:[\\/]/.test(S.docKey) || /\.(pcraft|psd|psb)$/i.test(S.docKey);
-  el.innerHTML = `
-    <span class="cn-text">This chat works on <b>${esc(name)}</b> — that canvas is not open in PhotoCraft.</span>
-    <span class="cn-acts">
-      ${isOpenable ? `<button class="mini" data-cn="open" title="Bring this canvas forward in PhotoCraft">Open canvas</button>` : ''}
-      <button class="mini" data-cn="create" title="Make a fresh canvas for this chat (its working size)">New canvas</button>
-      <button class="mini ghost" data-cn="dismiss" title="Keep chatting without a canvas — the agent can create one when it needs to">Later</button>
-    </span>`;
-  el.classList.remove('hidden');
-}
-
-async function canvasNoticeAction(act) {
-  const el = $('#canvasNotice');
-  if (el) el.classList.add('hidden');
-  try {
-    if (act === 'open') {
-      const out = await api.sessionOpenDoc(S.docKey);
-      if (!out?.shown) toast('PhotoCraft could not open that canvas — is the file still there?', 'error');
-    } else if (act === 'create') {
-      toast('Creating a canvas…', 'ok');
-      await api.chatCreateCanvas(S.threadKey);
-      toast('Canvas ready — this chat now works on it.', 'ok');
-    } else {
-      S.canvasNoticeHidden = S.threadKey;
-    }
-    renderCanvasNotice();
-  } catch (err) {
-    toast(friendly(err), 'error');
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* sessions (one chat per PhotoCraft document)                         */
 /* ------------------------------------------------------------------ */
@@ -789,6 +741,11 @@ async function switchSession(s) {
     closeSessions();
     await refreshPc();
     toast(`Switched to ${hist.title || s.title || 'chat'}`, 'ok');
+    // The document could not be brought forward (draft gone, file missing):
+    // offer a fresh blank canvas for this chat in a small in-chat popup.
+    if (res.documentOpened === false && S.docKey !== 'no-document' && S.pc?.running) {
+      showCanvasPopup(s);
+    }
   } catch (err) {
     toast(friendly(err), 'error');
   }
@@ -2622,13 +2579,14 @@ function bind() {
     e.stopPropagation();
     openSessions();
   };
-  $('#canvasNotice').onclick = (e) => {
-    const act = e.target.closest('[data-cn]')?.dataset.cn;
-    if (act) canvasNoticeAction(act);
-  };
   $('#assetStrip').onclick = (e) => {
     const id = e.target.closest('[data-asset]')?.dataset.asset;
     if (id) placeAsset(id);
+  };
+  $('#canvasPopupMake').onclick = canvasPopupCreate;
+  $('#canvasPopupLater').onclick = closeCanvasPopup;
+  $('#canvasPopup').onclick = (e) => {
+    if (e.target === $('#canvasPopup')) closeCanvasPopup();
   };
   $('#btnSessionNew').onclick = async (e) => {
     e.stopPropagation();

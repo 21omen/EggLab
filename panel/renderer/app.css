@@ -183,6 +183,39 @@ button { cursor: pointer; }
 }
 .canvas-target:hover { color: var(--gold); border-color: var(--gold); }
 .canvas-target.warn { color: var(--gold); border-color: var(--gold); }
+/* Canvas popup: shown only when switching to a chat whose canvas is gone.
+   Backdrop fades, the card rises with a soft spring — quick, not flashy. */
+.canvas-popup-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 6, 0.45);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+  z-index: 90;
+}
+.canvas-popup-scrim.on { opacity: 1; pointer-events: auto; }
+.canvas-popup {
+  width: 260px;
+  padding: 16px 16px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-align: left;
+  transform: translateY(10px) scale(0.96);
+  opacity: 0;
+  transition: transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 160ms ease;
+}
+.canvas-popup-scrim.on .canvas-popup { transform: translateY(0) scale(1); opacity: 1; }
+.canvas-popup-icon { color: var(--gold); margin-bottom: 8px; }
+.canvas-popup-title { display: block; font-size: 12px; margin-bottom: 6px; }
+.canvas-popup-text { font-size: 10.5px; color: var(--dim); margin-bottom: 12px; }
+.canvas-popup-text b { color: var(--gold); }
+.canvas-popup-actions { display: flex; justify-content: flex-end; gap: 6px; }
 /* Canvas notice (inline banner): the chat's canvas is not the one PhotoCraft shows. */
 .canvas-notice {
   display: flex;
