@@ -504,7 +504,7 @@ function handleChatEvent(ev) {
       S.nodeIndex.clear();
       renderTimeline();
       renderThreadLabel();
-      renderCanvasTarget();
+      renderCanvasNotice();
       break;
     case 'document':
       // PhotoCraft changed the active document. Phase A: the canvas no longer
@@ -515,7 +515,7 @@ function handleChatEvent(ev) {
         ? { key: ev.visibleDocKey || null, name: ev.visibleDocName || null }
         : null;
       renderThreadLabel();
-      renderCanvasTarget();
+      renderCanvasNotice();
       refreshPc();
       if (ev.docKey && ev.docKey !== S.docKey) loadThread();
       break;
@@ -535,7 +535,7 @@ async function loadThread() {
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
-    renderCanvasTarget();
+    renderCanvasNotice();
     renderAssetStrip();
     updateEmpty();
   } catch (err) {
@@ -608,86 +608,52 @@ function renderThreadLabel() {
  * no link/detach jargon. When PhotoCraft shows a different canvas, the pill
  * turns amber and offers the switch.
  */
-function canvasTargetState() {
-  const attached = Boolean(S.docKey && S.docKey !== 'no-document');
-  const visible = S.visibleCanvas && S.visibleCanvas.key && S.visibleCanvas.key !== S.docKey
-    ? S.visibleCanvas
-    : null;
-  return { attached, visible };
-}
-
-function renderCanvasTarget() {
-  const el = $('#canvasTarget');
+/**
+ * The canvas notice (revised concept): when the open chat's canvas is not the
+ * one PhotoCraft is showing, an inline banner offers to open it or to make a
+ * fresh canvas for this chat — dismissible, because continuing the chat is
+ * always allowed (the agent can create a canvas when it needs one).
+ */
+function renderCanvasNotice() {
+  const el = $('#canvasNotice');
   if (!el) return;
-  const { attached, visible } = canvasTargetState();
-  const name = attached ? sessionDocLabel({ docKey: S.docKey }) : null;
-  el.classList.remove('warn');
-  if (attached && visible) {
-    el.textContent = `${name} · canvas changed`;
-    el.title = 'PhotoCraft now shows a different canvas than this chat works on. Click to switch.';
-    el.classList.add('warn');
-  } else if (attached) {
-    el.textContent = `Working canvas: ${name}`;
-    el.title = 'Where the agent puts its work. Click to change.';
-  } else if (visible) {
-    el.textContent = `No canvas — ${sessionDocLabel({ docKey: visible.key, docName: visible.name })} is open`;
-    el.title = 'Results go to the asset tray only. Click to use the open canvas.';
-    el.classList.add('warn');
-  } else {
-    el.textContent = 'No canvas';
-    el.title = 'Results go to the asset tray only. Click to pick a canvas.';
+  const mismatch =
+    S.docKey && S.docKey !== 'no-document' && S.pcDoc?.key && S.pcDoc.key !== S.docKey;
+  if (!mismatch || S.canvasNoticeHidden === S.threadKey) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
   }
+  const name = sessionDocLabel({ docKey: S.docKey });
+  const isOpenable = /^[A-Za-z]:[\\/]/.test(S.docKey) || /\.(pcraft|psd|psb)$/i.test(S.docKey);
+  el.innerHTML = `
+    <span class="cn-text">This chat works on <b>${esc(name)}</b> — that canvas is not open in PhotoCraft.</span>
+    <span class="cn-acts">
+      ${isOpenable ? `<button class="mini" data-cn="open" title="Bring this canvas forward in PhotoCraft">Open canvas</button>` : ''}
+      <button class="mini" data-cn="create" title="Make a fresh canvas for this chat (its working size)">New canvas</button>
+      <button class="mini ghost" data-cn="dismiss" title="Keep chatting without a canvas — the agent can create one when it needs to">Later</button>
+    </span>`;
+  el.classList.remove('hidden');
 }
 
-function renderCanvasMenu() {
-  const menu = $('#canvasMenu');
-  if (!menu) return;
-  const { attached, visible } = canvasTargetState();
-  const items = [];
-  if (visible) {
-    items.push({
-      label: `Use ${sessionDocLabel({ docKey: visible.key, docName: visible.name })}`,
-      title: 'Point this chat at the canvas PhotoCraft is showing.',
-      run: async () => {
-        await api.sessionUseDocument(visible.key, visible.name || null);
-        toast('Canvas set.', 'ok');
-      },
-    });
+async function canvasNoticeAction(act) {
+  const el = $('#canvasNotice');
+  if (el) el.classList.add('hidden');
+  try {
+    if (act === 'open') {
+      const out = await api.sessionOpenDoc(S.docKey);
+      if (!out?.shown) toast('PhotoCraft could not open that canvas — is the file still there?', 'error');
+    } else if (act === 'create') {
+      toast('Creating a canvas…', 'ok');
+      await api.chatCreateCanvas(S.threadKey);
+      toast('Canvas ready — this chat now works on it.', 'ok');
+    } else {
+      S.canvasNoticeHidden = S.threadKey;
+    }
+    renderCanvasNotice();
+  } catch (err) {
+    toast(friendly(err), 'error');
   }
-  if (attached) {
-    items.push({
-      label: 'No canvas — tray only',
-      title: 'Renders land in the asset tray; nothing is placed on a canvas until you pick one.',
-      run: async () => {
-        await api.sessionMove(S.threadKey, 'no-document', null);
-        toast('This chat no longer targets a canvas.', 'ok');
-      },
-    });
-  }
-  items.push({ label: 'All chats…', title: 'Open the chat list.', run: () => openSessions() });
-  menu.innerHTML = items
-    .map((it, i) => `<button class="canvas-menu-item" data-mi="${i}" title="${esc(it.title || '')}">${esc(it.label)}</button>`)
-    .join('');
-  const actions = items;
-  menu.querySelectorAll('[data-mi]').forEach((btn) => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      closeCanvasMenu();
-      try {
-        await actions[Number(btn.dataset.mi)]?.run?.();
-        S.visibleCanvas = null;
-        renderCanvasTarget();
-        await loadThread();
-      } catch (err) {
-        toast(friendly(err), 'error');
-      }
-    };
-  });
-}
-
-function closeCanvasMenu() {
-  const menu = $('#canvasMenu');
-  if (menu) menu.classList.add('hidden');
 }
 
 /* ------------------------------------------------------------------ */
@@ -2656,23 +2622,10 @@ function bind() {
     e.stopPropagation();
     openSessions();
   };
-  $('#canvasTarget').onclick = (e) => {
-    e.stopPropagation();
-    const menu = $('#canvasMenu');
-    const hidden = menu.classList.contains('hidden');
-    if (hidden) {
-      renderCanvasMenu();
-      menu.classList.remove('hidden');
-    } else {
-      closeCanvasMenu();
-    }
+  $('#canvasNotice').onclick = (e) => {
+    const act = e.target.closest('[data-cn]')?.dataset.cn;
+    if (act) canvasNoticeAction(act);
   };
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#canvasTargetWrap')) closeCanvasMenu();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeCanvasMenu();
-  });
   $('#assetStrip').onclick = (e) => {
     const id = e.target.closest('[data-asset]')?.dataset.asset;
     if (id) placeAsset(id);

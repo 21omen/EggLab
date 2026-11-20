@@ -165,7 +165,6 @@ button { cursor: pointer; }
 .thread-label::after { content: " ▾"; font-size: 8px; opacity: 0.6; }
 .thread-label:hover { color: var(--dim); }
 .thread-label.dirty { color: var(--gold); }
-/* Working-canvas scope selector (composer): one control, one menu. */
 .canvas-target-wrap { position: relative; -webkit-app-region: no-drag; }
 .canvas-target {
   appearance: none;
@@ -184,6 +183,22 @@ button { cursor: pointer; }
 }
 .canvas-target:hover { color: var(--gold); border-color: var(--gold); }
 .canvas-target.warn { color: var(--gold); border-color: var(--gold); }
+/* Canvas notice (inline banner): the chat's canvas is not the one PhotoCraft shows. */
+.canvas-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 10px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-inner);
+  background: rgba(214, 164, 84, 0.08);
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.canvas-notice b { color: var(--gold); }
+.canvas-notice .cn-acts { display: flex; gap: 5px; margin-left: auto; }
 .canvas-menu {
   position: absolute;
   bottom: calc(100% + 5px);

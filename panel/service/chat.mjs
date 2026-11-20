@@ -875,20 +875,6 @@ export function isTransientKey(key) {
 }
 
 /**
- * Phase A auto-adopt rule: only a DETACHED chat with an EMPTY thread may
- * follow the canvas PhotoCraft puts on screen — there is nothing to lose. Any
- * other chat switches canvases explicitly.
- */
-export function canAdoptDocument() {
-  return (
-    !workingDocument() &&
-    !(Array.isArray(history?.items) && history.items.length) &&
-    !active &&
-    !turnRunning
-  );
-}
-
-/**
  * The PhotoCraft document this chat is working in, or null when it has none.
  * A chat is authoritative over the canvas: once it owns a document, an agent
  * turn must not create or switch to another one.

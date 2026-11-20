@@ -529,33 +529,16 @@ if (!gotLock) {
           if (chat.migrateThread(migrateFrom, key, doc?.name || null)) trace(`thread migrated -> ${key}`);
         }
 
-        // Phase A: the canvas does not own the chat. A plain tab switch must
-        // not move the conversation — only (a) an identity migration that was
-        // just carried out and (b) an empty detached chat (nothing to lose)
-        // may follow the canvas. Everything else is an explicit switch the
-        // renderer offers from the canvas badge.
-        if (migrateFrom || chat.canAdoptDocument() || (runCanvasSwitch && key !== NO_DOCUMENT)) {
-          const result = chat.useDocument(key, doc?.name || null);
-          if (result.changed) trace(`thread -> ${key}`);
-          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
-        } else if (key !== attachedKey) {
-          // The visible canvas and the chat's canvas differ. Tell the renderer
-          // so it can offer "Switch to <canvas>'s chat" without moving anything.
-          sendToRenderer('egglab:event', {
-            type: 'chat',
-            action: 'document',
-            docKey: chat.documentKey(),
-            doc,
-            visibleDocKey: key,
-            visibleDocName: doc?.name || null,
-            canvasMismatch: true,
-          });
-        } else {
-          // The chat already owns the visible canvas; just refresh the UI.
-          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
-        }
-        // Advance the watcher state only after the chat decision is made.
-        // Updating these first meant a failed adoption (busy/race)
+        // Document-driven chats (revised concept, research-backed): the canvas
+        // you look at has its own conversation, like Notion binds its AI panel
+        // to the current page. Phase B uid identity means a chat NEVER moves
+        // between documents, so following the canvas is predictable: switching
+        // tabs reveals that document's own chat (minting a uid chat when the
+        // document has none). Transient renders are still not chat scopes.
+        const result = chat.useDocument(key, doc?.name || null);
+        if (result.changed) trace(`thread -> ${key}`);
+        // Advance the watcher state only after the chat actually adopted the
+        // document. Updating these first meant a failed adoption (busy/race)
         // was treated as "already synced" on every later poll.
         lastDocKey = key;
         lastDocTab = activeTab;
@@ -854,6 +837,20 @@ ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJo
 ipcMain.handle('chat:clear', () => chat.clearHistory());
 ipcMain.handle('chat:history', () => chat.getHistory());
 ipcMain.handle('sessions:list', () => sessions.list());
+// Inline notice actions: bring the chat's canvas forward, or make a fresh one.
+ipcMain.handle('sessions:openDoc', async (e, { docKey }) => {
+  const shown = await showDocumentForKey(docKey).catch(() => false);
+  return { shown: Boolean(shown) };
+});
+ipcMain.handle('chat:createCanvas', async (e, { key }) => {
+  await pc.newDocument({ source: 'panel' });
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const state = await pc.projectState().catch(() => null);
+  const newKey = state?.document?.key;
+  if (!newKey) throw new Error('PhotoCraft did not open a new canvas.');
+  chat.moveThread(key, newKey, state.document?.name || null);
+  return { key: newKey };
+});
 // Phase D: the per-chat asset tray — finished renders/edits as placeable assets.
 ipcMain.handle('assets:list', () => assets.assetsForChat(chat.currentThreadId(), 12));
 ipcMain.handle('assets:place', async (e, { id }) => {

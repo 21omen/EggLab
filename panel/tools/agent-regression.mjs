@@ -467,14 +467,10 @@ check(
 );
 check('bind records the driving agent on every send', /if \(agent\) entry\.agent = agent;/.test(sessionsSource));
 
-// ---- Phase A: chat/doc management stabilization ------------------------
+// ---- Phase A: chat/doc management (revised: document-driven chats) -----
 check(
-  'a tab switch no longer moves the chat',
-  /chat\.canAdoptDocument\(\)/.test(mainSource) && /canvasMismatch/.test(mainSource),
-);
-check(
-  'only an empty detached chat auto-adopts the visible canvas',
-  /export function canAdoptDocument/.test(chatSource) && /!workingDocument\(\)/.test(chatSource),
+  'a document switch opens that document own chat',
+  /chat\.useDocument\(key, doc\?\.name \|\| null\)/.test(mainSource) && !/canvasMismatch/.test(mainSource),
 );
 check(
   'transient renders never become chat scopes',
@@ -494,18 +490,18 @@ check('the canvas badge switch endpoint exists', /sessions:useDocument/.test(mai
 const appJs = read('renderer/app.js');
 const indexHtml = read('renderer/index.html');
 check(
-  'one scope selector at the composer replaces the titlebar chips',
-  /id="canvasTarget"/.test(indexHtml) && /canvas-target-wrap/.test(indexHtml) &&
-    !/canvas-switch|link-chip|id="canvasSwitch"|id="linkChip"/.test(indexHtml) &&
-    !/renderCanvasSwitch|renderLinkChip/.test(appJs),
+  'no selector or chips: the document drives the chat',
+  !/canvasTarget|canvas-switch|link-chip|id="canvasSwitch"|id="linkChip"/.test(indexHtml) &&
+    !/renderCanvasSwitch|renderLinkChip|canvasTargetState/.test(appJs),
 );
 check(
-  'the selector speaks plain language, no link/detach jargon',
-  /Working canvas:/.test(appJs) && /No canvas/.test(appJs) && !/Chat detached|Chat linked to the canvas/.test(appJs),
+  'a chat whose canvas is not open prompts inline (banner, not modal)',
+  /renderCanvasNotice/.test(appJs) && /canvas-notice/.test(indexHtml) && /data-cn="dismiss"/.test(appJs),
 );
 check(
-  'the selector opens a single unified menu',
-  /renderCanvasMenu/.test(appJs) && /canvas-menu-item/.test(read('renderer/app.css')),
+  'the notice can open the canvas or make a fresh one',
+  /sessions:openDoc/.test(mainSource) && /chat:createCanvas/.test(mainSource) &&
+    /sessionOpenDoc/.test(read('preload.cjs')) && /chatCreateCanvas/.test(read('preload.cjs')),
 );
 
 // ---- Phase C: explicit links + beta canvas creation --------------------
@@ -513,7 +509,7 @@ const httpSource2 = read('service/http.mjs');
 const mcpSource2 = read('mcp-server.mjs');
 check(
   'the link chip shows and toggles the canvas link',
-  /renderCanvasTarget/.test(appJs) && /sessionMove/.test(read('preload.cjs')),
+  /renderCanvasNotice/.test(appJs) && /sessionMove/.test(read('preload.cjs')),
 );
 check(
   'the chat list marks the canvas on screen',
@@ -529,7 +525,7 @@ check(
 );
 check(
   'the watcher relinks the conversation after a beta canvas switch',
-  /consumeRunCanvasSwitch/.test(mainSource) && /runCanvasSwitch && key !== NO_DOCUMENT/.test(mainSource),
+  /consumeRunCanvasSwitch/.test(mainSource),
 );
 check(
   'the beta agent may create a canvas for a separate piece',
