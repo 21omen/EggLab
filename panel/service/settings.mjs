@@ -117,6 +117,10 @@ export const DEFAULTS = {
   opencode: {
     exe: defaultOpenCodeExe(),
     agent: 'egglab',
+    // Beta agent (`egglab-beta`): the developing version of the official
+    // agent. Off by default; when on, chats run the beta agent in its own
+    // workspace and session scope. The official agent stays unchanged.
+    betaAgent: false,
     // No hard-coded paid default. A fresh user may not have OpenCode Go,
     // Console credits, or any provider connected; `opencode models` can list
     // catalog entries that are not actually routable. Setup/Settings choose a

@@ -344,11 +344,14 @@ check('MCP full profile is opt-in', /EGGLAB_TOOLSET=full/.test(toolSource) || /E
 check('MCP workflow description is live metadata', !/quality = 40 steps/.test(toolSource) && /applyRuntimeMetadata/.test(toolSource));
 check('generated config uses mcp.servers', /mcp:\s*\{[\s\S]*?servers:\s*\{/.test(chatSource));
 check('generated config disables Code Mode', /codemode:\s*false/.test(chatSource));
-check('generated config selects the agent profile', /EGGLAB_TOOLSET:\s*'agent'/.test(chatSource));
+check(
+  'generated config selects the agent profile',
+  /EGGLAB_TOOLSET:\s*beta \? 'agent-beta' : 'agent'/.test(chatSource),
+);
 check('generated config has no legacy egglab MCP entry', !/mcp:\s*\{\s*egglab:/.test(chatSource));
 check(
   'generated config uses the unique egl server key',
-  /egl:\s*\{[\s\S]*?EGGLAB_TOOLSET:\s*'agent'/.test(chatSource),
+  /egl:\s*\{[\s\S]*?EGGLAB_TOOLSET:\s*beta \? 'agent-beta' : 'agent'/.test(chatSource),
 );
 check('generated config uses the v2 agents map', /agents:\s*\{/.test(chatSource));
 check('generated config uses a system file reference', /system:\s*'\{file:\.\/AGENT\.md\}'/.test(chatSource));
@@ -426,6 +429,24 @@ check('generated MCP timeout', generatedTimeout >= 3_900_000, `${generatedTimeou
 const settingsSource = read('service/settings.mjs');
 const turnTimeout = Number((settingsSource.match(/timeoutSec:\s*(\d+)/) || [])[1]) || 0;
 check('agent turn timeout', turnTimeout * 1000 >= 3_900_000, `${turnTimeout} s`);
+
+// ---- beta agent (egglab-beta) -----------------------------------------
+const pathsSource = read('service/paths.mjs');
+const betaPromptSource = read('beta-agent/AGENT.md');
+check('beta agent has its own knowledge package', exists('beta-agent/AGENT.md') && exists('beta-agent/ROUTER.md') && exists('beta-agent/manifest.yaml'));
+check('beta agent package ships skills and evals', exists('beta-agent/skills') && exists('beta-agent/evals'));
+check('beta agent identifies itself', /beta agent/i.test(betaPromptSource));
+for (const ref of [...new Set([...betaPromptSource.matchAll(/\begl_([a-z0-9_]+)/g)].map((m) => m[1]))]) {
+  check(`beta AGENT.md tool ${ref}`, agentTools.has(ref));
+}
+check('settings default the beta agent off', /betaAgent:\s*false/.test(settingsSource));
+check('paths expose the beta workspace and package', /AGENT_BETA_DIR/.test(pathsSource) && /KNOWLEDGE_BETA_DIR/.test(pathsSource));
+check('chat runs the beta agent id', /'egglab-beta'/.test(chatSource) && /agent-beta/.test(chatSource));
+check('beta chat runs its own workspace', /betaAgent \? AGENT_BETA_DIR : AGENT_DIR/.test(chatSource));
+check('beta knowledge root override', /EGGLAB_KNOWLEDGE_ROOT/.test(chatSource) && /EGGLAB_KNOWLEDGE_ROOT/.test(toolSource));
+check('beta sessions fork on agent switch', /agentChanged/.test(sessionsSource));
+check('session listing covers both agent projects', /AGENT_BETA_DIR/.test(sessionsSource));
+check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);
 process.exit(failures ? 1 : 0);

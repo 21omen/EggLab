@@ -20,7 +20,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { visionForModel, resolveOpenCode } from './settings.mjs';
-import { AGENT_DIR, CHATS_DIR, DATA_DIR, OUT_DIR, TMP_DIR, readJson, writeJson, uid } from './paths.mjs';
+import { AGENT_DIR, AGENT_BETA_DIR, CHATS_DIR, DATA_DIR, OUT_DIR, TMP_DIR, readJson, writeJson, uid } from './paths.mjs';
 import { historyFileName } from './history-names.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -162,31 +162,53 @@ function save() {
 
 /**
  * `opencode session list` is the only listing OpenCode offers. It is slow
- * (~1s, it boots the server), so callers should not do it per keystroke.
+ * (~1s per project, it boots the server), so callers should not do it per
+ * keystroke. Sessions are project-scoped: the official agent runs in
+ * `agent/`, the beta agent in `agent-beta/`, so both scopes are queried and
+ * merged whenever the registry knows a beta thread; otherwise only the
+ * official scope is.
  */
-export async function opencodeSessions(limit = 40) {
-  try {
-    const oc = resolveOpenCode();
-    const { stdout } = await execFileAsync(
-      oc.cmd,
-      ['session', 'list', '--format', 'json', '--max-count', String(limit)],
-      {
-        // Sessions are project-scoped (v2 especially): list them from the same
-        // directory the chats run in, otherwise every known session shows as
-        // "dead" because it belongs to another project.
-        cwd: AGENT_DIR,
-        windowsHide: true,
-        maxBuffer: 8 * 1024 * 1024,
-        shell: oc.shell,
-      },
-    );
-    const parsed = JSON.parse(String(stdout).trim() || '[]');
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    // null means "could not ask", not "no sessions". Callers must not clear
-    // bindings or treat chats as dead on a transient CLI failure.
-    return null;
+export async function opencodeSessions(limit = 40, dirs = null) {
+  const scopeDirs =
+    dirs ||
+    (() => {
+      const usesBeta = Object.values(registry.threads).some((entry) => entry?.agent === 'egglab-beta');
+      return usesBeta ? [AGENT_DIR, AGENT_BETA_DIR] : [AGENT_DIR];
+    })();
+  const merged = [];
+  const seen = new Set();
+  for (const cwd of scopeDirs) {
+    if (!fs.existsSync(cwd)) continue;
+    try {
+      const oc = resolveOpenCode();
+      const { stdout } = await execFileAsync(
+        oc.cmd,
+        ['session', 'list', '--format', 'json', '--max-count', String(limit)],
+        {
+          // Sessions are project-scoped (v2 especially): list them from the same
+          // directory the chats run in, otherwise every known session shows as
+          // "dead" because it belongs to another project.
+          cwd,
+          windowsHide: true,
+          maxBuffer: 8 * 1024 * 1024,
+          shell: oc.shell,
+        },
+      );
+      const parsed = JSON.parse(String(stdout).trim() || '[]');
+      if (!Array.isArray(parsed)) continue;
+      for (const session of parsed) {
+        if (session?.id && !seen.has(session.id)) {
+          seen.add(session.id);
+          merged.push(session);
+        }
+      }
+    } catch {
+      // A missing or transiently unreachable scope must not erase the live
+      // sessions of the other scope. An empty merged list still means
+      // "could not ask" (see below).
+    }
   }
+  return merged.length ? merged : null;
 }
 
 /** Export one OpenCode session (messages + metadata) for transcript recovery. */
@@ -286,7 +308,7 @@ export function migrateKey(from, to) {
  * @param {string|null} opts.docName   for the human-readable title
  * @param {string|null} opts.sessionId  OpenCode's id, once a message has run
  */
-export function bind({ key, docKey = null, model, vision = null, docName = null, sessionId = null } = {}) {
+export function bind({ key, docKey = null, model, vision = null, docName = null, sessionId = null, agent = null } = {}) {
   const id = key || 'no-document';
   const doc = docKey || id;
   // Sending a message here is an explicit decision to use this thread again,
@@ -298,6 +320,10 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
   // A session last driven by a different model may not be able to see images.
   // Starting fresh is cheaper and less confusing than a vision-blind thread.
   const modelChanged = Boolean(existing?.model && model && existing.model !== model);
+  // The official and beta agents are different OpenCode agents in different
+  // project scopes; a session remembers its agent's whole prompt and toolset,
+  // so switching agents must switch sessions too.
+  const agentChanged = Boolean(existing?.agent && agent && existing.agent !== agent);
   const lostVision = Boolean(
     existing?.model &&
       model &&
@@ -313,7 +339,7 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
   );
 
   let entry = existing;
-  if (!entry || modelChanged || lostVision || visionChanged) {
+  if (!entry || modelChanged || lostVision || visionChanged || agentChanged) {
     entry = {
       id,
       docKey: doc,
@@ -323,11 +349,12 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
       // message names the thread instead (see chat.send).
       title: existing?.title || null,
       model: model || null,
+      agent: agent || null,
       vision: vision === null ? undefined : Boolean(vision),
       docName,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      forkedFrom: modelChanged || lostVision || visionChanged ? existing?.sessionId || null : null,
+      forkedFrom: modelChanged || lostVision || visionChanged || agentChanged ? existing?.sessionId || null : null,
     };
     registry.threads[id] = entry;
   }

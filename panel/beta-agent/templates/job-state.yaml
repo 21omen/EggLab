@@ -1,0 +1,57 @@
+job_id: null
+created_at: null
+updated_at: null
+status: intake # intake | planning | production | review | delivered | blocked
+intent: null
+output:
+  type: null
+  width: null
+  height: null
+  ratio: null
+  format: null
+brief:
+  audience: null
+  objective: null
+  hard_constraints: []
+  flexible_choices: []
+  unknowns: []
+references:
+  - id: null
+    path_or_handle: null
+    role: null
+    attributes_to_preserve: []
+direction:
+  concept: null
+  world_line: null
+  palette: []
+  lighting: null
+  composition: null
+  style_card: null
+skills_loaded: []
+assets:
+  - id: null
+    role: null
+    method: null
+    source: null
+    placement: null
+    editable: true
+    alpha_required: false
+    status: pending
+execution:
+  model_id: null
+  model_version: null
+  tool_calls: []
+  render_budget: null
+  renders_used: 0
+  elapsed_seconds: null
+  retry_history: []
+quality:
+  profile: null
+  verdict: pending # pending | accept | revise | hold
+  measured_metrics: {}
+  failures: []
+delivery:
+  project_path: null
+  export_paths: []
+  verified: false
+  report_path: null

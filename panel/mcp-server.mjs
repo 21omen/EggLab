@@ -12,7 +12,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PANEL_DIR = path.dirname(fileURLToPath(import.meta.url));
+// The knowledge package root. Defaults to the folder this file lives in
+// (resources\knowledge packaged, the panel dir in dev). The beta agent's
+// workspace runs the same server file with EGGLAB_KNOWLEDGE_ROOT set to its
+// own package, so `egl_read_knowledge` serves beta skills without a second
+// server copy.
+const PANEL_DIR = path.resolve(
+  process.env.EGGLAB_KNOWLEDGE_ROOT || path.dirname(fileURLToPath(import.meta.url)),
+);
 
 // The v2 knowledge package is read-only and allowlisted. Keeping the resolver
 // here (not in the prompt) is what makes lazy loading real: the model can only
@@ -679,11 +686,14 @@ const AGENT_TOOL_NAMES = Object.freeze([
 ]);
 // Fail safe: the production agent profile is the default. The full registry is
 // opt-in (`EGGLAB_TOOLSET=full`) for developer tools and contract tests.
+// `agent-beta` is the beta agent's profile: it starts identical to `agent`, so
+// beta tool/behavior changes land here first without touching the official
+// agent's surface.
 const TOOL_PROFILE = String(process.env.EGGLAB_TOOLSET || 'agent').toLowerCase();
-const activeTools =
-  TOOL_PROFILE === 'agent'
-    ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
-    : tools;
+const agentProfile = TOOL_PROFILE === 'agent' || TOOL_PROFILE === 'agent-beta';
+const activeTools = agentProfile
+  ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
+  : tools;
 const activeToolNames = new Set(activeTools.map((tool) => tool.name));
 
 async function callTool(name, args = {}) {

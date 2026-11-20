@@ -765,6 +765,8 @@ button { cursor: pointer; }
 }
 .composer-foot .grow { flex: 1; }
 .check input { accent-color: var(--gold); margin: 0; }
+/* Settings-card checkbox row (beta agent toggle). */
+.check-row { display: flex; align-items: center; gap: 7px; font-size: 11px; margin: 8px 0 2px; cursor: pointer; user-select: none; }
 .hint { font-size: 10px; color: var(--dimmer); margin-left: auto; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- modal prompt ---------- */

@@ -70,3 +70,6 @@ test-*.mjs
 panel/test-*.mjs
 dump-tools.mjs
 panel/dump-tools.mjs
+panel/agent-beta/
+panel/beta-agent/config/paths.yaml
+panel/beta-agent/config/runtime-profile.yaml

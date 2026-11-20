@@ -79,6 +79,15 @@ export const LOG_DIR = PACKAGED ? path.join(DATA_DIR, 'logs') : path.join(PANEL_
 export const TMP_DIR = PACKAGED ? path.join(DATA_DIR, 'tmp') : path.join(PANEL_DIR, 'tmp');
 export const AGENT_DIR = PACKAGED ? path.join(DATA_DIR, 'agent') : path.join(PANEL_DIR, 'agent');
 /**
+ * Runtime workspace for the beta agent (`egglab-beta`). Separate folder and a
+ * separate OpenCode project scope: beta chats cannot inherit official-agent
+ * sessions and vice versa, and beta can diverge freely without touching the
+ * official agent's workspace.
+ */
+export const AGENT_BETA_DIR = PACKAGED
+  ? path.join(DATA_DIR, 'agent-beta')
+  : path.join(PANEL_DIR, 'agent-beta');
+/**
  * The read-only knowledge package (skills/, references/, templates/, config/,
  * manifest, prompts). Dev reads it from the repo checkout; packaged installs
  * ship a real-copy under resources\knowledge because mcp-server.mjs runs
@@ -87,6 +96,15 @@ export const AGENT_DIR = PACKAGED ? path.join(DATA_DIR, 'agent') : path.join(PAN
 export const KNOWLEDGE_DIR = PACKAGED
   ? path.join(RESOURCES_DIR, 'knowledge')
   : PANEL_DIR;
+/**
+ * The beta agent's knowledge package. Dev reads it from panel/beta-agent;
+ * packaged installs ship a real copy under resources\knowledge-beta (mcp-server
+ * serves it with an EGGLAB_KNOWLEDGE_ROOT override). The official package stays
+ * untouched while beta diverges.
+ */
+export const KNOWLEDGE_BETA_DIR = PACKAGED
+  ? path.join(RESOURCES_DIR, 'knowledge-beta')
+  : path.join(PANEL_DIR, 'beta-agent');
 /**
  * Generated runtime config (paths.yaml, runtime-profile.yaml). These belong
  * to the knowledge package — mcp-server serves `config/` from KNOWLEDGE_DIR —

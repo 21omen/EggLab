@@ -114,6 +114,15 @@
           "!paths.yaml",
           "!runtime-profile.yaml"
         ]
+      },
+      {
+        "from": "beta-agent",
+        "to": "knowledge-beta",
+        "filter": [
+          "**/*",
+          "!config/paths.yaml",
+          "!config/runtime-profile.yaml"
+        ]
       }
     ],
     "win": {

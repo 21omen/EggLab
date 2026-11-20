@@ -403,6 +403,18 @@ function handleEvent(ev) {
         S.settings = ev.settings;
         syncUI();
         renderProviders();
+        // Keep the beta toggle/pill in step when the setting is changed from
+        // the HTTP API or another surface.
+        const betaChk = $('#chkBetaAgent');
+        if (betaChk) {
+          const on = Boolean(S.settings?.opencode?.betaAgent);
+          if (betaChk.checked !== on) betaChk.checked = on;
+          const pill = $('#betaAgentPill');
+          if (pill) {
+            pill.textContent = on ? 'Beta on' : 'Off';
+            pill.classList.toggle('on', on);
+          }
+        }
       }
       break;
     default:
@@ -2005,6 +2017,12 @@ function renderOcStatus() {
     : report.bin;
   add(`OpenCode ${version} · ${pathLabel}`);
   add(
+    S.settings?.opencode?.betaAgent
+      ? 'Agent: beta (egglab-beta) — developing version'
+      : 'Agent: official (egglab)',
+    'dim',
+  );
+  add(
     `${report.providers?.length || 0} providers · ${report.modelCount || 0} models · ${
       report.auth?.length || 0
     } accounts`,
@@ -2687,6 +2705,40 @@ function bind() {
         if (report.configPath) api.revealPath(report.configPath);
         else toast('No global OpenCode config found yet.', 'error');
       } catch (err) {
+        toast(friendly(err), 'error');
+      }
+    };
+  }
+
+  // Beta agent toggle: chats then run egglab-beta (the developing agent) in
+  // its own workspace and session scope. Session forking on switch is handled
+  // panel-side (sessions.bind), so a plain settings patch is all that is needed.
+  const betaAgentPill = $('#betaAgentPill');
+  const renderBetaState = () => {
+    const on = Boolean(S.settings?.opencode?.betaAgent);
+    const chk = $('#chkBetaAgent');
+    if (chk) chk.checked = on;
+    if (betaAgentPill) {
+      betaAgentPill.textContent = on ? 'Beta on' : 'Off';
+      betaAgentPill.classList.toggle('on', on);
+    }
+  };
+  const betaAgentChk = $('#chkBetaAgent');
+  if (betaAgentChk) {
+    renderBetaState();
+    betaAgentChk.onchange = async () => {
+      try {
+        S.settings = await api.patchSettings({ opencode: { betaAgent: betaAgentChk.checked } });
+        renderBetaState();
+        renderOcStatus();
+        toast(
+          betaAgentChk.checked
+            ? 'Beta agent enabled. New chats run egglab-beta and start fresh sessions.'
+            : 'Beta agent off. New chats run the official agent again.',
+          'ok',
+        );
+      } catch (err) {
+        renderBetaState();
         toast(friendly(err), 'error');
       }
     };
