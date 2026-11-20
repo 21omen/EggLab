@@ -502,6 +502,7 @@ function handleChatEvent(ev) {
       renderTimeline();
       renderThreadLabel();
       renderCanvasSwitch();
+      renderLinkChip();
       break;
     case 'document':
       // PhotoCraft changed the active document. Phase A: the canvas no longer
@@ -513,6 +514,7 @@ function handleChatEvent(ev) {
         : null;
       renderThreadLabel();
       renderCanvasSwitch();
+      renderLinkChip();
       refreshPc();
       if (ev.docKey && ev.docKey !== S.docKey) loadThread();
       break;
@@ -532,6 +534,8 @@ async function loadThread() {
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
+    renderCanvasSwitch();
+    renderLinkChip();
     updateEmpty();
   } catch (err) {
     toast(friendly(err), 'error');
@@ -567,6 +571,34 @@ function renderCanvasSwitch() {
   const name = sessionDocLabel({ docKey: S.visibleCanvas.key, docName: S.visibleCanvas.name });
   el.textContent = `Canvas: ${name} — switch chat`;
   el.title = 'PhotoCraft shows a different canvas than this chat is linked to. Click to switch to that canvas\'s chat.';
+}
+
+/**
+ * The link chip (Phase C): shows and controls the chat's canvas link.
+ * Attached chats can detach; detached chats can link the visible canvas.
+ * Renders/previews are never linkable (they are not chat scopes).
+ */
+function renderLinkChip() {
+  const el = $('#linkChip');
+  if (!el) return;
+  const attached = S.docKey && S.docKey !== 'no-document';
+  const visibleKey = S.pcDoc?.key || null;
+  const linkable =
+    visibleKey &&
+    (visibleKey.startsWith('untitled:') || /\.(pcraft|psd|psb)$/i.test(visibleKey));
+  if (attached) {
+    el.textContent = `Linked: ${sessionDocLabel({ docKey: S.docKey })} ✕`;
+    el.title = 'This chat is linked to that canvas. Click to detach — the transcript stays with the chat.';
+    el.dataset.mode = 'detach';
+    el.classList.remove('hidden');
+  } else if (linkable && visibleKey !== S.docKey) {
+    el.textContent = `+ Link ${sessionDocLabel({ docKey: visibleKey, docName: S.pcDoc.name || null })}`;
+    el.title = 'Link this chat to the canvas PhotoCraft is showing.';
+    el.dataset.mode = 'link';
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -658,6 +690,7 @@ async function renderSessions() {
           <div class="s-sub">
             <span class="s-dot${s.exists ? '' : ' dead'}">${s.exists ? '●' : '○'}</span>
             ${esc(timeAgo(s.updatedAt) || 'new')} · ${esc((s.model || '').split('/').pop() || 'no model')}
+            ${s.docKey && s.docKey === S.pcDoc?.key ? '<span class="s-onscreen">on screen</span>' : ''}
           </div>
         </div>
         <div class="s-acts">
@@ -2542,6 +2575,25 @@ function bind() {
       renderCanvasSwitch();
       await loadThread();
       toast('Switched to the canvas chat.', 'ok');
+    } catch (err) {
+      toast(friendly(err), 'error');
+    }
+  };
+  $('#linkChip').onclick = async (e) => {
+    e.stopPropagation();
+    const el = $('#linkChip');
+    const mode = el?.dataset.mode;
+    if (!mode) return;
+    try {
+      if (mode === 'detach') {
+        await api.sessionMove(S.threadKey, 'no-document', null);
+        toast('Chat detached from the canvas. The transcript stays with the chat.', 'ok');
+      } else {
+        await api.sessionMove(S.threadKey, S.pcDoc.key, S.pcDoc.name || null);
+        toast('Chat linked to the canvas.', 'ok');
+      }
+      S.visibleCanvas = null;
+      await loadThread();
     } catch (err) {
       toast(friendly(err), 'error');
     }

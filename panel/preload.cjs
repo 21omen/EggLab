@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('egglab', {
   sessionDelete: (key) => ipcRenderer.invoke('sessions:delete', key),
   sessionSwitch: (key, title) => ipcRenderer.invoke('sessions:switch', { key, title }),
   sessionUseDocument: (docKey, title) => ipcRenderer.invoke('sessions:useDocument', { docKey, title }),
+  sessionMove: (key, docKey, title) => ipcRenderer.invoke('sessions:move', { key, docKey, title }),
 
   pcStatus: () => ipcRenderer.invoke('pc:status'),
   pcLaunch: () => ipcRenderer.invoke('pc:launch'),

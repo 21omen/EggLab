@@ -463,8 +463,13 @@ if (!gotLock) {
         // what left two chats on one document and the working document with
         // none. Put the working document back and keep the thread where it is.
         // Only a chat that started with no document may adopt a new canvas.
+        // EXCEPTION (Phase C, beta profile): when the agent deliberately
+        // created a second canvas for a new piece mid-run, the conversation
+        // follows that piece instead of yanking the old canvas back.
+        const runCanvasSwitch = justFinishedRun && chat.consumeRunCanvasSwitch();
         if (
           justFinishedRun &&
+          !runCanvasSwitch &&
           runDoc &&
           runDoc !== NO_DOCUMENT &&
           attachedKey === runDoc &&
@@ -528,7 +533,7 @@ if (!gotLock) {
         // just carried out and (b) an empty detached chat (nothing to lose)
         // may follow the canvas. Everything else is an explicit switch the
         // renderer offers from the canvas badge.
-        if (migrateFrom || chat.canAdoptDocument()) {
+        if (migrateFrom || chat.canAdoptDocument() || (runCanvasSwitch && key !== NO_DOCUMENT)) {
           const result = chat.useDocument(key, doc?.name || null);
           if (result.changed) trace(`thread -> ${key}`);
           sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });

@@ -491,6 +491,35 @@ check(
     /agentOfThread === 'egglab-beta' \? AGENT_BETA_DIR : AGENT_DIR/.test(chatSource),
 );
 check('the canvas badge switch endpoint exists', /sessions:useDocument/.test(mainSource) && /sessionUseDocument/.test(read('preload.cjs')));
+
+// ---- Phase C: explicit links + beta canvas creation --------------------
+const httpSource2 = read('service/http.mjs');
+const mcpSource2 = read('mcp-server.mjs');
+check(
+  'the link chip shows and toggles the canvas link',
+  /renderLinkChip/.test(read('renderer/app.js')) && /sessionMove/.test(read('preload.cjs')),
+);
+check(
+  'the chat list marks the canvas on screen',
+  /s-onscreen/.test(read('renderer/app.js')),
+);
+check(
+  'the official agent keeps the new-document block',
+  /body\.profile !== 'beta'/.test(httpSource2) && /noteRunCanvasSwitch/.test(httpSource2),
+);
+check(
+  'only the beta toolset sends the new-canvas profile',
+  /TOOL_PROFILE === 'agent-beta' \? \{ profile: 'beta' \} : \{\}/.test(mcpSource2),
+);
+check(
+  'the watcher relinks the conversation after a beta canvas switch',
+  /consumeRunCanvasSwitch/.test(mainSource) && /runCanvasSwitch && key !== NO_DOCUMENT/.test(mainSource),
+);
+check(
+  'the beta agent may create a canvas for a separate piece',
+  /A new piece may have its own canvas \(beta\)/.test(read('beta-agent/AGENT.md')) &&
+    /conversation follows that piece/.test(mcpSource2),
+);
 check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);

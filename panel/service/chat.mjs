@@ -673,6 +673,11 @@ let lastRunAt = null;
 // document watcher uses these to tell "the agent left its working document"
 // from "the user switched tabs".
 let lastRunDocKey = null;
+// Set when the BETA agent creates a second canvas mid-turn for a new piece
+// (the panel allows it for the beta profile only). The watcher consumes it at
+// run end: instead of restoring the old canvas, the conversation relinks to
+// the piece's new home.
+let runCanvasSwitched = false;
 let lastRunFinishedAt = null;
 
 // Persist a migrated transcript straight away. Otherwise the file only comes
@@ -1294,6 +1299,18 @@ export function lastRunDocumentKey() {
   return lastRunDocKey;
 }
 
+/** The beta agent started a second canvas for a new piece during this run. */
+export function noteRunCanvasSwitch() {
+  runCanvasSwitched = true;
+}
+
+/** Read-and-clear the mid-run canvas switch (the watcher consumes it). */
+export function consumeRunCanvasSwitch() {
+  const value = runCanvasSwitched;
+  runCanvasSwitched = false;
+  return value;
+}
+
 export function clearHistory() {
   // Clearing mid-run would detach the streaming reply from the timeline and
   // the save at the end would write an empty file over it.
@@ -1704,6 +1721,7 @@ export async function send(text, files = [], refMap = {}) {
   const startedTurn = Date.now();
   lastRunAt = startedTurn;
   lastRunDocKey = docKey;
+  runCanvasSwitched = false;
 
   // Provider/account limits cannot heal inside one turn. Retrying them burns
   // the whole retry budget while the user waits on "retrying 1/6". Surface the

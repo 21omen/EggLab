@@ -181,6 +181,32 @@ button { cursor: pointer; }
   -webkit-app-region: no-drag;
 }
 .canvas-switch:hover { background: rgba(214, 164, 84, 0.12); }
+/* Link chip (Phase C): shows and toggles the chat's canvas link. */
+.link-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  font-size: 9px;
+  padding: 2px 8px;
+  margin-left: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.link-chip:hover { color: var(--gold); border-color: var(--gold); }
+/* "On screen" pill in the chat list: the row's canvas is the one PhotoCraft shows. */
+.s-onscreen {
+  font-size: 8.5px;
+  color: var(--gold);
+  border: 1px solid rgba(214, 164, 84, 0.35);
+  border-radius: var(--radius-inner);
+  padding: 0 5px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
 
 .sessions {
   position: absolute;

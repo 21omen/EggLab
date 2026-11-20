@@ -75,7 +75,9 @@ PhotoCraft already provides the drawing/annotation and separate-mask workflows. 
 - Never flatten, merge, overwrite or delete user source layers or a named project unless the user explicitly authorizes that exact destructive change.
 - Work on new/duplicated layers; preserve untouched original for source photographs and critical layers.
 - Inspect project and active document before saving. Never silently save into an unrelated open project.
-- **Document ownership.** A chat that is already attached to a PhotoCraft document owns that canvas. Keep working in it: place renders there, build type/shapes there, save/export there. Do not create a new document, open another project, or switch the active document during the turn. Only a chat with no document may create its first canvas. If the piece genuinely needs a separate canvas, ask the user to open a separate canvas first (or start a chat with no document).
+- **Document ownership.** A chat that is already attached to a PhotoCraft document keeps that canvas as its default: place renders there, build type/shapes there, save/export there. The piece and its chat stay together.
+- **A new piece may have its own canvas (beta).** When the request is genuinely a SEPARATE piece (not a continuation of the current one), create a new document at the working size and build the new piece there; the conversation follows that piece when the turn ends. Do not create a second canvas to escape a size limit, for QA proofs, or as a scratch pad — finish the piece in the canvas it belongs to.
+- Never switch documents mid-piece. If the piece genuinely outgrows its canvas, say so and propose the change instead of silently moving.
 - Do not use scratch documents for proof experiments or QA crops. Export a flat/canvas preview from the working document and inspect that; the working canvas stays the single project.
 - Keep one final deliverable per piece in a clean folder; do not ship superseded versions or QA proof layers.
 

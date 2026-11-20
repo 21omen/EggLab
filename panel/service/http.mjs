@@ -298,7 +298,10 @@ async function handle(req, res, url) {
       // used to retarget the conversation onto it (two chats on one doc, the
       // working doc left without its chat). Only a chat with no document may
       // create one; a human can always start a new chat for a separate piece.
-      if (body.source === 'agent') {
+      // EXCEPTION (Phase C, beta profile): the beta agent may start a second
+      // canvas for a genuinely new piece — the conversation then follows that
+      // piece when the turn ends (chat.noteRunCanvasSwitch → watcher relink).
+      if (body.source === 'agent' && body.profile !== 'beta') {
         const working = chat.workingDocument();
         if (working) {
           return json(res, 409, {
@@ -308,6 +311,9 @@ async function handle(req, res, url) {
               'or ask the user to open a separate canvas first.',
           });
         }
+      }
+      if (body.source === 'agent' && body.profile === 'beta' && chat.workingDocument()) {
+        chat.noteRunCanvasSwitch();
       }
       return json(res, 200, { result: await pc.newDocument(body) });
     }
