@@ -28,9 +28,15 @@ EOF
 fi
 
 cd "$ROOT/panel"
-if [ ! -x node_modules/.bin/electron ]; then
+if [ ! -d node_modules/electron ]; then
   echo "installing EggLab's npm dependencies (first run) ..."
   npm install
+fi
+# npm 12 blocks install scripts by default, which skips the download of the
+# Electron binary itself. Fetch it explicitly (only Electron's own script).
+if [ ! -f node_modules/electron/path.txt ]; then
+  echo "downloading the Electron runtime ..."
+  node node_modules/electron/install.js
 fi
 
 flags=()
