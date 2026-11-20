@@ -1616,6 +1616,11 @@ export async function send(text, files = [], refMap = {}) {
 
       const child = spawn(oc.cmd, args, {
         cwd: agentDir,
+        // OpenCode takes its project directory from $PWD when it is set, and
+        // Node does not update PWD for a child's cwd. Inherited from the
+        // panel's own folder, it made OpenCode load the repo-root developer
+        // config and lose every egl_* tool.
+        env: { ...process.env, PWD: agentDir },
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         // .cmd shims (npm global installs) can only be spawned through a

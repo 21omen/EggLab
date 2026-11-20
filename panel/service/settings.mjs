@@ -885,6 +885,8 @@ export async function opencodeModels(force = false, options = {}) {
     try {
       child = spawn(oc.cmd, args, {
         cwd,
+        // OpenCode resolves its project from $PWD; keep it in step with cwd.
+        env: { ...process.env, PWD: cwd },
         windowsHide: true,
         shell: oc.shell,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -981,6 +983,8 @@ function runOpenCodeText(oc, args, { cwd = process.env.USERPROFILE || os.homedir
     try {
       child = spawn(oc.cmd, args, {
         cwd,
+        // OpenCode resolves its project from $PWD; keep it in step with cwd.
+        env: { ...process.env, PWD: cwd },
         windowsHide: true,
         shell: oc.shell,
         stdio: ['ignore', 'pipe', 'pipe'],
