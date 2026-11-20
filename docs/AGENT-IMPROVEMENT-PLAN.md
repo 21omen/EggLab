@@ -112,3 +112,73 @@ almost everything is enforced by prompt compliance only:
 - Single-agent architecture, 21 curated `egl_*` tools, Qwen-Image-2.1 only,
   progressive skill loading, fail-closed security. No multi-agent system: the
   bottleneck is enforcement, not orchestration.
+
+## Research round 2 (Nov 2026) — refinements to the phases above
+
+Sources: Anthropic *Writing effective tools for agents — with agents* (Sep
+2025) and *Demystifying evals for AI agents* (Jan 2026); 2026 image-agent
+papers — *Iterative Refinement Improves Compositional Image Generation*
+(arXiv 2601.15286), *ImageRSI: Verification-Driven Recursive Self-Improvement*
+(arXiv 2610.32120), *VEvo-Harness* (arXiv 2610.39158). Plus verified engine
+experiments (see `panel/beta-agent/references/engine/qwen-image-2.1-legacy-facts.md`).
+
+### Phase 1 refinements — tool surface
+- **Verbosity control pattern**: expose a `response_format`-style enum
+  (`concise`/`detailed`) on chatty tools instead of booleans; return
+  decision-relevant fields first, technical identifiers only in detailed mode.
+- **Helpful error responses**: validation errors must state the expected shape
+  and the concrete fix ("region must be [x,y,w,h] in document pixels; got 2
+  items"), never opaque codes — errors are prompt-engineering surface.
+- **Low-signal field audit**: rename or drop uuid-like identifiers in tool
+  responses; agents handle natural-language names measurably better.
+- **Consolidation review**: verify no tool overlaps ambiguously with a
+  neighbor (the agent can't resolve ambiguity better than a human engineer).
+
+### Phase 2 refinements — harness
+- Completion contract should be **JSON-structured** (the long-running-agent
+  research found models over-edit free-form Markdown checklists and resist
+  editing JSON).
+- Turn-state nudges stay **one short injected reminder**, never a block.
+
+### Phase 3 refinements — visual QA loop (now evidence-based)
+- **Score dimensions** (from ImageRSI-style multi-dimension judging): text
+  accuracy, object count / attribute binding, layout & hierarchy, edges/seams,
+  identity fidelity, alpha correctness — each scored with **evidence from the
+  pixels actually inspected**, not vibes. VEvo-Harness's core finding: shallow
+  generate-verify-rewrite loops that blindly trust VLM judgment plateau; verify
+  each claimed defect before acting on it.
+- **Sequential correction**: for complex briefs, decompose into sequential
+  corrections instead of one giant re-prompt (iterative refinement beat
+  compute-matched parallel sampling, 58.7% human preference).
+- **Accept gate + repair budget**: accept only when no dimension fails and no
+  veto condition (wrong text, identity break) fires; max 2 repair rounds, one
+  named defect per round.
+
+### Phase 5 refinements — evals
+- **Grade outcomes, not paths**: rigid tool-sequence assertions are brittle and
+  punish valid strategies; grade deliverables (file exists, correct format and
+  size, project saved, QA record present) with partial credit, plus rubric
+  graders on the final report. Keep sequence checks only for genuinely
+  dangerous behaviors (destructive ops without authorization).
+- **Two suite types**: capability evals (start low pass rate, hill to climb)
+  and regression evals (must stay ~100%). Capabilities that reach ~100%
+  graduate into the regression suite.
+- **Balanced sets**: include "should NOT" cases (don't inspect trivial text
+  answers; don't re-render when a type fix in PhotoCraft is right).
+- **Consistency metric**: pass^k (all k trials succeed) fits a
+  customer-facing agent better than pass@k; run multiple trials per task.
+- **Read transcripts**: every failed eval run gets a transcript read before the
+  agent is blamed; 0% pass@k usually indicts the task, not the agent.
+- **Eval-driven development**: write the eval for a planned capability before
+  implementing it in the beta agent.
+- Start with 20–50 tasks drawn from real user-reported failures.
+
+### New items not in the original plan
+- **Deterministic live smoke eval** (cheap, no LLM judge): drive the real
+  panel API through 3–5 canonical jobs and assert outcomes only — output file
+  exists with expected format/size, project saved, QA record written. Runs in
+  `npm test` when the engine is present.
+- **Transcript feedback loop**: real user-reported failures become eval tasks
+  (the user's masking/region/sketch report is the first source).
+- Optional later: an OpenCode `hidden` QA-judge subagent — only if the
+  single-agent QA loop measurably plateaus (complexity requires evidence).
