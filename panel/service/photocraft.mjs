@@ -36,7 +36,12 @@ class Bridge {
     }
     if (!fs.existsSync(s.tokenFile)) {
       fs.mkdirSync(path.dirname(s.tokenFile), { recursive: true });
-      fs.writeFileSync(s.tokenFile, crypto.randomBytes(32).toString('hex'), 'utf8');
+      fs.writeFileSync(s.tokenFile, crypto.randomBytes(32).toString('hex'), { encoding: 'utf8', mode: 0o600 });
+    }
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(s.tokenFile, 0o600);
+      } catch {}
     }
     const child = spawn(
       cli,
@@ -253,7 +258,14 @@ export async function launch() {
   if (!fs.existsSync(s.exe)) throw new Error(`PhotoCraft not found at ${s.exe}`);
   if (!fs.existsSync(s.tokenFile)) {
     fs.mkdirSync(path.dirname(s.tokenFile), { recursive: true });
-    fs.writeFileSync(s.tokenFile, crypto.randomBytes(32).toString('hex'), 'utf8');
+    fs.writeFileSync(s.tokenFile, crypto.randomBytes(32).toString('hex'), { encoding: 'utf8', mode: 0o600 });
+  }
+  // PhotoCraft on Linux/macOS refuses a token file that group or others can
+  // read. Older EggLab builds created it with the default umask (0644).
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(s.tokenFile, 0o600);
+    } catch {}
   }
   const args = [
     '--control',
