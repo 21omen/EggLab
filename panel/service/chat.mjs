@@ -279,12 +279,16 @@ export function buildWorkspace({ url, token, beta = false }) {
           type: 'local',
           // Packaged installs have no `node` on PATH and mcp-server.mjs lives
           // outside app.asar (extraResources): run it with the Electron binary
-          // in Node mode (ELECTRON_RUN_AS_NODE). Dev keeps plain node.
+          // in Node mode (ELECTRON_RUN_AS_NODE). Dev on Windows keeps plain
+          // node; elsewhere the Electron binary is used in dev too, because an
+          // app started from a desktop menu often lacks a shell-managed node
+          // (nvm, fnm, ~/.local) on PATH and the tools would silently vanish.
           // One server file serves both agents; the beta workspace points it
           // at the beta knowledge package with EGGLAB_KNOWLEDGE_ROOT.
-          command: PACKAGED
-            ? [process.execPath, path.join(KNOWLEDGE_DIR, 'mcp-server.mjs')]
-            : ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
+          command:
+            PACKAGED || process.platform !== 'win32'
+              ? [process.execPath, path.join(PACKAGED ? KNOWLEDGE_DIR : PANEL_DIR, 'mcp-server.mjs')]
+              : ['node', path.join(PANEL_DIR, 'mcp-server.mjs')],
           codemode: false,
           environment: {
             EGGLAB_URL: url,
@@ -298,7 +302,7 @@ export function buildWorkspace({ url, token, beta = false }) {
             EGGLAB_READ_ROOTS: JSON.stringify(
               [...new Set([OUT_DIR, TMP_DIR, s.photocraft.projectRoot].filter(Boolean))],
             ),
-            ...(PACKAGED ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+            ...(PACKAGED || process.platform !== 'win32' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
           },
           timeout: 4200000,
         },
