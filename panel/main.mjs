@@ -551,6 +551,17 @@ if (!gotLock) {
         // between documents, so following the canvas is predictable: switching
         // tabs reveals that document's own chat (minting a uid chat when the
         // document has none). Transient renders are still not chat scopes.
+        // EXCEPTION: a pinned chat (explicit pick whose canvas could not be
+        // opened) holds the watcher while PhotoCraft keeps showing the same
+        // document — otherwise it would drag the conversation straight back.
+        const pin = chat.chatPinState();
+        if (pin) {
+          if (pin.threadKey === chat.currentThreadId() && key === pin.docKey) {
+            sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: chat.documentKey(), doc });
+            return;
+          }
+          chat.clearChatPin();
+        }
         const result = chat.useDocument(key, doc?.name || null);
         if (result.changed) trace(`thread -> ${key}`);
         // Advance the watcher state only after the chat actually adopted the
@@ -865,6 +876,7 @@ ipcMain.handle('chat:createCanvas', async (e, { key }) => {
   const newKey = state?.document?.key;
   if (!newKey) throw new Error('PhotoCraft did not open a new canvas.');
   chat.moveThread(key, newKey, state.document?.name || null);
+  chat.clearChatPin();
   return { key: newKey };
 });
 // Phase D: the per-chat asset tray — finished renders/edits as placeable assets.
@@ -911,6 +923,12 @@ ipcMain.handle('sessions:switch', async (e, { key }) => {
   // old active tab and pull the chat back — the "switch did nothing" symptom.
   holdSyncUntil = Date.now() + 4000;
   if (shown) trace(`document follows chat -> ${chat.documentKey()}`);
+  else if (res.threadId) {
+    // The picked chat's canvas could not be opened: pin the conversation so
+    // the watcher does not drag it back while the user decides in the popup.
+    chat.pinChatSwitch(res.threadId, lastDocKey);
+    trace(`chat pinned (canvas unavailable) -> ${res.threadId}`);
+  }
   return { ...res, documentOpened: shown, history: chat.getHistory() };
 });
 ipcMain.handle('sessions:newThread', () => chat.newThread());

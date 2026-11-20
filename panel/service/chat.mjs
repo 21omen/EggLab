@@ -674,6 +674,24 @@ let lastRunAt = null;
 // document watcher uses these to tell "the agent left its working document"
 // from "the user switched tabs".
 let lastRunDocKey = null;
+// A chat the user explicitly picked whose canvas could not be opened. While
+// this pin is set and PhotoCraft keeps showing the SAME document, the watcher
+// must not drag the conversation back to that document's chat — the user is
+// deciding in the popup (make a blank canvas, or continue without one). Any
+// real PhotoCraft document switch clears the pin and chat-following resumes.
+let chatPin = null; // { threadKey, docKey }
+
+export function pinChatSwitch(threadKey, docKey) {
+  chatPin = { threadKey: String(threadKey || ''), docKey: String(docKey || '') };
+}
+
+export function chatPinState() {
+  return chatPin ? { ...chatPin } : null;
+}
+
+export function clearChatPin() {
+  chatPin = null;
+}
 // Set when the BETA agent creates a second canvas mid-turn for a new piece
 // (the panel allows it for the beta profile only). The watcher consumes it at
 // run end: instead of restoring the old canvas, the conversation relinks to

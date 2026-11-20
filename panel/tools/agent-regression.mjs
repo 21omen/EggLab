@@ -513,6 +513,15 @@ check(
   /canvasPopupMake/.test(appJs) && /sessionMove/.test(read('preload.cjs')) && /sessions:move/.test(mainSource),
 );
 check(
+  'a pinned chat switch is not yanked back by the watcher',
+  /pinChatSwitch/.test(chatSource) && /pinChatSwitch\(res\.threadId, lastDocKey\)/.test(mainSource) &&
+    /chat\.chatPinState\(\)/.test(mainSource) && /pin\.threadKey === chat\.currentThreadId\(\)/.test(mainSource),
+);
+check(
+  'making a canvas clears the pin',
+  /clearChatPin\(\)/.test(mainSource) && /export function clearChatPin/.test(chatSource),
+);
+check(
   'the chat list marks the canvas on screen',
   /s-onscreen/.test(read('renderer/app.js')),
 );
