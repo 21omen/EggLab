@@ -384,6 +384,15 @@ function handleEvent(ev) {
       break;
     case 'setup':
       handleSetupEvent(ev);
+      if (ev.step === 'opencode') {
+        if (ev.status === 'done' || ev.status === 'error') {
+          S.ocReport = null;
+          S.providersLoaded = false;
+          refreshRuntime();
+          refreshProviders(ev.status === 'done');
+        }
+        renderOcStatus();
+      }
       break;
     case 'update':
       paintUpdate(ev.update);
@@ -1607,8 +1616,6 @@ function syncUI() {
   $('#pcPort').value = s.photocraft.controlPort;
   $('#pcWidth').value = s.photocraft.width;
   $('#pcExe').value = s.photocraft.exe;
-  const ocExeInput = $('#ocExe');
-  if (ocExeInput) ocExeInput.value = s.opencode?.exe || '';
   $('#chkDock').checked = Boolean(s.photocraft.dock);
   $('#pcRoots').textContent = `read root ${s.photocraft.readRoot} · write root ${s.photocraft.writeRoot}`;
   const modelsDir = S.engine?.modelsDir || s.modelsDir || '';
@@ -1616,6 +1623,12 @@ function syncUI() {
   if (modelsDirEl) {
     modelsDirEl.textContent = modelsDir || 'Not set';
     modelsDirEl.title = modelsDir || '';
+  }
+  const ocExeEl = $('#ocExe');
+  if (ocExeEl) {
+    const selected = S.ocReport?.configuredPath || s.opencode?.exe || '';
+    ocExeEl.value = selected;
+    ocExeEl.title = selected;
   }
 
   renderAspects();
@@ -1943,8 +1956,9 @@ let providerTimer = 0;
 
 async function refreshProviders(force = false) {
   try {
-    const data = await api.opencodeModels(force);
-    S.providers = data.providers;
+    const report = await api.opencodeReport(force);
+    S.ocReport = report;
+    S.providers = report.providers || [];
     S.providersLoaded = true;
     renderProviders();
   } catch (err) {
@@ -1958,7 +1972,7 @@ async function refreshProviders(force = false) {
 // connects/disconnects a provider in another window, the list updates itself.
 function startProviderSync() {
   stopProviderSync();
-  providerTimer = setInterval(() => refreshProviders(true), 45000);
+  providerTimer = setInterval(() => refreshProviders(false), 60000);
 }
 
 function stopProviderSync() {
@@ -1966,9 +1980,51 @@ function stopProviderSync() {
   providerTimer = 0;
 }
 
+function renderOcStatus() {
+  const box = $('#ocStatus');
+  if (!box) return;
+  const report = S.ocReport;
+  const selected = S.settings?.opencode?.model || '';
+  const rows = [];
+  const add = (text, cls = '') => rows.push(`<div class="oc-status-row ${cls}">${esc(text)}</div>`);
+  if (!report) {
+    box.innerHTML = '<div class="oc-status-row">Checking OpenCode…</div>';
+    return;
+  }
+  if (!report.ok) {
+    add(report.error || 'OpenCode v2 or newer was not found.', 'bad');
+    if (report.configuredPath) {
+      add(`Selected path: ${report.configuredPath}${report.configuredMissing ? ' (missing)' : ''}`, 'dim');
+    }
+    box.innerHTML = rows.join('');
+    return;
+  }
+  const version = report.version || '2.x';
+  const pathLabel = report.configuredPath
+    ? `${report.configuredMissing ? 'selected path missing; using ' : ''}${report.bin}`
+    : report.bin;
+  add(`OpenCode ${version} · ${pathLabel}`);
+  add(`${report.providers?.length || 0} providers · ${report.modelCount || 0} models · ${report.auth?.length || 0} accounts`);
+  if (report.modelsError) add(report.modelsError, 'bad');
+  if (report.authError) add(`Accounts unavailable: ${report.authError}`, 'warn');
+  if (selected) {
+    add(
+      report.selectedAvailable
+        ? `Selected model available: ${selected}`
+        : `Selected model is not in the current list: ${selected}`,
+      report.selectedAvailable ? 'dim' : 'warn',
+    );
+  } else {
+    add('No chat model selected yet.', 'warn');
+  }
+  if (report.configError) add(report.configError, 'warn');
+  box.innerHTML = rows.join('');
+}
+
 function renderProviders() {
   const box = $('#providersList');
   if (!box) return;
+  renderOcStatus();
   const s = S.settings;
   const current = s?.opencode?.model || '';
   const currentProvider = current.split('/')[0] || '';
@@ -1982,13 +2038,30 @@ function renderProviders() {
 
   const all = S.providers || [];
   if (!all.length) {
-    box.innerHTML = '<div class="providers-empty">No OpenCode models found. Connect a provider in OpenCode first.</div>';
+    const report = S.ocReport;
+    const detail = report?.modelsError
+      ? `<div class="providers-error">${esc(report.modelsError)}</div>`
+      : '';
+    box.innerHTML = `<div class="providers-empty">No OpenCode models found. Connect a provider in OpenCode first.</div>${detail}`;
     return;
   }
 
   const q = S.ocSearch.trim().toLowerCase();
   const searching = Boolean(q);
-  const providers = all
+  // Always keep the currently selected model visible, even when its provider
+  // is temporarily absent from the live list (custom provider, offline
+  // discovery, or a model configured in OpenCode but not returned right now).
+  const currentModel = current;
+  const currentModelRow = currentModel && !all.some((provider) =>
+    provider.models.some((model) => model.id === currentModel),
+  )
+    ? {
+        provider: currentModel.split('/')[0] || 'current',
+        models: [{ id: currentModel, modelId: currentModel.split('/').slice(1).join('/') || currentModel, provider: currentModel.split('/')[0] || 'current' }],
+      }
+    : null;
+  const allWithCurrent = currentModelRow ? [currentModelRow, ...all] : all;
+  const providers = allWithCurrent
     .map((p) => ({
       provider: p.provider,
       models: q
@@ -2561,11 +2634,26 @@ function bind() {
       if (!file) return;
       try {
         await api.setOpenCode(file);
+        S.ocReport = null;
+        S.providersLoaded = false;
         await refreshRuntime();
         await refreshProviders(true);
-        toast('OpenCode linked. Your providers and models are listed above.', 'ok');
+        toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
       } catch (err) {
         toast(friendly(err), 'error');
+      }
+    };
+  }
+  const installOpenCodeBtn = $('#btnInstallOpenCode');
+  if (installOpenCodeBtn) {
+    installOpenCodeBtn.onclick = async () => {
+      installOpenCodeBtn.disabled = true;
+      try {
+        await api.setupAction('opencode');
+        toast('Downloading the OpenCode CLI…', 'ok');
+      } catch (err) {
+        toast(friendly(err), 'error');
+        installOpenCodeBtn.disabled = false;
       }
     };
   }
@@ -2918,21 +3006,24 @@ async function onSetupAction(action) {
         const file = await api.pickOpenCode();
         if (!file) return;
         await api.setupAction('opencode-path', { path: file });
-        await loadSetup();
-        await refreshRuntime();
+        S.ocReport = null;
+        S.providersLoaded = false;
         S.setupOcModels = [];
         S.setupOcReport = null;
-        toast('OpenCode linked. Refresh models to load providers.');
+        await loadSetup();
+        await refreshRuntime();
+        await refreshProviders(true);
+        toast('OpenCode linked. Providers and models loaded from that binary.', 'ok');
         break;
       }
       case 'refresh-setup-models': {
         const report = await api.opencodeReport(true);
+        S.setupOcReport = report;
         const models = [];
         for (const provider of report.providers || []) {
           for (const model of provider.models || []) models.push(model.id);
         }
         S.setupOcModels = models;
-        S.setupOcReport = report;
         renderSetup();
         if (report.modelsError) toast(report.modelsError, 'error');
         else toast(`${models.length} model${models.length === 1 ? '' : 's'} from ${report.providers?.length || 0} provider${report.providers?.length === 1 ? '' : 's'}.`, 'ok');

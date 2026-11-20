@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
-import { AGENT_DIR, DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
+import { AGENT_DIR, BIN_DIR, DATA_DIR, ENGINE_DIR, MODELS_DIR, PACKAGED, ROOT, readJson, writeJson } from './paths.mjs';
 
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
@@ -532,6 +532,32 @@ function compareVersions(a, b) {
   return 0;
 }
 
+/** CLIs installed by EggLab's setup/first-run download, newest first. */
+function managedOpenCodeCandidates() {
+  if (!BIN_DIR) return [];
+  const found = [];
+  const scan = (dir, depth = 0) => {
+    if (depth > 3) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) scan(full, depth + 1);
+      else if (/^opencode(-cli)?\.exe$/i.test(entry.name)) found.push(full);
+    }
+  };
+  scan(BIN_DIR);
+  return found
+    .map((file) => ({ file, version: probeOpenCodeVersion(file) }))
+    .filter((entry) => entry.version)
+    .sort((a, b) => compareVersions(b.version, a.version))
+    .map((entry) => entry.file);
+}
+
 /** CLIs bundled with the OpenCode desktop app (newest first). */
 function desktopOpenCodeCandidates() {
   const roaming = process.env.APPDATA || '';
@@ -562,6 +588,7 @@ export function resolveOpenCode() {
   const roaming = process.env.APPDATA || '';
   const candidates = [
     configured,
+    ...managedOpenCodeCandidates(),
     ...desktopOpenCodeCandidates(),
     home && path.join(home, '.opencode', 'bin', 'opencode.exe'),
     roaming && path.join(roaming, 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
@@ -627,18 +654,22 @@ export function setOpenCodePath(file) {
   clearOpenCodeCache();
   modelsCache = null;
   modelsCacheKey = '';
+  reportCache = null;
   return { exe: abs, version: version.join('.') };
 }
 
 let modelsCache = null;
 let modelsCacheAt = 0;
 let modelsCacheKey = '';
+let reportCache = null;
+let reportCacheAt = 0;
 const MODELS_CACHE_TTL = 30000; // 30 s — fresh enough for auto-sync
+const REPORT_CACHE_TTL = 30000;
 
 export async function opencodeModels(force = false, options = {}) {
   const oc = options.oc || resolveOpenCode();
-  const cwd = options.cwd || process.env.HOME || process.env.USERPROFILE;
-  const standalone = Boolean(options.standalone) && (oc.version?.[0] ?? 1) >= 2;
+  const cwd = options.cwd || AGENT_DIR;
+  const standalone = options.standalone !== false && (oc.version?.[0] ?? 1) >= 2;
   const cacheKey = `${oc.cmd}|${(oc.version || []).join('.')}|${cwd}|${standalone}`;
   const now = Date.now();
   if (!force && modelsCache && modelsCacheKey === cacheKey && now - modelsCacheAt < MODELS_CACHE_TTL) {
@@ -890,11 +921,17 @@ export async function opencodeConfigInfo(oc = resolveOpenCode()) {
  * default model. Read-only; no credential is read or returned.
  */
 export async function opencodeReport(force = false) {
+  const now = Date.now();
+  if (!force && reportCache && now - reportCacheAt < REPORT_CACHE_TTL) return reportCache;
   const oc = resolveOpenCode();
+  const configuredPath = String(settings.opencode?.exe || '');
+  const configuredMissing = Boolean(configuredPath) && !fs.existsSync(configuredPath);
   if (!oc.version || oc.version[0] < 2) {
     return {
       ok: false,
       bin: oc.cmd,
+      configuredPath,
+      configuredMissing,
       version: oc.version ? oc.version.join('.') : null,
       error: 'OpenCode v2 or newer was not found. Pick an existing opencode.exe or install it.',
       paths: null,
@@ -903,6 +940,8 @@ export async function opencodeReport(force = false) {
       modelsError: null,
       activeModel: null,
       configPath: null,
+      selectedModel: settings.opencode?.model || null,
+      selectedAvailable: false,
     };
   }
   const [paths, auth, models, config] = await Promise.all([
@@ -911,21 +950,34 @@ export async function opencodeReport(force = false) {
     opencodeModels(force, { oc, cwd: AGENT_DIR, standalone: true }),
     opencodeConfigInfo(oc),
   ]);
-  return {
+  const selectedModel = settings.opencode?.model || null;
+  const providers = models.providers || [];
+  const selectedAvailable = Boolean(
+    selectedModel && providers.some((provider) => provider.models.some((model) => model.id === selectedModel)),
+  );
+  const value = {
     ok: true,
     bin: oc.cmd,
+    configuredPath,
+    configuredMissing,
     version: oc.version.join('.'),
     paths,
     auth: auth.rows,
     authError: auth.error,
-    providers: models.providers,
-    modelCount: models.providers.reduce((sum, provider) => sum + provider.models.length, 0),
+    providers,
+    modelCount: providers.reduce((sum, provider) => sum + provider.models.length, 0),
     modelsError: models.error,
     modelsCwd: models.cwd,
     activeModel: config.model,
     configPath: config.path,
     configError: config.error,
+    selectedModel,
+    selectedAvailable,
   };
+  if (models.error) return value;
+  reportCache = value;
+  reportCacheAt = now;
+  return value;
 }
 
 export function ensureDirs() {

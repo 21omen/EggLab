@@ -143,6 +143,29 @@ check(
     /data-role-select/.test(rendererSource) &&
     /roleDir\(cfg, entry\.key\)/.test(read('panel/service/models.mjs')),
 );
+check(
+  'agent model panel uses the selected OpenCode binary report',
+  /opencodeReport/.test(settingsSource) &&
+    /S\.ocReport/.test(rendererSource) &&
+    /renderOcStatus/.test(rendererSource) &&
+    /refreshProviders\(false\)/.test(rendererSource),
+);
+check(
+  'agent model list matches the chat workspace',
+  /cwd: AGENT_DIR/.test(settingsSource) && /standalone: true/.test(settingsSource),
+);
+check(
+  'OpenCode discovery includes EggLab-installed CLI',
+  /managedOpenCodeCandidates/.test(settingsSource) && /BIN_DIR/.test(read('panel/service/paths.mjs')),
+);
+check(
+  'agent model panel warns when the selected model is unavailable',
+  /selectedAvailable/.test(settingsSource) && /not in the current list/.test(rendererSource),
+);
+check(
+  'agent model panel can download the setup CLI',
+  /btnInstallOpenCode/.test(rendererSource) && /case 'opencode':/.test(read('panel/main.mjs')),
+);
 
 // ---- PowerShell parse (Windows only) ----------------------------------
 function parsePs1(file) {

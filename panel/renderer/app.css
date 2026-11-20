@@ -1087,6 +1087,27 @@ button { cursor: pointer; }
 }
 .providers-error { color: var(--red); }
 
+.oc-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-element);
+  background: var(--bg);
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+.oc-status-row {
+  font-size: 10px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-status-row.bad { color: var(--red); }
+.oc-status-row.warn { color: var(--gold); }
+.oc-status-row.dim { color: var(--dimmer); }
+
 .provider-group { border: 1px solid var(--line); border-radius: var(--radius-element); overflow: hidden; background: var(--bg); }
 .provider-group + .provider-group { margin-top: 0; }
 
