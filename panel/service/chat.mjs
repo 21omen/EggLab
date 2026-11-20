@@ -582,7 +582,10 @@ export async function recoverMissingHistories(limit = 24) {
           !item.pending,
       );
     if (current && current.items.length && !needsRepair) continue;
-    const exported = await sessions.exportSession(entry.sessionId);
+    // Sessions are project-scoped: recover each transcript from the workspace
+    // its agent runs in.
+    const scopeDir = entry.agent === 'egglab-beta' ? AGENT_BETA_DIR : AGENT_DIR;
+    const exported = await sessions.exportSession(entry.sessionId, scopeDir);
     const items = sessionToItems(exported);
     if (!items.length) continue;
     writeJson(file, {
@@ -737,6 +740,11 @@ function adoptThread({ emitEvent = true, title = null } = {}) {
  */
 export function useDocument(key, title = null) {
   const next = String(key || NO_DOC_KEY);
+  // A render/preview opened as a document is not a chat scope: it gets no
+  // thread and never switches the conversation (Phase A).
+  if (next !== NO_DOC_KEY && sessions.isTransientDocKey(next)) {
+    return { key: docKey, threadId, changed: false, transient: true };
+  }
   // Same document: whatever thread the user chose here (including one they
   // just started with "new chat") wins over "most recently updated". Never
   // reset it — that would make the new-chat button feel like it did nothing.
@@ -853,6 +861,25 @@ export function documentKey() {
   return docKey;
 }
 
+/** A render/scratch path opened as a document is a preview, not a chat scope. */
+export function isTransientKey(key) {
+  return sessions.isTransientDocKey(key);
+}
+
+/**
+ * Phase A auto-adopt rule: only a DETACHED chat with an EMPTY thread may
+ * follow the canvas PhotoCraft puts on screen — there is nothing to lose. Any
+ * other chat switches canvases explicitly.
+ */
+export function canAdoptDocument() {
+  return (
+    !workingDocument() &&
+    !(Array.isArray(history?.items) && history.items.length) &&
+    !active &&
+    !turnRunning
+  );
+}
+
 /**
  * The PhotoCraft document this chat is working in, or null when it has none.
  * A chat is authoritative over the canvas: once it owns a document, an agent
@@ -893,6 +920,7 @@ export async function deleteThread(key) {
   // "deleted" chat back. The tombstone also survives a refused unlink or a late
   // transcript write, so nothing can re-register it on the next launch.
   sessions.markDeleted(target);
+  const agentOfThread = sessions.entryFor(target)?.agent || null;
   const removed = sessions.forgetThread(target);
 
   const file = historyFile(target);
@@ -919,7 +947,9 @@ export async function deleteThread(key) {
   );
   // OpenCode cleanup is not part of durability. Let it finish in the background
   // so a slow/wedged CLI never makes the delete look stuck (or loses it on quit).
-  sessions.deleteOpencodeSession(removed.sessionId).catch(() => {});
+  // Delete from the project scope the chat's agent runs in.
+  const deleteScope = agentOfThread === 'egglab-beta' ? AGENT_BETA_DIR : AGENT_DIR;
+  sessions.deleteOpencodeSession(removed.sessionId, deleteScope).catch(() => {});
   return { removed: { deleted: Boolean(removed.sessionId) }, fileRemoved };
 }
 
@@ -1439,6 +1469,11 @@ export async function send(text, files = [], refMap = {}) {
     docName: docTitle,
     agent: agentId,
   });
+  // A fork is a fact the user must see: the next reply starts a fresh agent
+  // session, and pretending continuity would read as "the agent forgot".
+  if (bound.switched && bound.reasons?.length) {
+    noteSystem(`Context reset (${bound.reasons.join(', ')}). The next reply starts a fresh agent session; this transcript is kept.`);
+  }
   const firstRun = !bound.sessionId;
   const title = bound.title || message.split('\n')[0].slice(0, 48);
   const refNote = cleanFiles.length

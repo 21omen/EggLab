@@ -28,6 +28,7 @@ const S = {
   pcLayerSeq: 0,
   docKey: 'no-document',
   threadKey: null,
+  visibleCanvas: null,
   threadTitle: null,
   pcDoc: null,
   sessions: { currentKey: null, docs: [] },
@@ -496,17 +497,22 @@ function handleChatEvent(ev) {
       S.threadKey = ev.threadId || ev.docKey || 'no-document';
       S.threadTitle = ev.title || null;
       S.items = ev.items || [];
+      S.visibleCanvas = null;
       S.nodeIndex.clear();
       renderTimeline();
       renderThreadLabel();
+      renderCanvasSwitch();
       break;
     case 'document':
-      // PhotoCraft changed the active document; the service already moved the
-      // chat to that document's thread. Refresh the full status too — the
-      // pcbar (and the Save button, which depends on dirty/path) must follow,
-      // otherwise it keeps describing the document that was active before.
+      // PhotoCraft changed the active document. Phase A: the canvas no longer
+      // moves the chat — when the visible canvas differs from the chat's
+      // canvas, show an explicit "switch" affordance instead.
       S.pcDoc = ev.doc ? { ...ev.doc } : null;
+      S.visibleCanvas = ev.canvasMismatch
+        ? { key: ev.visibleDocKey || null, name: ev.visibleDocName || null }
+        : null;
       renderThreadLabel();
+      renderCanvasSwitch();
       refreshPc();
       if (ev.docKey && ev.docKey !== S.docKey) loadThread();
       break;
@@ -545,6 +551,22 @@ function renderThreadLabel() {
   // Only claim "unsaved" when the thread belongs to the focused document,
   // because that is the only dirty flag we actually have.
   el.classList.toggle('dirty', Boolean(S.docKey && S.pcDoc?.key === S.docKey && S.pcDoc.dirty));
+}
+
+/**
+ * The canvas badge (Phase A): shown when PhotoCraft's visible canvas differs
+ * from the chat's canvas. The chat never moves by itself; the user switches
+ * explicitly. Clicking adopts the visible canvas's chat.
+ */
+function renderCanvasSwitch() {
+  const el = $('#canvasSwitch');
+  if (!el) return;
+  const mismatch = S.visibleCanvas && S.visibleCanvas.key && S.visibleCanvas.key !== S.docKey;
+  el.classList.toggle('hidden', !mismatch);
+  if (!mismatch) return;
+  const name = sessionDocLabel({ docKey: S.visibleCanvas.key, docName: S.visibleCanvas.name });
+  el.textContent = `Canvas: ${name} — switch chat`;
+  el.title = 'PhotoCraft shows a different canvas than this chat is linked to. Click to switch to that canvas\'s chat.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -2509,6 +2531,20 @@ function bind() {
   $('#threadLabel').onclick = (e) => {
     e.stopPropagation();
     openSessions();
+  };
+  $('#canvasSwitch').onclick = async (e) => {
+    e.stopPropagation();
+    const target = S.visibleCanvas;
+    if (!target?.key) return;
+    try {
+      await api.sessionUseDocument(target.key, target.name || null);
+      S.visibleCanvas = null;
+      renderCanvasSwitch();
+      await loadThread();
+      toast('Switched to the canvas chat.', 'ok');
+    } catch (err) {
+      toast(friendly(err), 'error');
+    }
   };
   $('#btnSessionNew').onclick = async (e) => {
     e.stopPropagation();

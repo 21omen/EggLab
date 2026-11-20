@@ -481,6 +481,16 @@ if (!gotLock) {
           return;
         }
 
+        // A render/scratch path opened as a document is a preview, not a chat
+        // scope (Phase A): it gets no thread, no migration and never moves
+        // the conversation.
+        if (chat.isTransientKey(key)) {
+          lastDocKey = key;
+          lastDocTab = activeTab;
+          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: chat.documentKey(), doc, transientDoc: true });
+          return;
+        }
+
         // Saving an untitled document for the first time changes its identity
         // (untitled:<name>:<w>x<h> -> the real path). Carry its conversation
         // across, but only when the SAME PhotoCraft tab changed identity: a
@@ -513,14 +523,36 @@ if (!gotLock) {
           if (chat.migrateThread(migrateFrom, key, doc?.name || null)) trace(`thread migrated -> ${key}`);
         }
 
-        const result = chat.useDocument(key, doc?.name || null);
-        // Advance the watcher state only after the chat actually adopted the
-        // document. Updating these first meant a failed adoption (busy/race)
+        // Phase A: the canvas does not own the chat. A plain tab switch must
+        // not move the conversation — only (a) an identity migration that was
+        // just carried out and (b) an empty detached chat (nothing to lose)
+        // may follow the canvas. Everything else is an explicit switch the
+        // renderer offers from the canvas badge.
+        if (migrateFrom || chat.canAdoptDocument()) {
+          const result = chat.useDocument(key, doc?.name || null);
+          if (result.changed) trace(`thread -> ${key}`);
+          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
+        } else if (key !== attachedKey) {
+          // The visible canvas and the chat's canvas differ. Tell the renderer
+          // so it can offer "Switch to <canvas>'s chat" without moving anything.
+          sendToRenderer('egglab:event', {
+            type: 'chat',
+            action: 'document',
+            docKey: chat.documentKey(),
+            doc,
+            visibleDocKey: key,
+            visibleDocName: doc?.name || null,
+            canvasMismatch: true,
+          });
+        } else {
+          // The chat already owns the visible canvas; just refresh the UI.
+          sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
+        }
+        // Advance the watcher state only after the chat decision is made.
+        // Updating these first meant a failed adoption (busy/race)
         // was treated as "already synced" on every later poll.
         lastDocKey = key;
         lastDocTab = activeTab;
-        if (result.changed) trace(`thread -> ${key}`);
-        sendToRenderer('egglab:event', { type: 'chat', action: 'document', docKey: key, doc });
       } catch (err) {
         // PhotoCraft being closed is normal; keep the last thread.
       }
@@ -819,6 +851,18 @@ ipcMain.handle('sessions:list', () => sessions.list());
 ipcMain.handle('sessions:rename', (e, { key, title }) => sessions.rename(key, title));
 ipcMain.handle('sessions:delete', (e, key) => chat.deleteThread(key));
 ipcMain.handle('sessions:move', (e, { key, docKey, title }) => chat.moveThread(key, docKey, title || null));
+// Explicit "switch to the chat of the canvas on screen" (Phase A): the watcher
+// no longer moves chats on tab changes, so the renderer's canvas badge calls
+// this instead.
+ipcMain.handle('sessions:useDocument', async (e, { docKey, title }) => {
+  if (chat.isBusy()) {
+    throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');
+  }
+  const res = chat.useDocument(docKey, title || null);
+  if (res.changed) trace(`thread -> ${res.threadId} (canvas badge)`);
+  holdSyncUntil = Date.now() + 4000;
+  return res;
+});
 ipcMain.handle('sessions:switch', async (e, { key }) => {
   if (chat.isBusy()) {
     throw new Error('The agent is still working. Wait for it to finish or press stop before switching chats.');

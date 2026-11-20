@@ -165,6 +165,22 @@ button { cursor: pointer; }
 .thread-label::after { content: " ▾"; font-size: 8px; opacity: 0.6; }
 .thread-label:hover { color: var(--dim); }
 .thread-label.dirty { color: var(--gold); }
+/* Canvas badge (Phase A): the visible canvas differs from the chat's canvas. */
+.canvas-switch {
+  appearance: none;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-size: 9px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.canvas-switch:hover { background: rgba(214, 164, 84, 0.12); }
 
 .sessions {
   position: absolute;

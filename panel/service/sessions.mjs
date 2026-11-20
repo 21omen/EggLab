@@ -219,7 +219,7 @@ export async function opencodeSessions(limit = 40, dirs = null) {
 }
 
 /** Export one OpenCode session (messages + metadata) for transcript recovery. */
-export async function exportSession(sessionId) {
+export async function exportSession(sessionId, cwd = AGENT_DIR) {
   if (!sessionId) return null;
   try {
     const oc = resolveOpenCode();
@@ -227,7 +227,10 @@ export async function exportSession(sessionId) {
       oc.cmd,
       ['session', 'export', sessionId],
       {
-        cwd: AGENT_DIR,
+        // Sessions are project-scoped: export from the workspace the chat runs
+        // in (official `agent/` or beta `agent-beta/`), or the session is
+        // invisible to the CLI.
+        cwd,
         windowsHide: true,
         maxBuffer: 16 * 1024 * 1024,
         shell: oc.shell,
@@ -377,7 +380,13 @@ export function bind({ key, docKey = null, model, vision = null, docName = null,
   entry.docKey = doc;
   registry.currentKey = id;
   save();
-  return { ...entry, key: id, docKey: doc, switched: Boolean(modelChanged || lostVision || visionChanged) };
+  const reasons = [];
+  if (modelChanged) reasons.push('model changed');
+  if (agentChanged) reasons.push('agent changed');
+  if (lostVision) reasons.push('image input became available');
+  if (visionChanged) reasons.push('image input setting changed');
+  const switched = reasons.length > 0;
+  return { ...entry, key: id, docKey: doc, switched, reasons };
 }
 
 /** Record the id OpenCode minted, plus the title it auto-generated. */
@@ -707,13 +716,14 @@ export function forgetThread(key) {
 }
 
 /** Best-effort OpenCode cleanup after the panel state is already durable. */
-export async function deleteOpencodeSession(sessionId) {
+export async function deleteOpencodeSession(sessionId, cwd = AGENT_DIR) {
   if (!sessionId) return false;
   try {
     const oc = resolveOpenCode();
     await execFileAsync(oc.cmd, ['session', 'delete', sessionId], {
-      // Same project scope the chats are created in (see opencodeSessions).
-      cwd: AGENT_DIR,
+      // Same project scope the chat was created in — official `agent/` or beta
+      // `agent-beta/`. Deleting from the wrong project silently does nothing.
+      cwd,
       windowsHide: true,
       shell: oc.shell,
       // A wedged CLI must not keep the deletion "in flight" forever.

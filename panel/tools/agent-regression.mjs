@@ -451,6 +451,31 @@ check(
   /if \(!entry\.agent\) entry\.agent = 'egglab';/.test(sessionsSource),
 );
 check('bind records the driving agent on every send', /if \(agent\) entry\.agent = agent;/.test(sessionsSource));
+
+// ---- Phase A: chat/doc management stabilization ------------------------
+check(
+  'a tab switch no longer moves the chat',
+  /chat\.canAdoptDocument\(\)/.test(mainSource) && /canvasMismatch/.test(mainSource),
+);
+check(
+  'only an empty detached chat auto-adopts the visible canvas',
+  /export function canAdoptDocument/.test(chatSource) && /!workingDocument\(\)/.test(chatSource),
+);
+check(
+  'transient renders never become chat scopes',
+  /isTransientDocKey\(next\)/.test(chatSource) && /chat\.isTransientKey\(key\)/.test(mainSource),
+);
+check(
+  'context forks are announced in the timeline',
+  /Context reset \(/.test(chatSource) && /reasons/.test(sessionsSource) && /role: 'system'/.test(chatSource),
+);
+check(
+  'beta session export and delete use the agent project scope',
+  /exportSession\(sessionId, cwd = AGENT_DIR\)/.test(sessionsSource) &&
+    /deleteOpencodeSession\(sessionId, cwd = AGENT_DIR\)/.test(sessionsSource) &&
+    /agentOfThread === 'egglab-beta' \? AGENT_BETA_DIR : AGENT_DIR/.test(chatSource),
+);
+check('the canvas badge switch endpoint exists', /sessions:useDocument/.test(mainSource) && /sessionUseDocument/.test(read('preload.cjs')));
 check('package ships the beta knowledge package', /"from":\s*"beta-agent"[\s\S]{0,120}"to":\s*"knowledge-beta"/.test(read('package.json')));
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);
