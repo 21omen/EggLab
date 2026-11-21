@@ -196,6 +196,21 @@ Preserve every area outside the mask, including the table, wall and window.
 The mask is region guidance only and must not appear in the result.
 ```
 
+Native-mask prompt template (official Qwen-Image-2.1 format — the engine-mask
+prompt describes the whole target image, because the mask marks the region):
+
+1. Describe the WHOLE target image first (scene, subject, style, background).
+2. Then the masked change: what the region becomes, concretely and visibly.
+3. One blanket preservation clause naming untargeted content by type/position/role.
+4. Never mention "the mask", its colour, or "every pixel" — the model cannot see
+   a mask, and detailed preserved-appearance language makes content drift.
+
+Example:
+"A poster of a teenage boy at a white desk with cartoon app mascots, on a deep
+blue background. In the masked region the deep-blue background continues
+cleanly with no text or marks. The boy, mascots, desk, headline and all other
+elements stay exactly as they are."
+
 Mask conventions:
 - White/opaque paint = editable; black/transparent = keep (default).
 - Use `mask_invert` for an inverted black/white mask.
