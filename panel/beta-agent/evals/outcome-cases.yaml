@@ -1,0 +1,63 @@
+# Outcome eval cases — grade the deliverable, not the tool path.
+# Live runs use tools/outcome-checks.mjs as the grader library:
+# fileReady, pngDimensions, alphaStats, exactCopy, projectSaved.
+version: 1
+cases:
+  - id: edit-direct-01
+    job: image_edit
+    brief: Change the sky to a cloudy sunset; keep the product and framing.
+    graders:
+      - fileReady: output
+      - pngDimensions: { match: source }
+      - exactCopy: { in: report, text: '' }
+  - id: edit-mask-01
+    job: image_edit
+    brief: Original + separately painted mask; replace the masked object only.
+    graders:
+      - fileReady: output
+      - pngDimensions: { match: source }
+      - maskEdgeInspect: { evidence: required }
+  - id: edit-annotation-01
+    job: image_edit
+    brief: Red circle = pink leg; red sketch area = flames; marks removed.
+    graders:
+      - fileReady: output
+      - pngDimensions: { match: source }
+      - marksRemoved: { evidence: inspect }
+  - id: edit-donor-01
+    job: image_edit
+    brief: Blue circle around the girl + hat photo; hat goes on the circled girl.
+    graders:
+      - fileReady: output
+      - donorUsed: { evidence: inspect }
+      - marksRemoved: { evidence: inspect }
+  - id: edit-transparent-01
+    job: image_edit
+    brief: Cut the product out with real transparency.
+    graders:
+      - fileReady: output
+      - alphaStats: { alphaPresent: true, opaqueOver: 0 }
+      - pngDimensions: { match: source }
+  - id: design-poster-01
+    job: designing
+    brief: Poster with exact headline and editable type; generated hero asset.
+    graders:
+      - projectSaved: project
+      - fileReady: flat_export
+      - pngDimensions: { match: requested }
+      - exactCopy: { in: flat_ocr_or_report, text: headline }
+      - generatedAssets: { min: 1 }
+  - id: design-type-only-01
+    job: designing
+    brief: Type-only flyer; no image generation.
+    graders:
+      - projectSaved: project
+      - fileReady: flat_export
+      - noRenders: true
+  - id: design-variant-01
+    job: designing
+    brief: Same design reflowed to a second aspect ratio (not stretched).
+    graders:
+      - fileReady: variant_export
+      - pngDimensions: { match: requested_variant }
+      - layerStructure: { preserved: true }

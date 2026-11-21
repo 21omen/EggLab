@@ -583,6 +583,19 @@ check(
     /required_for: \[designing\]/.test(read('beta-agent/manifest.yaml')) &&
     /Load `design-pipeline` first/.test(read('beta-agent/ROUTER.md')),
 );
+
+// ---- V2 ticket 6: outcome evals -----------------------------------------
+check(
+  'outcome graders are executable and wired into the agent suite',
+  exists('tools/outcome-checks.mjs') && /outcome-checks\.mjs/.test(read('package.json')),
+);
+check(
+  'outcome eval cases grade deliverables',
+  exists('beta-agent/evals/outcome-cases.yaml') &&
+    /alphaStats/.test(read('beta-agent/evals/outcome-cases.yaml')) &&
+    /projectSaved/.test(read('beta-agent/evals/outcome-cases.yaml')) &&
+    /exactCopy/.test(read('beta-agent/evals/outcome-cases.yaml')),
+);
 check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&
