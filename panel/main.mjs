@@ -248,10 +248,13 @@ function createWindow() {
   // Renderer visibility: console errors and crashes go to main.log, so a
   // silent renderer failure (e.g. an exception that kills UI wiring) is
   // diagnosable from the logs instead of "the panel cannot open".
-  win.webContents.on('console-message', (event) => {
-    const level = event.level || 'log';
-    if (level === 'error' || level === 'warning') {
-      trace(`renderer console ${level}: ${String(event.message || '').slice(0, 500)}`);
+  win.webContents.on('console-message', (event, level, message) => {
+    // Electron emits both (event, level, message) and a single details object
+    // depending on version; support both so errors are never silently lost.
+    const lvl = typeof level === 'string' ? level : event?.level;
+    const msg = typeof message === 'string' ? message : event?.message;
+    if (lvl === 'error' || lvl === 'warning') {
+      trace(`renderer console ${lvl}: ${String(msg || '').slice(0, 500)}`);
     }
   });
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -873,6 +876,11 @@ ipcMain.handle('chat:stop', () => ({ stopped: chat.stop(), canceled: cancelAllJo
 ipcMain.handle('chat:clear', () => chat.clearHistory());
 ipcMain.handle('chat:history', () => chat.getHistory());
 ipcMain.handle('sessions:list', () => sessions.list());
+// Renderer diagnostics land in main.log: a dead composer names its own error.
+ipcMain.handle('ui:error', (e, { message }) => {
+  trace(`ui ${String(message || '').slice(0, 500)}`);
+  return true;
+});
 // Inline notice actions: bring the chat's canvas forward, or make a fresh one.
 ipcMain.handle('sessions:openDoc', async (e, { docKey }) => {
   const shown = await showDocumentForKey(docKey).catch(() => false);

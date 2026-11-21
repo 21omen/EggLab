@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('egglab', {
   sessionMove: (key, docKey, title) => ipcRenderer.invoke('sessions:move', { key, docKey, title }),
   sessionOpenDoc: (docKey) => ipcRenderer.invoke('sessions:openDoc', { docKey }),
   chatCreateCanvas: (key) => ipcRenderer.invoke('chat:createCanvas', { key }),
+  uiError: (message) => ipcRenderer.invoke('ui:error', { message }),
   assetsList: () => ipcRenderer.invoke('assets:list'),
   assetPlace: (id) => ipcRenderer.invoke('assets:place', { id }),
 

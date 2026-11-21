@@ -307,32 +307,49 @@ function initShell() {
 /* ------------------------------------------------------------------ */
 
 async function boot() {
-  try {
-    const state = await api.state();
-    applyState(state);
-  } catch (err) {
-    toast(friendly(err), 'error');
-  }
-  api.onEvent(handleEvent);
+  // Any uncaught renderer error is reported to main.log, not lost.
+  window.addEventListener('error', (e) => {
+    try {
+      api.uiError?.(`window error: ${e.message} @ ${e.filename}:${e.lineno}`);
+    } catch {}
+  });
+  // Each boot step is isolated: one broken wiring step must never leave the
+  // composer dead. Failures are reported to main.log with the step name.
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (err) {
+      try {
+        await api.uiError(`boot:${name}: ${err && err.message ? err.message : err}`);
+      } catch {}
+    }
+  };
+  await step('state', async () => applyState(await api.state()));
+  await step('events', async () => api.onEvent(handleEvent));
   // The egg's click wiring goes FIRST: a failure anywhere later in bind()
   // must never leave the shell unclickable (the "egg does not expand" bug).
-  initShell();
-  bind();
-  try {
+  await step('shell', initShell);
+  await step('bind', bind);
+  await step('shellSync', async () => {
     // The renderer may reload while the OS window is already expanded.
     const shellState = await api.eggState();
     applyShellExpanded(Boolean(shellState?.expanded), { focus: false });
+  });
+  await step('ui', async () => {
+    syncUI();
+    renderTimeline();
+    renderModels();
+    renderAspects();
+    renderPc();
+    setBusy(false);
+    initSetup();
+    loadSetup();
+    initUpdates();
+    if (shell.expanded) $('#input').focus();
+  });
+  try {
+    await api.uiError('boot:complete');
   } catch {}
-  syncUI();
-  renderTimeline();
-  renderModels();
-  renderAspects();
-  renderPc();
-  setBusy(false);
-  initSetup();
-  loadSetup();
-  initUpdates();
-  if (shell.expanded) $('#input').focus();
 }
 
 function applyState(state) {
@@ -602,14 +619,38 @@ function renderThreadLabel() {
 }
 
 /**
- * The working-canvas scope selector (Phase C UX revision).
- *
- * ONE control at the composer replaces the old titlebar chips: it always shows
- * where the agent will put its work, in plain language ("Working canvas: X" /
- * "No canvas"). Clicking opens a single menu with the available moves —
- * no link/detach jargon. When PhotoCraft shows a different canvas, the pill
- * turns amber and offers the switch.
+ * The canvas popup: shown only when switching to a chat whose canvas cannot be
+ * brought forward. One polite question — make a fresh blank canvas, or keep
+ * chatting without one (the agent can create a canvas when it needs to).
  */
+function showCanvasPopup(s) {
+  const wrap = $('#canvasPopup');
+  if (!wrap) return;
+  const title = s?.title || S.threadTitle || 'This chat';
+  $('#canvasPopupText').innerHTML =
+    `<b>${esc(title)}</b> works on a canvas that isn't open in PhotoCraft anymore.`;
+  wrap.classList.add('on');
+}
+
+function closeCanvasPopup() {
+  const wrap = $('#canvasPopup');
+  if (wrap) wrap.classList.remove('on');
+}
+
+/** "Make blank canvas" from the popup: create it and bind this chat to it. */
+async function canvasPopupCreate() {
+  try {
+    closeCanvasPopup();
+    toast('Creating a canvas…', 'ok');
+    await api.chatCreateCanvas(S.threadKey);
+    await refreshPc();
+    await loadThread();
+    toast('Blank canvas ready — this chat now works on it.', 'ok');
+  } catch (err) {
+    toast(friendly(err), 'error');
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* sessions (one chat per PhotoCraft document)                         */
 /* ------------------------------------------------------------------ */
@@ -1368,7 +1409,12 @@ async function sendMessage() {
   const input = $('#input');
   const text = input.value.trim();
   if (!text) return;
-  if (S.busy) return;
+  if (S.busy) {
+    try {
+      api.uiError?.('send blocked: renderer thinks a turn is running');
+    } catch {}
+    return;
+  }
   if (S.mention.open) return;
 
   // /egg — direct generate, bypasses the agent. Asks back for scale & ratio.
