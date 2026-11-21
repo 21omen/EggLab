@@ -736,6 +736,12 @@ async function editActive(body) {
       hidden = { error: err.message };
     }
   }
+  // Make the RESULT the active layer: exports, further edits and verification
+  // must start from the composite, not from the hidden original.
+  try {
+    const placedId = placed?.layer?.id ?? placed?.id ?? placed?.result?.layer?.id ?? placed?.result?.id;
+    if (placedId !== undefined) await pc.command('layer.select', { layer: placedId });
+  } catch {}
 
   return {
     ok: true,

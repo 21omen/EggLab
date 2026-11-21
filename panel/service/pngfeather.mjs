@@ -234,6 +234,22 @@ export function layerMask(srcFile, dstFile, width, height, bounds, invert = fals
       break;
     }
   }
+  // PhotoCraft's clipboard copy can FLATTEN a transparent painted layer onto
+  // white (alpha lost). Then the white background must be keep-area and the
+  // colored strokes selected — the opposite of luminance. Detect that case:
+  // opaque image + a meaningful number of saturated (painted) pixels.
+  let saturated = 0;
+  let sampled = 0;
+  for (let i = 0; i < src.data.length; i += 16) {
+    const r = src.data[i];
+    const g = src.data[i + 1];
+    const b = src.data[i + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max - min > 40) saturated++;
+    sampled++;
+  }
+  const flattenedPainted = !paintedOverlay && sampled > 0 && saturated / sampled > 0.001;
   const rgba = Buffer.alloc(width * height * 4);
   for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255; // opaque black keep-area
   for (let y = 0; y < src.height; y++) {
@@ -250,6 +266,10 @@ export function layerMask(srcFile, dstFile, width, height, bounds, invert = fals
       let v;
       if (paintedOverlay) {
         v = Math.round(255 * alpha);
+      } else if (flattenedPainted) {
+        // Selected = anything painted over the flattened background (white).
+        const dist = 255 - Math.min(src.data[s], src.data[s + 1], src.data[s + 2]);
+        v = dist > 60 ? 255 : 0;
       } else {
         const lum =
           (src.data[s] * 0.299 + src.data[s + 1] * 0.587 + src.data[s + 2] * 0.114) / 255;
