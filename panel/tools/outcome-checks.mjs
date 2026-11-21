@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decodePng, encodePng } from '../service/pngfeather.mjs';
 
 /** The file exists and is not empty. */
@@ -77,9 +78,12 @@ export function projectSaved(file) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Self-test                                                           */
+/* Self-test (only when this file is run directly, never on import)    */
 /* ------------------------------------------------------------------ */
 
+const directRun =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (directRun) {
 let failures = 0;
 const check = (name, pass, detail = '') => {
   if (!pass) failures++;
@@ -141,3 +145,4 @@ try {
 
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);
 process.exit(failures ? 1 : 0);
+}
