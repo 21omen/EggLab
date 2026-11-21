@@ -256,6 +256,15 @@ function createWindow() {
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     trace(`renderer gone: ${JSON.stringify(details).slice(0, 400)}`);
+    // Self-heal: a crashed renderer must not leave a dead window. Reload it
+    // after a beat; the app state is all service-side, so a reload is cheap.
+    if (win && !win.isDestroyed()) {
+      setTimeout(() => {
+        try {
+          if (win && !win.isDestroyed()) win.webContents.reload();
+        } catch {}
+      }, 800);
+    }
   });
   win.webContents.on('did-fail-load', (_event, code, desc, url) => {
     trace(`renderer load failed: ${code} ${desc} ${url}`);

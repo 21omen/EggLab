@@ -192,7 +192,6 @@ button { cursor: pointer; }
   align-items: center;
   justify-content: center;
   background: rgba(10, 8, 6, 0.45);
-  backdrop-filter: blur(2px);
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
