@@ -742,6 +742,25 @@ async function editActive(body) {
     const placedId = placed?.layer?.id ?? placed?.id ?? placed?.result?.layer?.id ?? placed?.result?.id;
     if (placedId !== undefined) await pc.command('layer.select', { layer: placedId });
   } catch {}
+  // A mask is a selector, never artwork: hide it after use so the red/white
+  // paint cannot contaminate the visible canvas or any export.
+  if (usedMaskLayer) {
+    try {
+      const docNow = await pc.layers();
+      const flat = [];
+      const walk = (list) => {
+        for (const l of list || []) {
+          flat.push(l);
+          if (l.children) walk(l.children);
+        }
+      };
+      walk(docNow?.layers || docNow?.result?.layers || []);
+      const maskLayer = flat.find(
+        (l) => String(l.name || '').toLowerCase() === String(usedMaskLayer).toLowerCase(),
+      );
+      if (maskLayer) await pc.command('layer.setProps', { layer: maskLayer.id, visible: false });
+    } catch {}
+  }
 
   return {
     ok: true,
