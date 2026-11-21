@@ -16,6 +16,7 @@ window-state.json
 downloads.json
 projects.json
 chat.json
+assets.json
 config.json
 agent/
 chats/
@@ -35,6 +36,7 @@ panel/window-state.json
 panel/downloads.json
 panel/projects.json
 panel/chat.json
+panel/assets.json
 panel/agent/
 panel/chats/
 panel/logs/
