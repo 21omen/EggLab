@@ -35,8 +35,7 @@ load one skill only if the answer needs its detail.
 |---|---|---|
 | `direct` | one image + text instruction | `egl_edit` (that image as `<image1>`) |
 | `multi_reference` | source + donor/reference images | `egl_edit` with ordered `images`; state each role |
-| `visual_mask` | original + separate mask image (mask as visual guidance) | `egl_edit` with original `<image1>` + mask `<image2>` + donors; state the mask convention in the prompt |
-| `native_mask` | a painted mask layer (or an attached mask file) | `egl_photocraft_edit_active` with `mask_layer` (the layer is exported full-canvas and painted colour is selected by alpha); or `egl_edit init_image + mask_image + strength` for attached mask files |
+| `native_mask` | a painted mask layer, or an attached mask file | `egl_photocraft_edit_active` with `mask_layer` (the panel converts the painted shape to a canonical black/white mask and aligns it to the canvas); or `egl_edit` with `init_image` + `mask_image` + `strength`. The tool handles the mask convention — never describe the mask in the prompt. |
 | `circle_annotation` | photo with coloured circles | annotate preview → `egl_edit`; map each colour to one instruction |
 | `paint_annotation` | photo with painted regions | annotate preview → `egl_edit`; say what the painted region means |
 
@@ -45,10 +44,11 @@ Rules that apply to every method:
   silently insert images; never pass a mask/annotation as an ordinary donor.
 - A mask and an annotation are special roles with different preprocessing, not
   donor images.
-- Mask conventions: white/alpha = editable, black/transparent = keep (invert
-  only when the user's mask is reversed). `native_mask` may guarantee the
-  selected region; `visual_mask` is guidance only. Never promise unchanged
-  pixels outside a region unless a deterministic composite enforces it.
+- Mask conventions: white/alpha = editable, black/transparent = keep. The tool
+  reads the convention and inverts only when asked; never explain the mask,
+  its colours, or pixel promises in the prompt. Never promise unchanged pixels
+  outside a region unless a deterministic composite enforces it (the native
+  mask path does composite back through the mask).
 - If the requested combination is unsupported by the runtime, return the
   explicit limitation and the supported alternative — never drop inputs.
 - Prompt compiler (official Qwen-Image-2.1 format):
@@ -57,15 +57,18 @@ Rules that apply to every method:
   - Identity/product from a reference: point at that image — never describe the likeness in words.
   - `native_mask`: the source pixels carry the scene — do NOT describe the
     whole image (an invented scene description hijacks the render; measured:
-    the agent wrote "flower field" for a product poster). The prompt states the
-    change inside the masked region + what it becomes ("the masked area shows
-    the clean desk surface continuing behind the subject") + one keep-the-rest
-    clause. The mask marks the region; never mention masks, colours or pixels.
+    the agent wrote "flower field" for a product poster). The prompt names the
+    operation and the exact exposed surface taken from inspection ("the masked
+    area shows the white text completely removed and only the plain light-blue
+    sky, with no clouds, text or marks") + one keep-the-rest clause. Never write
+    only "the background"; name the surface and forbid new objects. The mask
+    marks the region; never mention masks, colours or pixels.
   - Preservation: name untargeted content by type/position/role with ONE blanket clause; never describe preserved appearance in detail (describing it makes it drift).
   - Text that must appear is exact and quoted; rendered-text language follows the image's dominant language.
   - Output follows `<image1>`'s ratio; never put resolution/ratio/size in the prompt. Never mention the mask's colour in engine-mask prompts (mark colours ARE referenced for annotation-style edits).
-- Strength (native mask / mask layer): replace/add/remove 0.75–0.95;
-  recolour/retouch 0.4–0.6; subtle retouch 0.25–0.35.
+- Strength (native mask / mask layer): replace/add/remove 0.75–0.95
+  (text/logo/watermark removal 0.9–0.95); recolour/retouch 0.4–0.6; subtle
+  retouch 0.25–0.35.
 - Sketch as input: translate the sketch structure into words exhaustively
   (shape, counts, openings, placement, camera), then materials and light.
 - Every edit is inspected: change applied? identity/product intact? unrelated

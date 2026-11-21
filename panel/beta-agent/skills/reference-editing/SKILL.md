@@ -88,8 +88,8 @@ Rules:
   mask still has a different size than the image, the engine refuses it — use
   `egl_photocraft_edit_active` with `mask_layer` (native alignment) or
   re-export the layer full-canvas.
-- Strength follows the task, not the attachment: replace/add/remove 0.75–0.95;
-  recolour or retouch 0.4–0.6.
+- Strength follows the task, not the attachment: replace/add/remove 0.75–0.95
+  (text/logo/watermark removal 0.9–0.95); recolour or retouch 0.4–0.6.
 - **Never mention the mask's colour** in the prompt ("the red masked area"
   makes the model paint red). Say "the masked region" and describe what the
   area should become (the target state), e.g. "the masked region shows the
@@ -105,10 +105,8 @@ Rules:
 
 Worked example A — mask attachment:
 ```text
-Use the first image as the canvas and the second image as the editable mask
-(white = change, black = keep). Inside the masked area, replace the object with
-a realistic potted fern matching the original perspective and lighting.
-Preserve everything outside the masked area.
+The masked area shows a realistic potted fern matching the original perspective
+and lighting. Everything outside the masked area stays exactly as it is.
 ```
 
 Worked example B — drawn description plus donor:
@@ -176,6 +174,7 @@ Use this when the user painted a mask on a **separate layer** (for example `Mask
      | Task | strength |
      |---|---|
      | Replace/add/remove an object, rewrite a feature | **0.75–0.95** |
+     | Text, logo, watermark or stamp removal | **0.9–0.95** |
      | Recolour, material/texture or lighting change | 0.4–0.6 |
      | Subtle retouch (skin, blemish, tonal) | 0.25–0.35 |
 
@@ -183,38 +182,35 @@ Use this when the user painted a mask on a **separate layer** (for example `Mask
      a masked edit that "did nothing" almost always means strength was too low.
      Pair a high strength with a `quality` run and inspect the seams.
 4. The tool exports the active canvas and the named mask layer, aligns the mask to the canvas bounds (white/opaque = repainted, black/transparent = kept), and runs the engine with `--init-img --mask --strength`. The mask is not sent as a donor image.
-5. In the prompt: use the **native-mask template** above - describe the WHOLE image first, then what the masked area becomes, one blanket preservation clause. Never mention the mask, its colour, or pixel promises.
+5. In the prompt: use the **native-mask template** below. The prompt states ONLY
+   the change inside the masked region, the result state, and one keep-the-rest
+   clause. Do **not** describe the whole picture — the source image already IS
+   the scene, and an invented scene description hijacks the render.
 6. Inspect the mask boundary at native size. If the change is weak, raise `strength` (not the prompt length). If edges show, the mask feather/blend is the issue — say so, or ask the user to widen the mask (do not invent a new mask UI).
 
-Example:
-
-```text
-A poster of a teenage boy at a white desk with cartoon mascots on a deep blue background. In the masked region the deep-blue background continues cleanly with no text or marks. The boy, mascots, desk, headline and all other elements stay exactly as they are.
-```
-
-Native-mask prompt template (verified on this engine — the source image IS the
-scene; do not describe the whole picture, that hijacks the render):
+Native-mask prompt template (verified on this engine):
 
 1. Inspect the source first (`egl_inspect` on the layer export or
    `egl_photocraft_canvas`) — to know what the region should become.
-2. State the change inside the masked region + the result state, e.g.
-   "the masked area shows the clean wooden desk surface continuing behind the
-   subject, matching the surrounding colour, grain and lighting".
+2. Name the operation explicitly, then the **exact exposed surface** taken from
+   inspection — never only "the background". For a removal: "the masked area
+   shows the white text completely removed and only the plain light-blue sky,
+   with no clouds, text or marks"; for a replacement: "the masked area shows a
+   blue velvet cushion replacing the marked cushion, matching the surrounding
+   fabric and light". Name the surface and forbid new objects; do not leave the
+   fill to the model's imagination.
 3. One keep-the-rest clause ("the rest of the image stays exactly as it is").
 4. Never mention masks, their colour, pixel promises, or invent a scene
-   description.
+   description. Do not start the prompt with "A photograph of…", "A poster
+   of…" or any scene description.
 
-1. Describe the WHOLE target image first (scene, subject, style, background).
-2. Then the masked change: what the region becomes, concretely and visibly.
-3. One blanket preservation clause naming untargeted content by type/position/role.
-4. Never mention "the mask", its colour, or "every pixel" — the model cannot see
-   a mask, and detailed preserved-appearance language makes content drift.
+Example (text removal on sky):
 
-Example:
-"A poster of a teenage boy at a white desk with cartoon app mascots, on a deep
-blue background. In the masked region the deep-blue background continues
-cleanly with no text or marks. The boy, mascots, desk, headline and all other
-elements stay exactly as they are."
+```text
+The masked area shows the white text completely removed and only the plain
+light-blue sky continuing, with no clouds, text or marks. The rest of the image
+stays exactly as it is.
+```
 
 Mask conventions:
 - White/opaque paint = editable; black/transparent = keep (default).

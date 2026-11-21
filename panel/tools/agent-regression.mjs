@@ -538,8 +538,20 @@ check(
     !/images: maskPath \? \[\] : images/.test(mcpSource2),
 );
 check(
-  'visual_mask and native_mask are kept distinct',
-  /visual_mask needs images\[0\] = source/.test(mcpSource2) && /use native_mask/.test(mcpSource2),
+  'visual_mask is retired; masks use the native mask path',
+  /visual_mask is retired/.test(mcpSource2) &&
+    !/visual_mask = images\[0\] source/.test(mcpSource2),
+);
+check(
+  'native-mask prompts reject scene descriptions and generic background fills',
+  /Native-mask prompt must not start with a scene description/.test(mcpSource2) &&
+    /Name the exact exposed surface/.test(mcpSource2) &&
+    /Native-mask prompt needs one keep-the-rest clause/.test(mcpSource2),
+);
+check(
+  'canvas-sized mask exports are cropped at the layer origin, not double-offset',
+  /const sourceCanvas =/.test(httpSource2) &&
+    /layerMask\([\s\S]{0,500}?sourceCanvas,/.test(httpSource2),
 );
 check(
   'active-layer edits accept ordered donor references',
@@ -634,7 +646,7 @@ check(
   /IMAGE EDITING/.test(read('beta-agent/AGENT.md')) &&
     /DESIGNING/.test(read('beta-agent/AGENT.md')) &&
     /`native_mask`/.test(read('beta-agent/ROUTER.md')) &&
-    /`visual_mask`/.test(read('beta-agent/ROUTER.md')) &&
+    !/`visual_mask`/.test(read('beta-agent/ROUTER.md')) &&
     /never silently drop or reorder input images/i.test(read('beta-agent/AGENT.md')),
 );
 check(

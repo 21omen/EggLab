@@ -508,6 +508,7 @@ async function editActive(body) {
   let pasteBounds = null; // where the result lands; null = use the layer bounds
   let swapOriginal = false; // result covers the whole layer, so hide the old one
   let usedMaskLayer = null;
+  let autoMaskId = null;
   const local = {};
 
   // A separately painted mask layer in PhotoCraft. The active layer is the
@@ -528,6 +529,21 @@ async function editActive(body) {
     }
     const [mx, my] = maskExport.layer.bounds;
     const [lx, ly] = layer.bounds;
+    // exportLayerByName pads the clipboard export back to the full canvas at
+    // the layer's document bounds. A canvas-sized mask must be CROPPED at the
+    // target layer's origin, not shifted again by (mx-lx, my-ly) — that double
+    // offset repainted a different part of the picture while the painted area
+    // stayed untouched (measured: text stayed, the girl's arm gained a blob).
+    const docNow = await pc.inspect();
+    const canvasW = Number(docNow?.document?.width || docNow?.width) || 0;
+    const canvasH = Number(docNow?.document?.height || docNow?.height) || 0;
+    const sourceCanvas =
+      Boolean(maskExport.croppedPath) ||
+      (canvasW > 0 &&
+        canvasH > 0 &&
+        Number(maskExport.size?.width) === canvasW &&
+        Number(maskExport.size?.height) === canvasH);
+    const maskOffset = sourceCanvas ? [lx, ly] : [mx - lx, my - ly];
     const maskFile = path.join(
       TMP_DIR,
       `pc-user-mask-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`,
@@ -537,9 +553,19 @@ async function editActive(body) {
       maskFile,
       size.width,
       size.height,
-      [mx - lx, my - ly],
+      maskOffset,
       Boolean(body.maskInvert),
+      sourceCanvas,
     );
+    try {
+      fs.appendFileSync(
+        path.join(LOG_DIR, 'main.log'),
+        `${new Date().toISOString()} mask-build layer=${name} ` +
+          `src=${maskExport.size?.width}x${maskExport.size?.height} ` +
+          `target=${size.width}x${size.height} canvas=${sourceCanvas} ` +
+          `offset=${maskOffset.join(',')}\n`,
+      );
+    } catch {}
     local.initImg = exported.path;
     local.mask = maskFile;
     local.strength = clamp(
@@ -554,14 +580,40 @@ async function editActive(body) {
     // Auto-mask step (user paints a shape; the system makes the canonical
     // black/white mask and keeps it in the document so the conversion is
     // visible and reusable). The painted layer is hidden after the edit.
+    // placeAtBounds returns copy metadata, not the new layer id, so identify
+    // the added layer by diffing the tree before/after.
     try {
-      const maskPlaced = await pc.placeAtBounds(maskFile, [0, 0, size.width, size.height], {
+      const beforeLayers = await pc.layers();
+      await pc.placeAtBounds(maskFile, [0, 0, size.width, size.height], {
         name: 'EggLab mask (B/W)',
       });
-      const mid = maskPlaced?.layer?.id ?? maskPlaced?.id ?? maskPlaced?.result?.layer?.id;
-      if (mid !== undefined) await pc.command('layer.setProps', { layer: mid, visible: false });
-      emit('log', 'auto-mask: made EggLab mask (B/W) layer (hidden)');
+      const afterLayers = await pc.layers();
+      const beforeIds = new Set((beforeLayers?.layers || []).map((l) => l.id));
+      const added =
+        (afterLayers?.layers || []).find(
+          (l) => !beforeIds.has(l.id) && l.name === 'EggLab mask (B/W)',
+        ) || (afterLayers?.layers || []).find((l) => !beforeIds.has(l.id));
+      let hidden = false;
+      if (added?.id !== undefined) {
+        autoMaskId = added.id;
+        await pc.command('layer.setProps', { layer: added.id, visible: false });
+        hidden = true;
+      }
+      try {
+        fs.appendFileSync(
+          path.join(LOG_DIR, 'main.log'),
+          `${new Date().toISOString()} auto-mask layer=${added?.id ?? 'none'} ` +
+            `hidden=${hidden} name=${added?.name || 'none'}\n`,
+        );
+      } catch {}
+      emit('log', `auto-mask: made EggLab mask (B/W) layer (hidden=${hidden})`);
     } catch (err) {
+      try {
+        fs.appendFileSync(
+          path.join(LOG_DIR, 'main.log'),
+          `${new Date().toISOString()} auto-mask failed: ${err.message}\n`,
+        );
+      } catch {}
       emit('log', `auto-mask placement failed (${err.message}); engine mask still applied`);
     }
 
@@ -774,6 +826,36 @@ async function editActive(body) {
       if (maskLayer) await pc.command('layer.setProps', { layer: maskLayer.id, visible: false });
     } catch {}
   }
+  // Final state enforcement. Placing the result opens a temporary document and
+  // copies it back; that step can re-show layers created earlier in the same
+  // run. Hide the original and the generated B/W mask once more, after every
+  // placement is finished, then record the real visibility for the transcript.
+  try {
+    if (
+      body.replace !== false &&
+      layer?.id !== undefined &&
+      (!region || swapOriginal)
+    ) {
+      await pc.command('layer.setProps', { layer: layer.id, visible: false });
+    }
+    if (autoMaskId !== null) {
+      await pc.command('layer.setProps', { layer: autoMaskId, visible: false });
+    }
+  } catch {}
+  try {
+    const finalDoc = await pc.layers();
+    const finalLayers = finalDoc?.layers || [];
+    const pick = (name) =>
+      finalLayers.find((l) => String(l.name || '').toLowerCase() === String(name).toLowerCase());
+    const auto = pick('EggLab mask (B/W)');
+    const original = layer?.id !== undefined ? finalLayers.find((l) => l.id === layer.id) : null;
+    fs.appendFileSync(
+      path.join(LOG_DIR, 'main.log'),
+      `${new Date().toISOString()} edit-final autoMask=${auto ? `${auto.id}:${auto.visible}` : 'none'} ` +
+        `original=${original ? `${original.id}:${original.visible}` : 'none'} ` +
+        `paintedMask=${usedMaskLayer || 'none'}\n`,
+    );
+  } catch {}
 
   return {
     ok: true,

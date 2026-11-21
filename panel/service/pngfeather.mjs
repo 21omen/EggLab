@@ -219,8 +219,25 @@ export function regionMask(file, width, height, rect, featherPx) {
  * Multiply luminance by alpha so both conventions work. The result is written
  * as an opaque black/white PNG at the active layer's pixel size, with the mask
  * layer positioned by its document bounds. `invert` flips the convention.
+ *
+ * `sourceCanvas` distinguishes the two possible exports:
+ *   false — src is the mask layer's own pixels (cropped), placed at `bounds`
+ *           (document offset of the mask layer relative to the target layer).
+ *   true  — src is already the full canvas (PhotoCraft's file export keeps
+ *           transparent margins), so `bounds` is the TARGET layer's document
+ *           origin and the source is sampled at that offset. Without this the
+ *           canvas-sized export gets shifted a second time and the engine
+ *           repaints the wrong part of the picture.
  */
-export function layerMask(srcFile, dstFile, width, height, bounds, invert = false) {
+export function layerMask(
+  srcFile,
+  dstFile,
+  width,
+  height,
+  bounds,
+  invert = false,
+  sourceCanvas = false,
+) {
   const src = decodePng(srcFile);
   const [ox, oy] = (bounds || []).map((v) => Math.round(Number(v) || 0));
   // Selector convention: a painted overlay has transparent pixels, so its
@@ -252,13 +269,13 @@ export function layerMask(srcFile, dstFile, width, height, bounds, invert = fals
   const flattenedPainted = !paintedOverlay && sampled > 0 && saturated / sampled > 0.001;
   const rgba = Buffer.alloc(width * height * 4);
   for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255; // opaque black keep-area
-  for (let y = 0; y < src.height; y++) {
-    const dy = oy + y;
-    if (dy < 0 || dy >= height) continue;
-    for (let x = 0; x < src.width; x++) {
-      const dx = ox + x;
-      if (dx < 0 || dx >= width) continue;
-      const s = (y * src.width + x) * 4;
+  for (let dy = 0; dy < height; dy++) {
+    const sy = sourceCanvas ? dy + oy : dy - oy;
+    if (sy < 0 || sy >= src.height) continue;
+    for (let dx = 0; dx < width; dx++) {
+      const sx = sourceCanvas ? dx + ox : dx - ox;
+      if (sx < 0 || sx >= src.width) continue;
+      const s = (sy * src.width + sx) * 4;
       const alpha = src.data[s + 3] / 255;
       // Unpainted/transparent pixels are always keep-area, even when inverting:
       // inversion applies to the painted black/white mask, not to transparency.

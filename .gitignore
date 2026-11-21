@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Local test harnesses
+tmp-*.ps1
+
 # ---------------------------------------------------------------------------
 # Runtime state — user data, tokens, transcripts, logs. Never publish these.
 # ---------------------------------------------------------------------------

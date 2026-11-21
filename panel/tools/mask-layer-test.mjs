@@ -63,6 +63,28 @@ const aat = (x, y) => ao.data[(y * 40 + x) * 4];
 check('transparent stroke selected by alpha', aat(9, 8) === 255, String(aat(9, 8)));
 check('transparent background kept', aat(0, 0) === 0);
 
+// Full-canvas export (PhotoCraft pads the clipboard copy back to the document).
+// It must be cropped at the target layer origin, never shifted a second time.
+// Canvas 100x80, target layer at (20,10) sized 60x50; the stroke is already at
+// document (25..34, 17..24), i.e. local (5..14, 7..14) of the target.
+const canvasMaskPath = path.join(dir, 'canvas-mask.png');
+const canvasMaskOut = path.join(dir, 'canvas-mask-out.png');
+const cm = Buffer.alloc(100 * 80 * 4);
+for (let i = 3; i < cm.length; i += 4) cm[i] = 255;
+for (let y = 17; y < 25; y++) {
+  for (let x = 25; x < 35; x++) {
+    const i = (y * 100 + x) * 4;
+    cm[i] = cm[i + 1] = cm[i + 2] = 255;
+  }
+}
+encodePng(canvasMaskPath, 100, 80, cm);
+layerMask(canvasMaskPath, canvasMaskOut, 60, 50, [20, 10], false, true);
+const cmo = decodePng(canvasMaskOut);
+const cmAt = (x, y) => cmo.data[(y * 60 + x) * 4];
+check('full-canvas mask keeps document position', cmAt(5, 7) === 255, String(cmAt(5, 7)));
+check('full-canvas mask does not double-offset', cmAt(25, 17) === 0, String(cmAt(25, 17)));
+check('full-canvas mask outside stroke stays black', cmAt(0, 0) === 0);
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`\n${failures ? 'FAILED' : 'OK'} — ${failures} failure(s)`);
 process.exit(failures ? 1 : 0);

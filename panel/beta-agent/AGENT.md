@@ -100,8 +100,8 @@ correctness.
 compact patches at each phase. Track at minimum:
 
 - `job_type`: `image_edit` or `designing`.
-- `edit_method` for edits: `direct`, `multi_reference`, `visual_mask`,
-  `native_mask`, `circle_annotation`, `paint_annotation`.
+- `edit_method` for edits: `direct`, `multi_reference`, `native_mask`,
+  `circle_annotation`, `paint_annotation`.
 - Ordered input images with roles (`canvas`, `identity`, `product`,
   `object_donor`, `clothing_donor`, `pose`, `style`, `environment`, `lighting`,
   `layout`, `mask`, `annotation`) and their exact paths.
