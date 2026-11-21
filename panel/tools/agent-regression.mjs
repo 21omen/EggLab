@@ -528,6 +528,20 @@ check(
   /mask_image:/.test(mcpSource2) && /initImg: initPath/.test(mcpSource2) && /strength: Math\.min\(1/.test(mcpSource2),
 );
 check(
+  'egl_edit carries an explicit edit contract and ordered roles',
+  /edit_mode: \{/.test(mcpSource2) && /image_roles: \{/.test(mcpSource2) &&
+    /case 'edit': \{/.test(mcpSource2) && /const editMode =/.test(mcpSource2),
+);
+check(
+  'egl_edit never drops donor references with a mask',
+  /donorImages = maskPath \? images\.filter/.test(mcpSource2) && /images: donorImages/.test(mcpSource2) &&
+    !/images: maskPath \? \[\] : images/.test(mcpSource2),
+);
+check(
+  'visual_mask and native_mask are kept distinct',
+  /visual_mask needs images\[0\] = source/.test(mcpSource2) && /use native_mask/.test(mcpSource2),
+);
+check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&
     /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),

@@ -356,6 +356,27 @@ const tools = [
         prompt: { type: 'string', description: 'The change first, then what must stay unchanged. Never describe preserved things in detail — that makes them drift.' },
         images: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference images (1-10). Order is the order the model sees: <image1>, <image2>, …' },
         use_active_layer: { type: 'boolean', description: 'Export the selected PhotoCraft layer and use it as the first reference.' },
+        edit_mode: {
+          type: 'string',
+          enum: ['direct', 'multi_reference', 'visual_mask', 'native_mask', 'circle_annotation', 'paint_annotation'],
+          description:
+            'Explicit edit contract. direct = one source + instruction; multi_reference = source + donors with roles; visual_mask = images[0] source, images[1] mask PREVIEW, rest donors (mask is a visual reference; state the convention in the prompt); native_mask = init_image + mask_image drive the engine inpaint, extra images are donors (supported and kept); circle_annotation / paint_annotation = first image is the annotated copy, rest donors. Omit to derive from the inputs.',
+        },
+        image_roles: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              index: { type: 'integer', description: '1-based position in images.' },
+              role: {
+                type: 'string',
+                description: 'canvas | identity | product | object_donor | clothing_donor | pose | style | environment | lighting | layout | mask | annotation',
+              },
+            },
+            required: ['index', 'role'],
+          },
+          description: 'Ordered role map for images; store it in egl_job_state. Input order is a contract — never reorder to match a prompt.',
+        },
         init_image: { type: 'string', description: 'Absolute path to the image being changed. Only used with mask_image; defaults to images[0].' },
         mask_image: {
           type: 'string',
@@ -796,20 +817,28 @@ async function callTool(name, args = {}) {
         images = [exported.path, ...images];
         layer = exported.layer || null;
       }
-      if (!images.length && !args.mask_image) throw new Error('egl_edit needs images, use_active_layer=true, or init_image + mask_image.');
-      // A separate mask attachment drives a true masked inpaint: the target
-      // canvas plus the mask, no donor conditioning (the mask is not artwork).
       const maskPath = args.mask_image ? String(args.mask_image) : '';
       const initPath = args.init_image ? String(args.init_image) : maskPath ? images[0] : '';
-      if (maskPath && !initPath) {
-        throw new Error('mask_image needs a target: pass init_image (or images[0]).');
+      if (!images.length && !maskPath) throw new Error('egl_edit needs images, use_active_layer=true, or init_image + mask_image.');
+      if (maskPath && !initPath) throw new Error('mask_image needs a target: pass init_image (or images[0]).');
+      // Explicit edit contract. Derived when omitted so old callers keep working.
+      const editMode =
+        args.edit_mode ||
+        (maskPath ? 'native_mask' : images.length > 1 ? 'multi_reference' : 'direct');
+      if (editMode === 'visual_mask') {
+        if (images.length < 2) throw new Error('visual_mask needs images[0] = source and images[1] = mask preview; mask_image must be omitted.');
+        if (maskPath) throw new Error('visual_mask treats the mask as an ordinary reference: omit mask_image (or use native_mask).');
       }
+      // Donors are never dropped. For native_mask the init canvas is already
+      // the conditioning image; any OTHER images remain as donor references
+      // (verified on this engine: -i + --mask + -r works and honours donors).
+      const donorImages = maskPath ? images.filter((p) => String(p) !== initPath) : images;
       const { job } = await api('POST', '/api/jobs', {
     // Tags the job as agent-started: the panel refuses these when no chat
     // turn is active, so a tool call still in flight after Stop cannot render.
     source: 'agent',
         prompt: args.prompt,
-        images: maskPath ? [] : images,
+        images: donorImages,
         ...(maskPath
           ? {
               initImg: initPath,
@@ -829,7 +858,11 @@ async function callTool(name, args = {}) {
       return {
         ok: done.status === 'done',
         edited: summary(done),
+        edit_mode: editMode,
         references: images,
+        init_image: initPath || undefined,
+        mask_image: maskPath || undefined,
+        strength: maskPath ? Math.min(1, Math.max(0.05, Number.isFinite(Number(args.strength)) ? Number(args.strength) : 0.85)) : undefined,
         layer,
         error: done.status === 'done' ? undefined : done.error || undefined,
       };
