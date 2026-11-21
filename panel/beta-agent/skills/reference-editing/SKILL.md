@@ -90,6 +90,13 @@ Rules:
   re-export the layer full-canvas.
 - Strength follows the task, not the attachment: replace/add/remove 0.75–0.95;
   recolour or retouch 0.4–0.6.
+- **Never mention the mask's colour** in the prompt ("the red masked area"
+  makes the model paint red). Say "the masked region" and describe what the
+  area should become (the target state), e.g. "the masked region shows the
+  clean desk surface continuing behind the subject".
+- Masked edits must start from a CLEAN source. If the layer already contains a
+  previous bad render, select the original layer (or the user's source) instead
+  of stacking edits on contamination.
 - With drawn marks plus donors, `<image1>` is the marked canvas and the marks
   name WHERE; the donor names WHAT (e.g. "put the hat from <image2> on the girl
   inside the blue circle; remove the blue circle").
