@@ -36,7 +36,7 @@ load one skill only if the answer needs its detail.
 | `direct` | one image + text instruction | `egl_edit` (that image as `<image1>`) |
 | `multi_reference` | source + donor/reference images | `egl_edit` with ordered `images`; state each role |
 | `visual_mask` | original + separate mask image (mask as visual guidance) | `egl_edit` with original `<image1>` + mask `<image2>` + donors; state the mask convention in the prompt |
-| `native_mask` | original + true engine mask (painted layer or attached mask) | `egl_edit init_image + mask_image + strength`; or `egl_photocraft_edit_active` with `mask_layer` |
+| `native_mask` | user SELECTION or a painted/attached mask layer | primary: build the mask from the user's selection (`layer.new.layer` → `edit.fill` white inside selection → `select.inverse` → `edit.fill` black → `select.deselect`) then `egl_photocraft_edit_active` with `mask_layer`; or `egl_edit init_image + mask_image + strength` for attached masks |
 | `circle_annotation` | photo with coloured circles | annotate preview → `egl_edit`; map each colour to one instruction |
 | `paint_annotation` | photo with painted regions | annotate preview → `egl_edit`; say what the painted region means |
 
