@@ -561,12 +561,35 @@ if (Array.isArray(images) && images.length) {
   // edit it has always been. With them the engine gets a real init image and
   // mask, so the model repaints one continuous canvas instead of us pasting a
   // rectangle back — which is what produced a visible seam.
+  // PNG header size, no full decode: used to refuse misaligned masks.
+  const pngSizeQuick = (file) => {
+    try {
+      const b = fs.readFileSync(file);
+      if (b.length < 24 || b.readUInt32BE(0) !== 0x89504e47) return null;
+      return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+    } catch {
+      return null;
+    }
+  };
   const localEdit = {};
   if (input.initImg && fs.existsSync(input.initImg)) {
     localEdit.initImg = input.initImg;
     args.push('-InitImg', input.initImg);
   }
   if (input.mask && fs.existsSync(input.mask)) {
+    const initSize = input.initImg ? pngSizeQuick(input.initImg) : null;
+    const maskSize = pngSizeQuick(input.mask);
+    if (
+      initSize &&
+      maskSize &&
+      (initSize.width !== maskSize.width || initSize.height !== maskSize.height)
+    ) {
+      throw new Error(
+        `Mask is ${maskSize.width}x${maskSize.height} but the image is ${initSize.width}x${initSize.height}. ` +
+          'A mask must share the image canvas. Export the mask layer full-canvas ' +
+          '(photocraft_export_layer now aligns layers automatically) or use the PhotoCraft mask_layer path.',
+      );
+    }
     localEdit.mask = input.mask;
     args.push('-Mask', input.mask);
   }

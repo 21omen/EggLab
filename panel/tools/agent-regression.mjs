@@ -596,6 +596,19 @@ check(
     /projectSaved/.test(read('beta-agent/evals/outcome-cases.yaml')) &&
     /exactCopy/.test(read('beta-agent/evals/outcome-cases.yaml')),
 );
+
+// ---- Mask alignment (live bug: cropped layer exports) -------------------
+const engineSource = read('service/engine.mjs');
+check(
+  'layer references are exported full-canvas at their true position',
+  /function padToCanvas/.test(pcSource) && /padToCanvas\(file, doc\.width, doc\.height, match\.bounds\)/.test(pcSource) &&
+    /path: aligned \|\| file/.test(pcSource),
+);
+check(
+  'misaligned masks are refused, never rendered',
+  /Mask is \$\{maskSize\.width\}x\$\{maskSize\.height\}/.test(engineSource) &&
+    /A mask must share the image canvas/.test(engineSource),
+);
 check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&

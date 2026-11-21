@@ -83,6 +83,11 @@ each attachment before prompting:
 Rules:
 - The mask is a selector, never artwork: do not pass it in `images`; do not ask
   the model to render it.
+- PhotoCraft layer references are exported **full-canvas at their true
+  position** (a painted mask layer arrives the same size as the image). If a
+  mask still has a different size than the image, the engine refuses it — use
+  `egl_photocraft_edit_active` with `mask_layer` (native alignment) or
+  re-export the layer full-canvas.
 - Strength follows the task, not the attachment: replace/add/remove 0.75–0.95;
   recolour or retouch 0.4–0.6.
 - With drawn marks plus donors, `<image1>` is the marked canvas and the marks

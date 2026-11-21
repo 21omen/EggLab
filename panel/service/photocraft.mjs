@@ -948,7 +948,46 @@ export async function exportActiveLayer() {
  * Finds the layer in the active document, selects it, copies it, and writes it out.
  * Restores the previous selection/visibility afterward.
  */
-export async function exportLayerByName(name, { makeVisible = true } = {}) {
+import { decodePng, encodePng } from './pngfeather.mjs';
+
+/**
+ * Pad a cropped layer export back to full canvas at its document bounds.
+ *
+ * PhotoCraft's clipboard copy returns the layer's visible content only (a
+ * 170x189 paint patch, not the 1784x1080 canvas). A mask with different
+ * dimensions than the image it edits is silently resized by the engine and
+ * lands in the wrong place. Layer FILE exports keep transparent margins
+ * (PhotoCraft PR #3519), and this reproduces that: full canvas, layer content
+ * at its true position, transparent elsewhere (transparent = keep for masks).
+ */
+function padToCanvas(file, docWidth, docHeight, bounds) {
+  const width = Number(docWidth);
+  const height = Number(docHeight);
+  if (!(width > 0) || !(height > 0)) return null;
+  const src = decodePng(file);
+  const [ox, oy] = (bounds || [0, 0]).map((v) => Math.round(Number(v) || 0));
+  if (src.width === width && src.height === height) return file;
+  const out = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < src.height; y++) {
+    const dy = oy + y;
+    if (dy < 0 || dy >= height) continue;
+    for (let x = 0; x < src.width; x++) {
+      const dx = ox + x;
+      if (dx < 0 || dx >= width) continue;
+      const s = (y * src.width + x) * 4;
+      const d = (dy * width + dx) * 4;
+      out[d] = src.data[s];
+      out[d + 1] = src.data[s + 1];
+      out[d + 2] = src.data[s + 2];
+      out[d + 3] = src.data[s + 3];
+    }
+  }
+  const aligned = file.replace(/\.png$/i, '-fullcanvas.png');
+  encodePng(aligned, width, height, out);
+  return aligned;
+}
+
+export async function exportLayerByName(name, { makeVisible = true, fullCanvas = true } = {}) {
   const doc = await inspect();
   if (!doc) throw new Error('Open a document in PhotoCraft first.');
   const layers = doc.layers || [];
@@ -991,9 +1030,14 @@ export async function exportLayerByName(name, { makeVisible = true } = {}) {
   }
   const file = path.join(TMP_DIR, `pc-ref-${stamp()}-${sanitize(match.name || 'layer')}.png`);
   const size = await clipboardToPng(file);
+  // Clipboard copy returns the layer's content only; align it back to the
+  // document canvas so masks and references share the source's dimensions.
+  const aligned = fullCanvas ? padToCanvas(file, doc.width, doc.height, match.bounds) : null;
   return {
-    path: file,
-    size,
+    path: aligned || file,
+    croppedPath: aligned ? file : undefined,
+    size: aligned ? { width: doc.width, height: doc.height } : size,
+    croppedSize: aligned ? size : undefined,
     layer: {
       id: match.id,
       name: match.name,
