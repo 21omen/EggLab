@@ -128,6 +128,28 @@ head and lighting. Leave every other person and the background unchanged.
 Remove the blue circle.
 ```
 
+## 5.1 Selection → mask layer (primary local-edit path)
+
+When the user makes a selection (lasso/rect/object) and asks to edit that area:
+
+1. Confirm the selection: `egl_photocraft_command { id: "document.inspect" }` →
+   `hasSelection: true` and `selectionBounds`. If `hasSelection` is false, ask
+   the user to select the area (do not guess a region).
+2. Create the mask layer with existing tools:
+   - `layer.new.layer` (blank layer at document size)
+   - `edit.fill { color: "#FFFFFF" }` → fills only inside the selection (white = change)
+   - `select.inverse` → `edit.fill { color: "#000000" }` → outside = keep
+   - `select.deselect`
+   The layer is now a canonical Qwen mask: white = edit, black = keep, document-size.
+3. Select the source layer, then run `egl_photocraft_edit_active` with
+   `mask_layer: "<mask layer name>"` and a prompt describing the RESULT state
+   (never the mask's colour).
+4. The panel composites the render back through the mask, so outside the
+   selection stays untouched; the mask layer is hidden afterwards.
+
+Paint/brush masks still work (alpha/colour detection), but the selection path
+is deterministic and preferred whenever a selection exists.
+
 ## 4. PhotoCraft annotations — marks drawn on the photo
 
 
