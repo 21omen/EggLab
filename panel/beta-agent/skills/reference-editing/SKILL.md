@@ -195,6 +195,11 @@ A poster of a teenage boy at a white desk with cartoon mascots on a deep blue ba
 Native-mask prompt template (official Qwen-Image-2.1 format — the engine-mask
 prompt describes the whole target image, because the mask marks the region):
 
+0. **Inspect the source image first** (`egl_inspect` on the layer export or
+   `egl_photocraft_canvas`). The whole-image description MUST come from what
+   you saw — guessing the scene ("flower field" for a product poster) makes the
+   masked render drift toward the invented image.
+
 1. Describe the WHOLE target image first (scene, subject, style, background).
 2. Then the masked change: what the region becomes, concretely and visibly.
 3. One blanket preservation clause naming untargeted content by type/position/role.

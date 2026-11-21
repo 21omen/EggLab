@@ -738,6 +738,11 @@ const agentProfile = TOOL_PROFILE === 'agent' || TOOL_PROFILE === 'agent-beta';
 // Beta harness gate: production must not start before the routed skill body has
 // been loaded in this session. Deterministic — a prompt rule alone was skipped.
 let knowledgeLoaded = false;
+// Beta harness gate #2: the whole-image description in a native_mask prompt
+// must come from actually SEEING the source. A render without any prior
+// egl_inspect call means the agent guessed the scene (measured failure:
+// "flower field scene" invented for a product poster).
+let inspectedAny = false;
 const activeTools = agentProfile
   ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
   : tools;
@@ -748,6 +753,7 @@ async function callTool(name, args = {}) {
     throw new Error(`Tool ${name} is not available in this tool profile (${TOOL_PROFILE}).`);
   }
   if (name === 'read_knowledge') knowledgeLoaded = true;
+  if (name === 'inspect') inspectedAny = true;
   if (
     TOOL_PROFILE === 'agent-beta' &&
     !knowledgeLoaded &&
@@ -757,6 +763,17 @@ async function callTool(name, args = {}) {
       'Load the routed skill first: call egl_read_knowledge (ROUTER.md step 0) — ' +
         'skills/reference-editing/SKILL.md for edits, skills/design-pipeline/SKILL.md for designs, ' +
         'skills/photocraft-production/SKILL.md for canvas work. Production stays locked until the skill body is read.',
+    );
+  }
+  if (
+    TOOL_PROFILE === 'agent-beta' &&
+    !inspectedAny &&
+    ['edit', 'photocraft_edit_active'].includes(name)
+  ) {
+    throw new Error(
+      'Inspect the source before editing: call egl_inspect (or egl_photocraft_canvas) on the source image first. ' +
+        'The whole-image description in a native_mask edit must come from the actual pixels — ' +
+        'guessing the scene makes the render drift toward an invented image.',
     );
   }
   // Alias normalization: models often send camelCase, and unknown keys are
