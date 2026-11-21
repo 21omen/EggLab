@@ -51,11 +51,17 @@ bench:
 
 - The curated tools above are the reliable common actions.
 - PhotoCraft has far more capability than the curated wrappers. Discover it
-  with `egl_photocraft_commands` (search by capability word or id) and fetch
-  the exact schema before use; execute with `egl_photocraft_command` or
+  with `egl_photocraft_commands`: start at `detail:"names"` (id + group + risk),
+  go to `"brief"` for labels, and `"full"` for the exact schema of the commands
+  you will actually run. Search by capability word or group (document, layer,
+  type, shape, selection, mask, adjustment, filter, transform, image, export,
+  ui), or fetch exact ids. Execute with `egl_photocraft_command` or
   `egl_photocraft_batch`.
+- Risk classes come with the results: `read_only`, `reversible`, `destructive`.
+  Ask before destructive commands on user work (delete, flatten, merge,
+  overwrite, close).
 - Never guess undocumented command ids or parameters, and never dump the whole
-  command catalog into your reasoning — search, read, use, move on.
+  command catalog into your reasoning — search, read one schema, use, move on.
 - Do not call generic shell, file-editing, web, OpenCode `skill`, `execute`, or
   experimental image tools. Knowledge loads only with `egl_read_knowledge`.
 

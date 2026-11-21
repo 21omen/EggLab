@@ -805,16 +805,69 @@ export async function commands(filter = '') {
  * "adjustment", "layer."), and `ids` fetches the exact param spec for the
  * handful it is about to run. Params are truncated in list mode only.
  */
-export async function commandCatalog({ filter = '', ids = [], limit = 40, fullParams = false } = {}) {
+const COMMAND_GROUPS = [
+  ['document', /^(?:doc|document)(?:\.|$)|(?:^|\.)project(?:\.|$)/i],
+  ['layer', /^layer(?:\.|$)/i],
+  ['type', /^(?:type|text)(?:\.|$)/i],
+  ['shape', /^(?:shape|vector|path)(?:\.|$)/i],
+  ['selection', /^(?:select|selection)(?:\.|$)/i],
+  ['mask', /(?:^|\.)mask(?:\.|$)|quick.?mask/i],
+  ['adjustment', /^(?:adjustment|adjust)(?:\.|$)/i],
+  ['filter', /^(?:filter|effect)(?:\.|$)/i],
+  ['transform', /^(?:transform|crop|resize|rotate|flip)(?:\.|$)/i],
+  ['image', /^(?:image|raster|canvas)(?:\.|$)/i],
+  ['export', /^(?:export|save|file)(?:\.|$)/i],
+  ['ui', /^(?:ui|view|panel)(?:\.|$)/i],
+];
+
+function commandGroup(id) {
+  const value = String(id || '');
+  for (const [name, re] of COMMAND_GROUPS) if (re.test(value)) return name;
+  return 'other';
+}
+
+/**
+ * Risk class for a raw command. Destructive commands can destroy user work;
+ * the agent must ask before running them on a document it did not just create.
+ */
+function commandRisk(id) {
+  const value = String(id || '');
+  if (/(?:^|\.)(?:delete|remove|flatten|merge|close|clear|overwrite|rasterize|apply|replace|reset|discard)(?:\.|$)/i.test(value)) {
+    return 'destructive';
+  }
+  if (/(?:inspect|list|get|preview|snapshot|state|status|select|activate|open|recent|query)(?:\.|$)/i.test(value)) {
+    return 'read_only';
+  }
+  return 'reversible';
+}
+
+/**
+ * Capability search over the live PhotoCraft catalog.
+ *
+ * Progressive disclosure (Anthropic search_tools pattern): `detail: "names"`
+ * returns id + group + risk only; `"brief"` adds the menu/label; `"full"` adds
+ * the exact parameter schema. Search is by id/label/menu/group; `ids` fetches
+ * exact commands with full params. Nothing here is cached into the prompt —
+ * the agent reads only what it asks for.
+ */
+export async function commandCatalog({ filter = '', query = '', ids = [], group = '', limit = 40, detail = '', fullParams = false } = {}) {
   const raw = await commands('');
   const list = Array.isArray(raw) ? raw : raw?.commands || [];
+  const mode = String(detail || '').toLowerCase() || (fullParams ? 'full' : 'brief');
+  const level = ['names', 'brief', 'full'].includes(mode) ? mode : 'brief';
   const shape = (c, withParams) => ({
     id: c.id,
-    label: c.label,
-    menu: c.menu,
-    enabled: c.enabled,
-    needsDocument: c.needsDocument,
-    params: c.params ? (withParams ? c.params : c.params.slice(0, 220)) : undefined,
+    group: commandGroup(c.id),
+    risk: commandRisk(c.id),
+    ...(level === 'names'
+      ? {}
+      : {
+          label: c.label,
+          menu: c.menu,
+          enabled: c.enabled,
+          needsDocument: c.needsDocument,
+        }),
+    ...(level === 'full' && c.params ? { params: withParams ? c.params : c.params.slice(0, 220) } : {}),
   });
 
   const wanted = (Array.isArray(ids) ? ids : String(ids || '').split(/[,\s]+/))
@@ -825,24 +878,32 @@ export async function commandCatalog({ filter = '', ids = [], limit = 40, fullPa
       const hit = list.find((c) => c.id === id);
       return hit ? shape(hit, true) : { id, missing: true };
     });
-    return { mode: 'exact', commands: commandsOut };
+    return { mode: 'exact', detail: 'full', commands: commandsOut };
   }
 
-  const needle = String(filter || '').trim().toLowerCase();
-  const matched = needle
-    ? list.filter((c) =>
-        [c.id, c.label, ...(Array.isArray(c.menu) ? c.menu : [])]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle),
-      )
-    : list;
+  const needle = String(filter || query || '').trim().toLowerCase();
+  const wantedGroup = String(group || '').trim().toLowerCase();
+  const matched = list.filter((c) => {
+    if (wantedGroup && commandGroup(c.id) !== wantedGroup) return false;
+    if (!needle) return true;
+    return [c.id, c.label, commandGroup(c.id), ...(Array.isArray(c.menu) ? c.menu : [])]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle);
+  });
   const cap = Math.min(Math.max(Number(limit) || 40, 1), 200);
+  const groups = {};
+  for (const c of matched) {
+    const g = commandGroup(c.id);
+    groups[g] = (groups[g] || 0) + 1;
+  }
   return {
-    mode: needle ? 'search' : 'all',
+    mode: needle || wantedGroup ? 'search' : 'all',
+    detail: level,
     total: matched.length,
     returned: Math.min(cap, matched.length),
-    commands: matched.slice(0, cap).map((c) => shape(c, Boolean(fullParams))),
+    groups,
+    commands: matched.slice(0, cap).map((c) => shape(c, Boolean(fullParams) || level === 'full')),
   };
 }
 

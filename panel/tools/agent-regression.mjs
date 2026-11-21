@@ -550,6 +550,23 @@ check(
   'active-layer donors are never the source or the mask',
   /\.filter\(\(p\) => p !== exported\.path\)/.test(httpSource2),
 );
+
+// ---- V2 ticket 4: capability intelligence ------------------------------
+const pcSource = read('service/photocraft.mjs');
+check(
+  'the capability search has three detail levels',
+  /detail = ''/.test(pcSource) && /\['names', 'brief', 'full'\]/.test(pcSource) &&
+    /detail: args\.detail \|\| 'brief'/.test(mcpSource2),
+);
+check(
+  'commands carry group and risk classes',
+  /function commandGroup/.test(pcSource) && /function commandRisk/.test(pcSource) &&
+    /risk: commandRisk\(c\.id\)/.test(pcSource) && /destructive/.test(pcSource),
+);
+check(
+  'the agent is told names-first and risk classes',
+  /detail:"names"/.test(read('beta-agent/AGENT.md')) && /Ask before destructive commands/.test(read('beta-agent/AGENT.md')),
+);
 check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&

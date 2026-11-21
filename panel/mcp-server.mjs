@@ -614,11 +614,17 @@ const tools = [
   {
     name: 'photocraft_commands',
     description:
-      'Look up PhotoCraft commands that are NOT documented in your instructions. Search by word ("mask", "adjustment", "text") to discover ids, or pass ids for exact params. One round trip, so use it only for genuinely unknown commands — type, shape, layer, mask, group, adjustment, export and batch are already documented.',
+      'Capability search over the live PhotoCraft catalog, with progressive detail. Start at detail="names" (id + group + risk only), use "brief" for labels/menus, and "full" for the exact parameter schema of the commands you will actually run. Search by capability word, group, or exact ids. Risk classes: read_only, reversible, destructive — ask before destructive commands on user work. Do not load the whole catalog into reasoning; search, read the one schema, execute.',
     inputSchema: {
       type: 'object',
       properties: {
-        filter: { type: 'string', description: 'Case-insensitive substring matched against command id, label and menu. e.g. "layer.mask", "adjustment", "type".' },
+        filter: { type: 'string', description: 'Case-insensitive substring matched against command id, label, menu and group. e.g. "layer.mask", "adjustment", "type".' },
+        detail: {
+          type: 'string',
+          enum: ['names', 'brief', 'full'],
+          description: 'Progressive detail (default brief). names = id + group + risk only; brief = adds label/menu/state; full = adds the exact params schema.',
+        },
+        group: { type: 'string', description: 'Optional group filter: document, layer, type, shape, selection, mask, adjustment, filter, transform, image, export, ui.' },
         ids: {
           type: 'array',
           items: { type: 'string' },
@@ -1058,6 +1064,8 @@ async function callTool(name, args = {}) {
     case 'photocraft_commands':
       return await api('POST', '/api/photocraft/commands', {
         filter: args.filter || '',
+        detail: args.detail || 'brief',
+        group: args.group || '',
         ids: args.ids || [],
         limit: args.limit,
       });
