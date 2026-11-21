@@ -80,5 +80,57 @@ mask, group, adjust, transform, export) with one routing rule per group, and a
 9. Model-tier guidance in the panel.
 10. Consolidate duplicate knowledge; rename the engine doc.
 
+## Online verification (Nov 21, 2026) — corrections and new findings
+
+Sources: PhotoCraft repo/docs (storytold/photocraft, getartcraft.com,
+photocraft.space, MCP tool reference), official Qwen-Image-2.1 README/HF docs,
+ComfyUI Qwen-2.1 tutorial, stablediffusion.fr measured guide, Alibaba API docs.
+
+### Corrected claims
+1. **CFG 1.0 is not the quality optimum.** Official ComfyUI templates ship CFG
+   1 (fast, no negative pass), but measured tests show CFG 1 flattens textures
+   (embroidery → cloth, lost rivets/pupils). CFG ≈ 2–3 **with a negative
+   prompt** restores material detail; higher values over-sharpen or shift
+   exposure; 0.5 breaks the image. Our quality preset at CFG 1 is leaving
+   detail on the table. Recommendation: quality finals at CFG 2–3 + a real
+   negative prompt (sd.cpp supports both); turbo stays CFG 1.
+2. **PhotoCraft is far bigger than our bridge.** The core exposes 500–900+
+   commands and its own MCP server has 25 tools (layers, pixel+vector masks
+   with density/feather, 16 adjustment layers, layer styles, clipping masks,
+   smart objects, type on path/area type, Select Subject, data sets, UI
+   pointer/menu tools). Our live catalog shows only **47 commands**, so the
+   agent sees a fraction of the editor. Two options: widen the bridge, or teach
+   the full feature map and keep command discovery explicit.
+
+### New verified findings (Qwen-Image-2.1)
+- **Resolution:** native 2K; 2.5 MP is the measured sweet spot for screen
+  work, 4 MP for print. Composition changes with size — **a seed does not
+  carry over between resolutions; pick the final size first, then the seed.**
+  Our 1024 cap is a preview, not a final.
+- **Prompt grammar (measured over ~1,000 images):** sentences, not tags.
+  Order: medium+subject → setting → light with direction → framing → materials
+  and palette → restrictions written in the prompt ("no lettering") → quoted
+  text with placement ("a sign above the door reads 'OPEN ALL NIGHT'").
+  At CFG 1 the negative prompt is ignored; restrictions must be in the prompt.
+- **Invented signage:** scenes with facades grow invented signs unless the
+  prompt says "no lettering". Add this to every environmental prompt rule.
+- **Prompt expansion:** official usage relies on PE (prompt-enhancer) models.
+  We do not ship them, so the agent itself must do the expansion pass before
+  generation/editing (long detailed target, one preserve clause).
+- **Edit steps:** simple local edits resolve in 4–8 steps; whole-frame rewrites
+  need ~25; hands/fingers ~30. Turbo is for tests only.
+- **VAE:** stock Qwen-2.1 VAE leaves fine checkerboard texture in detailed
+  photos; an unofficial fix VAE exists (not bundled). Note it, do not promise.
+- **Text:** quoted text + explicit placement is reliable; this is the model's
+  headline strength and should be used for lettering-as-artwork.
+
+### What this changes in the plan
+- Add: quality-preset CFG/negative-prompt experiment (P0).
+- Add: final-resolution policy with the seed/size rule (P0).
+- Add: mandatory prompt-expansion pass by the agent (P0).
+- Add: full PhotoCraft feature map + bridge-widening decision (P0).
+- Keep: capability map, single-source local-edit protocol, completion contract,
+  QA loop, outcome evals.
+
 ## UI note
 The render preview under the composer stays as-is — no removal needed.
