@@ -51,12 +51,14 @@ Rules that apply to every method:
   pixels outside a region unless a deterministic composite enforces it.
 - If the requested combination is unsupported by the runtime, return the
   explicit limitation and the supported alternative — never drop inputs.
-- Prompt compiler: operation → exact target → donor roles with `<imageN>` →
-  concise invariants → exact text/identity → integration (light, perspective,
-  contact shadow). **Describe the whole scene plus the exact content of the
-  masked region** — the model still sees the full latent, and vague masked-area
-  prompts are the known cause of collage-like results. Never mention the mask's
-  colour ("red masked area" makes the model paint red).
+- Prompt compiler (official Qwen-Image-2.1 format):
+  - Lead with the operation; write it as an instruction, not a description of the finished picture.
+  - For N ≥ 2 images, state each image's ROLE with `<imageN>` tags (mandatory): `<image1>` is the canvas whose composition survives; donors supply named material ("put the shirt from `<image2>` on the character in `<image1>`").
+  - Identity/product from a reference: point at that image — never describe the likeness in words.
+  - `native_mask`: describe the WHOLE target image (scene, subject, style), then what the masked area becomes — the mask marks the region, the prompt describes the target image. Removals: say what the newly exposed region shows.
+  - Preservation: name untargeted content by type/position/role with ONE blanket clause; never describe preserved appearance in detail (describing it makes it drift).
+  - Text that must appear is exact and quoted; rendered-text language follows the image's dominant language.
+  - Output follows `<image1>`'s ratio; never put resolution/ratio/size in the prompt. Never mention the mask's colour in engine-mask prompts (mark colours ARE referenced for annotation-style edits).
 - Strength (native mask / mask layer): replace/add/remove 0.75–0.95;
   recolour/retouch 0.4–0.6; subtle retouch 0.25–0.35.
 - Sketch as input: translate the sketch structure into words exhaustively
