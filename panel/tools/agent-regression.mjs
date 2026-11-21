@@ -615,6 +615,16 @@ check(
     /source: 'agent' \}\)/.test(mcpSource2),
 );
 check(
+  'the router mandates loading the routed skill',
+  /Step 0 — mandatory read step/.test(read('beta-agent/ROUTER.md')) &&
+    /skills\/design-pipeline\/SKILL\.md/.test(read('beta-agent/ROUTER.md')),
+);
+check(
+  'production without a loaded skill is called out',
+  /produced work without calling egl_read_knowledge/.test(chatSource) &&
+    /Load the routed skill \(ROUTER\.md step 0\)/.test(chatSource),
+);
+check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&
     /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),

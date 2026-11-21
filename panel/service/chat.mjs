@@ -674,6 +674,8 @@ let lastRunAt = null;
 // document watcher uses these to tell "the agent left its working document"
 // from "the user switched tabs".
 let lastRunDocKey = null;
+// Counts finished engine jobs (renders/edits) for the harness loop check.
+let doneJobCount = 0;
 // A chat the user explicitly picked whose canvas could not be opened. While
 // this pin is set and PhotoCraft keeps showing the SAME document, the watcher
 // must not drag the conversation back to that document's chat — the user is
@@ -1357,6 +1359,7 @@ export function upsertJobCard(job, persist = true) {
   // Phase D: a finished render/edit is an asset of this chat — one record per
   // job, pointing at the exact pixels the card reported.
   if (job.status === 'done' && job.outPath) {
+    doneJobCount += 1;
     recordAsset({
       threadId,
       docKey,
@@ -1797,6 +1800,7 @@ export async function send(text, files = [], refMap = {}) {
 
   turnRunning = true;
   turnStopped = false;
+  const renderedBefore = doneJobCount;
   let result = await runOnce(model);
   let attempts = 0;
   while (
@@ -1859,6 +1863,33 @@ export async function send(text, files = [], refMap = {}) {
   agentItem.error = result.stopped ? 'Stopped.' : result.error || null;
   if (!agentItem.text && !agentItem.error) agentItem.error = 'The agent returned an empty answer. Try again.';
   agentItem.at = Date.now();
+  // Phase 2 (beta): the harness checks the production loop. A turn that
+  // rendered pixels but never inspected them must not pass silently — the
+  // transcript states it plainly so the next pass (or the user) can act.
+  if (betaAgent && !result.stopped && doneJobCount > renderedBefore) {
+    const sawPixels = (result.tools || []).some((t) => /inspect/i.test(String(t?.name || '')));
+    if (!sawPixels) {
+      noteSystem(
+        'Harness check: this turn rendered at least one image but never called egl_inspect. ' +
+          'Inspect the actual pixels before claiming visual correctness — or state that the result is unverified.',
+      );
+    }
+  }
+  // Production without the routed skill is the silent failure mode: the agent
+  // answers from the core prompt and improvises the protocols. Make it visible.
+  if (betaAgent && !result.stopped) {
+    const tools = result.tools || [];
+    const produced = tools.some((t) =>
+      /generate|edit|photocraft_place|photocraft_command|photocraft_batch/i.test(String(t?.name || '')),
+    );
+    const loadedSkill = tools.some((t) => /read_knowledge/i.test(String(t?.name || '')));
+    if (produced && !loadedSkill) {
+      noteSystem(
+        'Harness check: this turn produced work without calling egl_read_knowledge. ' +
+          'Load the routed skill (ROUTER.md step 0) before the next pass.',
+      );
+    }
+  }
   saveHistory();
   emit('chat', { action: 'done', item: agentItem });
   emit('chat', { action: 'busy', busy: false });

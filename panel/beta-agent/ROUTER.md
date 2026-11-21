@@ -4,6 +4,19 @@
 Route every request through the smallest sufficient knowledge set. Single
 agent, not a multi-agent system.
 
+## Step 0 — mandatory read step (before the first production tool)
+
+State the route, then load its skill body with `egl_read_knowledge`:
+
+- Image Editing → `skills/reference-editing/SKILL.md` (add `skills/transparency/SKILL.md` for alpha work)
+- Designing → `skills/design-pipeline/SKILL.md`
+- PhotoCraft operations → `skills/photocraft-production/SKILL.md`
+- QA/delivery → `skills/qa-delivery/SKILL.md`
+
+The full protocols (edit modes, mask rules, prompt grammar, design stages) live
+in those files; the core prompt only carries the routing. If a production turn
+skips this step, the harness records that it ran without its skill.
+
 ## Step 1 — the top-level job
 
 **A. IMAGE EDITING** — an existing image/layer is the canvas being transformed.
