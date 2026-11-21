@@ -356,6 +356,17 @@ const tools = [
         prompt: { type: 'string', description: 'The change first, then what must stay unchanged. Never describe preserved things in detail — that makes them drift.' },
         images: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference images (1-10). Order is the order the model sees: <image1>, <image2>, …' },
         use_active_layer: { type: 'boolean', description: 'Export the selected PhotoCraft layer and use it as the first reference.' },
+        init_image: { type: 'string', description: 'Absolute path to the image being changed. Only used with mask_image; defaults to images[0].' },
+        mask_image: {
+          type: 'string',
+          description:
+            'Absolute path to a SEPARATE mask attachment (a blank layer painted with the PhotoCraft brush, exported as an image): white/alpha = edit, black/transparent = keep. Runs a true masked inpaint of init_image at strength. Never pass the mask as a visual donor; do not also add it to images.',
+        },
+        strength: {
+          type: 'number',
+          description:
+            'Masked inpaint strength 0.05..1 (default 0.85). Replace/add/remove 0.75–0.95; recolour or retouch 0.4–0.6. Ignored without mask_image.',
+        },
         workflow: { type: 'string', enum: ['quality', 'turbo'], description: 'Use the panel preset; quality for final/identity work, turbo for tests. Live steps/CFG come from egl_status.' },
         width: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (service caps at 2048). Default: follow the source aspect, capped at 1024 long side.' },
         height: { type: 'integer', description: 'Pixels, multiple of 32; 256–2048 (service caps at 2048).' },
@@ -785,19 +796,34 @@ async function callTool(name, args = {}) {
         images = [exported.path, ...images];
         layer = exported.layer || null;
       }
-      if (!images.length) throw new Error('egl_edit needs images or use_active_layer=true.');
+      if (!images.length && !args.mask_image) throw new Error('egl_edit needs images, use_active_layer=true, or init_image + mask_image.');
+      // A separate mask attachment drives a true masked inpaint: the target
+      // canvas plus the mask, no donor conditioning (the mask is not artwork).
+      const maskPath = args.mask_image ? String(args.mask_image) : '';
+      const initPath = args.init_image ? String(args.init_image) : maskPath ? images[0] : '';
+      if (maskPath && !initPath) {
+        throw new Error('mask_image needs a target: pass init_image (or images[0]).');
+      }
       const { job } = await api('POST', '/api/jobs', {
     // Tags the job as agent-started: the panel refuses these when no chat
     // turn is active, so a tool call still in flight after Stop cannot render.
     source: 'agent',
         prompt: args.prompt,
-        images,
+        images: maskPath ? [] : images,
+        ...(maskPath
+          ? {
+              initImg: initPath,
+              mask: maskPath,
+              strength: Math.min(1, Math.max(0.05, Number.isFinite(Number(args.strength)) ? Number(args.strength) : 0.85)),
+              transparent: false,
+            }
+          : {}),
         workflow: args.workflow,
         width: args.width,
         height: args.height,
         steps: args.steps,
         seed: args.seed,
-        transparent: Boolean(args.transparent),
+        transparent: maskPath ? false : Boolean(args.transparent),
       });
       const done = await waitJob(job.id);
       return {

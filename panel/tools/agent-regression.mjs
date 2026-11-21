@@ -521,6 +521,33 @@ check(
   'making a canvas clears the pin',
   /clearChatPin\(\)/.test(mainSource) && /export function clearChatPin/.test(chatSource),
 );
+
+// ---- Phase 2: harness-enforced production loop -----------------------
+check(
+  'egl_edit supports attached mask images as a true inpaint',
+  /mask_image:/.test(mcpSource2) && /initImg: initPath/.test(mcpSource2) && /strength: Math\.min\(1/.test(mcpSource2),
+);
+check(
+  'agents cannot rename or save-as the open document',
+  /must not rename or save-as the current document/.test(httpSource2) &&
+    /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),
+);
+check(
+  'the beta skill teaches attached masks and drawn descriptions',
+  /Attached mask image \+ photo/.test(read('beta-agent/AGENT.md')) &&
+    /Chat attachments: mask images and drawn descriptions/.test(read('beta-agent/skills/reference-editing/SKILL.md')) &&
+    /Drawn descriptions \(annotated photos\)/.test(read('beta-agent/references/engine/qwen-image-2.1-legacy-facts.md')),
+);
+check(
+  'a beta turn that renders without inspecting is called out',
+  /doneJobCount > renderedBefore/.test(chatSource) &&
+    /never called egl_inspect/.test(chatSource) &&
+    /\/inspect\/i\.test\(String\(t\?\.name/.test(chatSource),
+);
+check(
+  'the loop check is beta-only and skips stopped turns',
+  /if \(betaAgent && !result\.stopped && doneJobCount > renderedBefore\)/.test(chatSource),
+);
 check(
   'the chat list marks the canvas on screen',
   /s-onscreen/.test(read('renderer/app.js')),

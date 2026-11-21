@@ -54,6 +54,16 @@ Before writing an image prompt, classify the operation and inspect the inputs:
   `strength` to the task: replacements need 0.75–0.95 (the old 0.4 default
   measurably leaves content unchanged), retouches 0.25–0.6. Describe the final
   state inside the mask; preserve the outside in one clause.
+- **Attached mask image + photo (chat attachments)** → true masked inpaint:
+  `egl_edit` with `init_image` (the photo) and `mask_image` (the painted mask;
+  white/alpha = change, black/transparent = keep) and `strength` (0.75–0.95 to
+  replace/add/remove, 0.4–0.6 to recolour/retouch). Never pass the mask as a
+  visual donor or list it in `images`.
+- **Photo with drawings (circles, sketch areas, handwritten text)** → marked
+  reference edit: `egl_edit` with the marked photo as `<image1>`, name each
+  mark's target and intended result, say the marks must be removed, protect
+  everything outside them. Extra references become `<image2>`, `<image3>` with
+  an explicit role (e.g. a hat to place on the circled person).
 - **Sketch** → trained sketch-to-photo behaviour: translate the sketch's
   structure into words exhaustively (shape, counts, openings, placements,
   camera angle), then materials and lighting.
@@ -76,6 +86,7 @@ PhotoCraft already provides the drawing/annotation and separate-mask workflows. 
 - Work on new/duplicated layers; preserve untouched original for source photographs and critical layers.
 - Inspect project and active document before saving. Never silently save into an unrelated open project.
 - **Document ownership.** A chat that is already attached to a PhotoCraft document keeps that canvas as its default: place renders there, build type/shapes there, save/export there. The piece and its chat stay together.
+- **Never rename or Save-As the open document.** A rename changes the document's identity and strands this chat on an id nothing resolves. Keep the existing name. The only exception: when a chat has no document and you create its canvas, give that new canvas a name.
 - **A new piece may have its own canvas (beta).** When the request is genuinely a SEPARATE piece (not a continuation of the current one), create a new document at the working size and build the new piece there; the conversation follows that piece when the turn ends. Do not create a second canvas to escape a size limit, for QA proofs, or as a scratch pad — finish the piece in the canvas it belongs to.
 - Never switch documents mid-piece. If the piece genuinely outgrows its canvas, say so and propose the change instead of silently moving.
 - Do not use scratch documents for proof experiments or QA crops. Export a flat/canvas preview from the working document and inspect that; the working canvas stays the single project.

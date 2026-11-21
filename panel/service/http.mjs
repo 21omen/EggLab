@@ -353,6 +353,18 @@ async function handle(req, res, url) {
           });
         }
       }
+      // Renaming / Save-As changes the document identity, which strands the
+      // chat (a new document key means the conversation no longer matches its
+      // canvas). Agents must keep the document's name; naming is only allowed
+      // when a chat without a document creates its canvas.
+      if (body.source === 'agent' && /(?:^|\.)(?:rename|save.?as|saveas)$/i.test(id)) {
+        return json(res, 409, {
+          error:
+            `The agent must not rename or save-as the current document (command "${id}"). ` +
+            'That changes the document identity and strands this chat. Keep the existing name; ' +
+            'only a canvas created for a chat without a document may be named.',
+        });
+      }
       // Activating another open document is the other way out of the working
       // canvas. Allow only the chat's own document; the watcher would otherwise
       // have to drag the user back after the turn.

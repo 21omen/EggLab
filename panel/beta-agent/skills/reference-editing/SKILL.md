@@ -69,7 +69,55 @@ Reconstruct the background and floor naturally, matching perspective, texture an
 Remove the red annotation and preserve all unmarked areas.
 ```
 
+## 3.1 Chat attachments: mask images and drawn descriptions
+
+Users often attach files directly instead of using PhotoCraft layers. Classify
+each attachment before prompting:
+
+| Attachment | Meaning | Tool path |
+|---|---|---|
+| Photo + blank layer painted with the PhotoCraft brush | Separate MASK: white/alpha = change, black/transparent = keep | `egl_edit` with `init_image` (photo) + `mask_image` (mask) + `strength` |
+| Photo with circles / sketched areas / handwritten notes | DRAWN DESCRIPTION: the marks are the instructions | `egl_edit` with the marked photo as `<image1>`; name each mark and its target, say the marks are removed |
+| Extra photos (hat, garment, character) | Donors with explicit roles | `egl_edit` with `<image2>`+ and one role per donor |
+
+Rules:
+- The mask is a selector, never artwork: do not pass it in `images`; do not ask
+  the model to render it.
+- Strength follows the task, not the attachment: replace/add/remove 0.75–0.95;
+  recolour or retouch 0.4–0.6.
+- With drawn marks plus donors, `<image1>` is the marked canvas and the marks
+  name WHERE; the donor names WHAT (e.g. "put the hat from <image2> on the girl
+  inside the blue circle; remove the blue circle").
+- Multiple marks in one photo are allowed: map each colour/shape to one change
+  in the user's order and finish with one removal + preserve clause.
+
+Worked example A — mask attachment:
+```text
+Use the first image as the canvas and the second image as the editable mask
+(white = change, black = keep). Inside the masked area, replace the object with
+a realistic potted fern matching the original perspective and lighting.
+Preserve every pixel outside the mask. The mask must not appear in the result.
+```
+
+Worked example B — drawn description plus donor:
+```text
+<image1> is the canvas with drawn instructions.
+- Red circle: change the dog's leg inside it to soft pink.
+- Red sketched area: replace that area with clean flames.
+Preserve the rest of the dog, the floor and the lighting.
+Remove all drawn marks and sketches from the final image.
+```
+
+```text
+<image1> is a group photo with a blue circle around one girl.
+<image2> is a red hat.
+Put the red hat from <image2> on the girl inside the blue circle, fitted to her
+head and lighting. Leave every other person and the background unchanged.
+Remove the blue circle.
+```
+
 ## 4. PhotoCraft annotations — marks drawn on the photo
+
 
 The model is **trained on circle-guided and annotation-guided local editing**;
 on this engine the whole-marked-photo path is verified to be the strongest

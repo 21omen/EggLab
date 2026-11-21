@@ -72,6 +72,21 @@ enumerate every structural element the sketch shows (hull/body shape, counts,
 openings, placements, camera angle), then describe materials, lighting and
 photorealism. Inspect against the sketch and fix named mismatches.
 
+## Attached mask images (chat attachments)
+When the user attaches a mask file instead of using a PhotoCraft layer, the
+agent calls `egl_edit` with `init_image` (the photo) + `mask_image` (the mask)
++ `strength`. Measured on this engine: white = repainted, black = kept; 0.9
+replaced an object cleanly, 0.4 left it almost unchanged. The mask is never a
+donor. This is the same latent-mask path as `photocraft_edit_active`'s
+`mask_layer`, just with files from the chat.
+
+## Drawn descriptions (annotated photos)
+Circles, sketched areas and handwritten notes on an attached photo are the
+instructions (the model is trained on annotation-guided local editing). Send
+the marked photo whole, name each mark's target and result, say the marks are
+removed, and protect the unmarked areas. Donors (a hat, a garment) go in as
+`<image2>`+ with an explicit role and the mark names WHERE they apply.
+
 ## Engine facts and limits
 - Steps/CFG: panel presets are quality 40 steps @ CFG 1.0, turbo 8 steps @ 1.0
   (Turbo = fixed 8-sigma schedule, `--sigmas qwen-image-2.1-turbo`). The
