@@ -474,6 +474,14 @@ async function handle(req, res, url) {
  * same place and hide the original. The whole point of the panel.
  */
 async function editActive(body) {
+  try {
+    fs.appendFileSync(
+      path.join(LOG_DIR, 'main.log'),
+      `${new Date().toISOString()} edit-active maskLayer=${body.maskLayer || ''} ` +
+        `region=${JSON.stringify(body.region || null)} mode=${body.mode || 'crop'} ` +
+        `refs=${(body.references || []).length}\n`,
+    );
+  } catch {}
   const exported = await pc.exportActiveLayer();
   if (!exported?.path) throw new Error('No active layer to edit.');
   const layer = exported.layer;

@@ -1034,19 +1034,24 @@ async function callTool(name, args = {}) {
       });
 
     case 'photocraft_edit_active': {
-      // Never let a mask-intent prompt run as a whole-layer guess: if the
-      // prompt talks about a mask but no mask_layer/region arrived, the mask
-      // was lost (usually a wrong argument key) — refuse with the exact fix.
-      if (
-        !args.mask_layer &&
-        !args.region &&
-        /mask|masked/i.test(String(args.prompt || ''))
-      ) {
+      // Mask intent is absolute: a painted mask layer is required, and a region
+      // must not stand in for it. Then verify the layer exists before binding.
+      if (/mask|masked/i.test(String(args.prompt || '')) && !args.mask_layer) {
         throw new Error(
-          'This edit refers to a mask, but no mask_layer or region was provided. ' +
-            'Pass mask_layer:"<exact layer name>" (find it with egl_photocraft_layers) — ' +
-            'a whole-layer edit cannot target a masked area, and running one would change the wrong pixels.',
+          'This edit refers to a mask, so mask_layer is required (find the exact name with egl_photocraft_layers). ' +
+            'A region does not replace a painted mask layer.',
         );
+      }
+      if (args.mask_layer) {
+        const info = await api('POST', '/api/photocraft/layers', {});
+        const names = (info?.layers || info?.result?.layers || []).map((l) => String(l.name));
+        const hit = names.some((n) => n.toLowerCase() === String(args.mask_layer).toLowerCase());
+        if (!hit) {
+          throw new Error(
+            `Mask layer "${args.mask_layer}" is not in this document. Layers: ${names.join(', ')}. ` +
+              'Use egl_photocraft_layers for exact names.',
+          );
+        }
       }
       return await api('POST', '/api/photocraft/edit-active', {
         prompt: args.prompt,
