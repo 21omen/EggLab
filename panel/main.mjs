@@ -127,16 +127,7 @@ function applyBounds(bounds) {
   applyingBounds = true;
   suppressMoveUntil = Date.now() + 400;
   try {
-    if (process.platform === 'linux') {
-      // A non-resizable X11 window advertises min = max = its current size,
-      // and tiling WMs (Hyprland) enforce that hint, so the egg could never
-      // grow into the panel. Unlock, resize, and lock again at the new size.
-      win.setResizable(true);
-      win.setBounds(bounds, false);
-      win.setResizable(false);
-    } else {
-      win.setBounds(bounds, false);
-    }
+    win.setBounds(bounds, false);
   } finally {
     applyingBounds = false;
   }
@@ -176,6 +167,10 @@ function expandShell() {
   if (y < work.y) y = Math.round(eggAnchor.y + EGG.height / 2 - height / 2);
   x = Math.max(work.x, Math.min(x, work.x + work.width - width));
   y = Math.max(work.y, Math.min(y, work.y + work.height - height));
+  // Linux: resizing a mapped XWayland window makes the compositor show the old,
+  // smaller frame in the corner of the grown window until Chromium delivers one
+  // at the new size. Unmap it across the resize; win.show() below maps it again.
+  if (process.platform === 'linux') win.hide();
   applyBounds({ x, y, width, height });
   shellExpanded = true;
   try {
@@ -234,7 +229,10 @@ function createWindow() {
     maxHeight: PANEL.height,
     frame: false,
     transparent: true,
-    resizable: false,
+    // Linux: a non-resizable X11 window advertises min = max = its current
+    // size, and Hyprland enforces that hint while the egg grows into the
+    // panel. Leave it resizable; minWidth/maxWidth still bound the shell.
+    resizable: process.platform === 'linux',
     maximizable: false,
     fullscreenable: false,
     hasShadow: false,
@@ -252,6 +250,15 @@ function createWindow() {
   });
 
   win.loadFile(path.join(PANEL_DIR, 'renderer', 'index.html'));
+
+  // Linux: the compositor clips the panel's and the egg's soft drop shadows at
+  // the window edge into dark rectangles. linux.css removes or shrinks them.
+  if (process.platform === 'linux') {
+    const linuxCss = fs.readFileSync(path.join(PANEL_DIR, 'renderer', 'linux.css'), 'utf8');
+    win.webContents.on('dom-ready', () => {
+      win.webContents.insertCSS(linuxCss).catch((err) => trace(`linux.css: ${err.message}`));
+    });
+  }
 
   // Renderer visibility: console errors and crashes go to main.log, so a
   // silent renderer failure (e.g. an exception that kills UI wiring) is

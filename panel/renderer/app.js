@@ -145,15 +145,37 @@ function applyShellExpanded(expanded, { focus = true } = {}) {
   }
 }
 
+// Linux (X11 through XWayland): right after the window is resized, the
+// compositor still shows the last frame it had at that size, so the panel
+// flashes before the egg's layout and the egg then sits in the panel's corner
+// until the expanded layout arrives. Blank the page across the resize and
+// reveal it once the new layout has been painted.
+const BLANK_SWAP = /Linux/.test(navigator.userAgent);
+const painted = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+async function blankForSwap() {
+  if (!BLANK_SWAP) return;
+  document.body.style.visibility = 'hidden';
+  await painted();
+}
+
+async function revealAfterSwap() {
+  if (!BLANK_SWAP) return;
+  await painted();
+  document.body.style.visibility = '';
+}
+
 async function expandEgg() {
   if (shell.expanded || shell.switching) return;
   shell.switching = true;
   try {
+    await blankForSwap();
     const res = await api.eggExpand();
     applyShellExpanded(Boolean(res?.expanded));
   } catch (err) {
     toast(friendly(err), 'error');
   } finally {
+    await revealAfterSwap();
     shell.switching = false;
   }
 }
@@ -164,6 +186,7 @@ async function collapseEgg() {
   // Fade the panel before the window shrinks so the resize never clips it.
   document.body.classList.add('shell-leaving');
   await new Promise((resolve) => setTimeout(resolve, 120));
+  await blankForSwap();
   document.body.classList.remove('shell-leaving');
   try {
     const res = await api.eggCollapse();
@@ -172,6 +195,7 @@ async function collapseEgg() {
     applyShellExpanded(false);
     toast(friendly(err), 'error');
   } finally {
+    await revealAfterSwap();
     shell.switching = false;
   }
 }
