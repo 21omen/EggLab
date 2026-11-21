@@ -610,6 +610,11 @@ check(
     /A mask must share the image canvas/.test(engineSource),
 );
 check(
+  'agents cannot save-as or rename an existing document',
+  /source === 'agent' && target && d\.path/.test(read('service/photocraft.mjs')) &&
+    /source: 'agent' \}\)/.test(mcpSource2),
+);
+check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&
     /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),

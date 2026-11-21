@@ -1214,12 +1214,26 @@ export async function projectState() {
  * untitled document would open a save dialog we cannot answer, so callers
  * must pass a path for those.
  */
-export async function save({ path: target, format } = {}) {
+export async function save({ path: target, format, source } = {}) {
   const doc = await inspect();
   const d = doc?.document || doc;
   if (!d || !d.name) throw new Error('No document is open.');
   if (!target && !d.path) {
     throw new Error('This document has never been saved. Give a path, e.g. projects/<name>/<name>.pcraft.');
+  }
+  // The agent must not save-as (rename) an existing document: the identity
+  // change strands the chat bound to the old document. Naming is allowed
+  // only for a document that has no file yet.
+  if (source === 'agent' && target && d.path) {
+    const root = getSettings().photocraft.writeRoot;
+    const targetAbs = path.resolve(root, target);
+    const currentAbs = path.resolve(root, d.path);
+    if (targetAbs.toLowerCase() !== currentAbs.toLowerCase()) {
+      throw new Error(
+        'The agent must not save-as or rename the open document: that changes its identity and strands this chat. ' +
+          'Save in place (omit path), or finish in the current project.',
+      );
+    }
   }
   const params = {};
   if (target) params.path = toRootRelative(target);

@@ -1084,7 +1084,9 @@ async function callTool(name, args = {}) {
         const made = await api('POST', '/api/photocraft/project/path', { name: args.name });
         args.path = made.path;
       }
-      return await api('POST', '/api/photocraft/project/save', { path: args.path });
+      // source lets the panel refuse a save-as that would rename the open
+      // document (identity change strands the chat).
+      return await api('POST', '/api/photocraft/project/save', { path: args.path, source: 'agent' });
     }
 
     case 'photocraft_open':
