@@ -485,7 +485,6 @@ function handleChatEvent(ev) {
       upsertJobEvent(ev.item.job);
       // A finished render is also an asset: refresh the tray cheaply (it only
       // lists, so this stays light even during long runs).
-      if (ev.item.job?.status === 'done') renderAssetStrip();
       break;
     }
     case 'cleared':
@@ -554,54 +553,12 @@ async function loadThread() {
     S.nodeIndex.clear();
     renderTimeline();
     renderThreadLabel();
-    
-    renderAssetStrip();
     updateEmpty();
   } catch (err) {
     toast(friendly(err), 'error');
   }
 }
 
-/**
- * The asset tray (Phase D): this chat's finished renders/edits as clickable
- * thumbnails. Clicking an asset places its exact pixels on the linked canvas.
- */
-async function renderAssetStrip() {
-  const el = $('#assetStrip');
-  if (!el) return;
-  let list = [];
-  try {
-    list = await api.assetsList();
-  } catch {
-    el.classList.add('hidden');
-    return;
-  }
-  if (!list.length) {
-    el.classList.add('hidden');
-    el.innerHTML = '';
-    return;
-  }
-  el.classList.remove('hidden');
-  el.innerHTML = list
-    .map(
-      (a) =>
-        `<button class="asset-thumb" data-asset="${esc(a.id)}" title="${esc(
-          `${a.kind === 'edit' ? 'Edit' : 'Render'}${a.seed !== null && a.seed !== undefined ? ` · seed ${a.seed}` : ''} — click to place on the canvas`,
-        )}"><img src="${api.fileUrl(a.path)}" alt="" /></button>`,
-    )
-    .join('');
-}
-
-async function placeAsset(id) {
-  try {
-    const out = await api.assetPlace(id);
-    toast('Asset placed on the canvas.', 'ok');
-    refreshPc();
-    return out;
-  } catch (err) {
-    toast(friendly(err), 'error');
-  }
-}
 
 /** The small line under the brand showing which project this chat belongs to. */
 function renderThreadLabel() {
@@ -2626,10 +2583,6 @@ function bind() {
   $('#threadLabel').onclick = (e) => {
     e.stopPropagation();
     openSessions();
-  };
-  $('#assetStrip').onclick = (e) => {
-    const id = e.target.closest('[data-asset]')?.dataset.asset;
-    if (id) placeAsset(id);
   };
   $('#canvasPopupMake').onclick = canvasPopupCreate;
   $('#canvasPopupLater').onclick = closeCanvasPopup;

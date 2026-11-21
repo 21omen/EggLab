@@ -45,8 +45,6 @@ contextBridge.exposeInMainWorld('egglab', {
   sessionOpenDoc: (docKey) => ipcRenderer.invoke('sessions:openDoc', { docKey }),
   chatCreateCanvas: (key) => ipcRenderer.invoke('chat:createCanvas', { key }),
   uiError: (message) => ipcRenderer.invoke('ui:error', { message }),
-  assetsList: () => ipcRenderer.invoke('assets:list'),
-  assetPlace: (id) => ipcRenderer.invoke('assets:place', { id }),
 
   pcStatus: () => ipcRenderer.invoke('pc:status'),
   pcLaunch: () => ipcRenderer.invoke('pc:launch'),

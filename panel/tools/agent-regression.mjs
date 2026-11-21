@@ -656,12 +656,9 @@ check(
   /a\.jobId === jobId/.test(read('service/assets.mjs')) && /assetsForChat/.test(read('service/assets.mjs')),
 );
 check(
-  'the asset tray lists and places',
-  /assets:list/.test(mainSource) && /assets:place/.test(mainSource) && /assetPlace/.test(read('preload.cjs')),
-);
-check(
-  'the renderer shows a clickable asset strip',
-  /renderAssetStrip/.test(read('renderer/app.js')) && /asset-thumb/.test(read('renderer/app.css')),
+  'the UI shows no asset preview strip (removed by request)',
+  !/asset-strip|id="assetStrip"/.test(indexHtml) && !/renderAssetStrip|placeAsset|assetsList/.test(appJs) &&
+    !/assets:list|assets:place/.test(mainSource),
 );
 
 // ---- Phase E: session UX polish ---------------------------------------
