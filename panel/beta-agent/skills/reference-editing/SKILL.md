@@ -128,33 +128,9 @@ head and lighting. Leave every other person and the background unchanged.
 Remove the blue circle.
 ```
 
-## 5.1 Selection → mask layer (primary local-edit path)
+## 5.1 Selection → mask (deprecated)
 
-When the user makes a selection (lasso/rect/object) and asks to edit that area:
-
-1. Confirm the selection: `egl_photocraft_command { id: "document.inspect" }` →
-   `hasSelection: true` and `selectionBounds`. If `hasSelection` is false, ask
-   the user to select the area (do not guess a region).
-2. Feather the selection so the mask has soft edges:
-   `egl_photocraft_command { id: "select.modify.feather", params: { feather: 8 } }`.
-3. Create the mask layer with existing tools:
-   - `layer.new.layer` (blank layer at document size)
-   - `edit.fill { color: "#FFFFFF" }` → fills only inside the selection (white = change)
-   - `select.inverse` → `edit.fill { color: "#000000" }` → outside = keep
-   - `select.deselect`
-   The layer is now a canonical Qwen mask: white = edit, black = keep, document-size.
-   **Verify before rendering**: if the panel refuses the edit with "mask covers
-   essentially the whole canvas", the fill route failed — rebuild using
-   `layer.layerMask.revealSelection` on a white-filled layer (PhotoCraft turns
-   the selection into the layer mask; exports keep white inside / hidden outside).
-4. Select the source layer, then run `egl_photocraft_edit_active` with
-   `mask_layer: "<mask layer name>"` and a prompt describing the RESULT state
-   plus the surrounding scene (never the mask's colour).
-4. The panel composites the render back through the mask, so outside the
-   selection stays untouched; the mask layer is hidden afterwards.
-
-Paint/brush masks still work (alpha/colour detection), but the selection path
-is deterministic and preferred whenever a selection exists.
+Building masks by filling the selection proved unreliable in PhotoCraft (the fill does not clip to the selection; the panel catches the all-white result and refuses it). Use a **painted mask layer** instead (see §5): the panel selects painted colour by alpha, exports the layer full-canvas, and composites the render back through the mask. If the panel reports an all-white mask, the mask layer content is wrong — repaint it.
 
 ## 4. PhotoCraft annotations — marks drawn on the photo
 
