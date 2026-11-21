@@ -108,7 +108,7 @@ Worked example A — mask attachment:
 Use the first image as the canvas and the second image as the editable mask
 (white = change, black = keep). Inside the masked area, replace the object with
 a realistic potted fern matching the original perspective and lighting.
-Preserve every pixel outside the mask. The mask must not appear in the result.
+Preserve everything outside the masked area.
 ```
 
 Worked example B — drawn description plus donor:
@@ -183,17 +183,13 @@ Use this when the user painted a mask on a **separate layer** (for example `Mask
      a masked edit that "did nothing" almost always means strength was too low.
      Pair a high strength with a `quality` run and inspect the seams.
 4. The tool exports the active canvas and the named mask layer, aligns the mask to the canvas bounds (white/opaque = repainted, black/transparent = kept), and runs the engine with `--init-img --mask --strength`. The mask is not sent as a donor image.
-5. In the prompt: describe the **final state inside the masked area** ("the masked area shows a small green potted fern matching the studio light"), preserve everything outside it in one clause, and note the mask itself must not appear. The mask is pixel-level guidance — the model does not see it as an image, so the prompt carries the content.
+5. In the prompt: use the **native-mask template** above - describe the WHOLE image first, then what the masked area becomes, one blanket preservation clause. Never mention the mask, its colour, or pixel promises.
 6. Inspect the mask boundary at native size. If the change is weak, raise `strength` (not the prompt length). If edges show, the mask feather/blend is the issue — say so, or ask the user to widen the mask (do not invent a new mask UI).
 
 Example:
 
 ```text
-Use the first image as the original canvas and the separate mask as the editable region.
-Replace only the masked area with a realistic potted fern.
-Match the original perspective, lighting and scale.
-Preserve every area outside the mask, including the table, wall and window.
-The mask is region guidance only and must not appear in the result.
+A poster of a teenage boy at a white desk with cartoon mascots on a deep blue background. In the masked region the deep-blue background continues cleanly with no text or marks. The boy, mascots, desk, headline and all other elements stay exactly as they are.
 ```
 
 Native-mask prompt template (official Qwen-Image-2.1 format — the engine-mask
