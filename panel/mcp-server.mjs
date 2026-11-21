@@ -735,6 +735,9 @@ const AGENT_TOOL_NAMES = Object.freeze([
 // agent's surface.
 const TOOL_PROFILE = String(process.env.EGGLAB_TOOLSET || 'agent').toLowerCase();
 const agentProfile = TOOL_PROFILE === 'agent' || TOOL_PROFILE === 'agent-beta';
+// Beta harness gate: production must not start before the routed skill body has
+// been loaded in this session. Deterministic — a prompt rule alone was skipped.
+let knowledgeLoaded = false;
 const activeTools = agentProfile
   ? tools.filter((tool) => AGENT_TOOL_NAMES.includes(tool.name))
   : tools;
@@ -744,6 +747,20 @@ async function callTool(name, args = {}) {
   if (!activeToolNames.has(name)) {
     throw new Error(`Tool ${name} is not available in this tool profile (${TOOL_PROFILE}).`);
   }
+  if (name === 'read_knowledge') knowledgeLoaded = true;
+  if (
+    TOOL_PROFILE === 'agent-beta' &&
+    !knowledgeLoaded &&
+    ['generate', 'edit', 'photocraft_edit_active', 'photocraft_place'].includes(name)
+  ) {
+    throw new Error(
+      'Load the routed skill first: call egl_read_knowledge (ROUTER.md step 0) — ' +
+        'skills/reference-editing/SKILL.md for edits, skills/design-pipeline/SKILL.md for designs, ' +
+        'skills/photocraft-production/SKILL.md for canvas work. Production stays locked until the skill body is read.',
+    );
+  }
+  // Every user-attached reference must be used in the job; reordering is fine,
+  // dropping one is not. (Declared in the prompt; the tool echoes what it got.)
   switch (name) {
     case 'status': {
       const full = await api('GET', '/api/status');
