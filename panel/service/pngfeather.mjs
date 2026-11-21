@@ -223,6 +223,17 @@ export function regionMask(file, width, height, rect, featherPx) {
 export function layerMask(srcFile, dstFile, width, height, bounds, invert = false) {
   const src = decodePng(srcFile);
   const [ox, oy] = (bounds || []).map((v) => Math.round(Number(v) || 0));
+  // Selector convention: a painted overlay has transparent pixels, so its
+  // ALPHA is the selection (any opaque stroke, red or white, fully selected).
+  // An opaque grayscale mask has no transparency, so luminance is the selector.
+  // Using luminance on red paint turned a full stroke into ~30% gray.
+  let paintedOverlay = false;
+  for (let i = 3; i < src.data.length; i += 4) {
+    if (src.data[i] < 250) {
+      paintedOverlay = true;
+      break;
+    }
+  }
   const rgba = Buffer.alloc(width * height * 4);
   for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255; // opaque black keep-area
   for (let y = 0; y < src.height; y++) {
@@ -236,9 +247,14 @@ export function layerMask(srcFile, dstFile, width, height, bounds, invert = fals
       // Unpainted/transparent pixels are always keep-area, even when inverting:
       // inversion applies to the painted black/white mask, not to transparency.
       if (alpha <= 0.004) continue;
-      const lum =
-        (src.data[s] * 0.299 + src.data[s + 1] * 0.587 + src.data[s + 2] * 0.114) / 255;
-      let v = Math.round(255 * lum * alpha);
+      let v;
+      if (paintedOverlay) {
+        v = Math.round(255 * alpha);
+      } else {
+        const lum =
+          (src.data[s] * 0.299 + src.data[s + 1] * 0.587 + src.data[s + 2] * 0.114) / 255;
+        v = Math.round(255 * lum * alpha);
+      }
       if (invert) v = 255 - v;
       const d = (dy * width + dx) * 4;
       rgba[d] = rgba[d + 1] = rgba[d + 2] = v;

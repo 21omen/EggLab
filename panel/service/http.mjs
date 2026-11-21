@@ -598,6 +598,15 @@ async function editActive(body) {
   }
   const sourceSize = pc.pngSize(source);
   const inpaint = Boolean(local.mask);
+  // A masked inpaint must follow the source layer's geometry. Falling back to
+  // the panel's default square (960x960) stretches a portrait layer and ruins
+  // the render — refuse instead of guessing.
+  if (inpaint && !(Number(sourceSize?.width) > 0 && Number(sourceSize?.height) > 0)) {
+    throw new Error(
+      'Could not read the active layer pixels for the masked edit (no size/aspect). ' +
+        'Select the source layer again and retry — refusing to render at a default square size.',
+    );
+  }
 
   // Follow the source's aspect ratio instead of capping each side on its own.
   // min(1024,w) x min(1024,h) turns a 1024x1280 layer into a 1024x1024 square,
