@@ -192,13 +192,17 @@ Example:
 A poster of a teenage boy at a white desk with cartoon mascots on a deep blue background. In the masked region the deep-blue background continues cleanly with no text or marks. The boy, mascots, desk, headline and all other elements stay exactly as they are.
 ```
 
-Native-mask prompt template (official Qwen-Image-2.1 format — the engine-mask
-prompt describes the whole target image, because the mask marks the region):
+Native-mask prompt template (verified on this engine — the source image IS the
+scene; do not describe the whole picture, that hijacks the render):
 
-0. **Inspect the source image first** (`egl_inspect` on the layer export or
-   `egl_photocraft_canvas`). The whole-image description MUST come from what
-   you saw — guessing the scene ("flower field" for a product poster) makes the
-   masked render drift toward the invented image.
+1. Inspect the source first (`egl_inspect` on the layer export or
+   `egl_photocraft_canvas`) — to know what the region should become.
+2. State the change inside the masked region + the result state, e.g.
+   "the masked area shows the clean wooden desk surface continuing behind the
+   subject, matching the surrounding colour, grain and lighting".
+3. One keep-the-rest clause ("the rest of the image stays exactly as it is").
+4. Never mention masks, their colour, pixel promises, or invent a scene
+   description.
 
 1. Describe the WHOLE target image first (scene, subject, style, background).
 2. Then the masked change: what the region becomes, concretely and visibly.

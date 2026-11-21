@@ -55,7 +55,12 @@ Rules that apply to every method:
   - Lead with the operation; write it as an instruction, not a description of the finished picture.
   - For N ≥ 2 images, state each image's ROLE with `<imageN>` tags (mandatory): `<image1>` is the canvas whose composition survives; donors supply named material ("put the shirt from `<image2>` on the character in `<image1>`").
   - Identity/product from a reference: point at that image — never describe the likeness in words.
-  - `native_mask`: describe the WHOLE target image (scene, subject, style), then what the masked area becomes — the mask marks the region, the prompt describes the target image. Removals: say what the newly exposed region shows.
+  - `native_mask`: the source pixels carry the scene — do NOT describe the
+    whole image (an invented scene description hijacks the render; measured:
+    the agent wrote "flower field" for a product poster). The prompt states the
+    change inside the masked region + what it becomes ("the masked area shows
+    the clean desk surface continuing behind the subject") + one keep-the-rest
+    clause. The mask marks the region; never mention masks, colours or pixels.
   - Preservation: name untargeted content by type/position/role with ONE blanket clause; never describe preserved appearance in detail (describing it makes it drift).
   - Text that must appear is exact and quoted; rendered-text language follows the image's dominant language.
   - Output follows `<image1>`'s ratio; never put resolution/ratio/size in the prompt. Never mention the mask's colour in engine-mask prompts (mark colours ARE referenced for annotation-style edits).

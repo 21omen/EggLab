@@ -666,7 +666,7 @@ const tools = [
   {
     name: 'photocraft_save',
     description:
-      'Save the active PhotoCraft document. With no path it saves to the document\'s own file (refuses if never saved). With a path it saves a copy there (must be under the write root). ALWAYS save after placing or editing layers — otherwise the work is lost when PhotoCraft closes.',
+      'Save the active PhotoCraft document. With no path it saves to the document\'s own file (refuses if never saved). ALWAYS save after placing or editing layers - otherwise the work is lost when PhotoCraft closes. Agents: save IN PLACE (omit path and name). If a save was refused with a save-as message, call again without path/name.',
     inputSchema: {
       type: 'object',
       properties: {
