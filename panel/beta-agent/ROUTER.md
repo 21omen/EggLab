@@ -11,7 +11,7 @@ agent, not a multi-agent system.
 
 **B. DESIGNING** — a new visual product must be created from a brief (generate
 assets, compose, deliver).
-→ go to §B.
+→ go to §B. Load `design-pipeline` first; it orchestrates the stages.
 
 Neither (answer, review, diagnosis, explanation) → answer from live evidence;
 load one skill only if the answer needs its detail.

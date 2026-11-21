@@ -1,0 +1,50 @@
+# Design job record — reference schema for egl_job_state (designing)
+# Persist this shape through the panel-managed job state; do not write files.
+job_type: designing
+brief:
+  purpose: null
+  audience: null
+  format: poster | social_post | banner | packaging | key_art | infographic | other
+  dimensions: { width: null, height: null, unit: px, bleed: null }
+  copy:
+    headline: null
+    body: null
+    cta: null
+    legal: null
+  brand_rules: []
+  exclusions: []
+  deliverables: [project, flat_png]   # project | flat_png | layers | variants
+direction:
+  concept: null
+  focal_point: null
+  hierarchy: []
+  palette: []
+  typography: []
+  asset_style: null
+asset_plan:
+  - id: hero
+    purpose: null
+    method: generate | edit | native
+    references: []          # ordered {path, role}
+    size: null
+    transparent: false
+    continuity: []
+    qa: []
+generated_assets:
+  - id: null
+    path: null
+    width: null
+    height: null
+    seed: null
+    prompt: null
+    alpha_verified: false
+photocraft:
+  document: { key: null, name: null, width: null, height: null }
+  layers: []
+  adjustments: []
+exports: []
+qa:
+  - check: hierarchy | margins | typography | exact_copy | integration | alpha | export
+    verdict: pass | fail | unknown
+    evidence: null
+status: planning | generating | composing | refining | verifying | delivered | blocked

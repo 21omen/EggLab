@@ -567,6 +567,22 @@ check(
   'the agent is told names-first and risk classes',
   /detail:"names"/.test(read('beta-agent/AGENT.md')) && /Ask before destructive commands/.test(read('beta-agent/AGENT.md')),
 );
+
+// ---- V2 ticket 5: designing pipeline ------------------------------------
+check(
+  'the design pipeline orchestrates brief to delivery',
+  exists('beta-agent/skills/design-pipeline/SKILL.md') &&
+    /## 1\. Brief/.test(read('beta-agent/skills/design-pipeline/SKILL.md')) &&
+    /## 5\. Compose in PhotoCraft/.test(read('beta-agent/skills/design-pipeline/SKILL.md')) &&
+    /## 7\. Verify and deliver/.test(read('beta-agent/skills/design-pipeline/SKILL.md')),
+);
+check(
+  'the design job record schema exists and is routed',
+  exists('beta-agent/templates/design-job.yaml') &&
+    /name: design-pipeline/.test(read('beta-agent/manifest.yaml')) &&
+    /required_for: \[designing\]/.test(read('beta-agent/manifest.yaml')) &&
+    /Load `design-pipeline` first/.test(read('beta-agent/ROUTER.md')),
+);
 check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&

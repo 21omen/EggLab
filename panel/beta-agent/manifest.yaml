@@ -13,6 +13,12 @@ loading:
   unknown_paths: reject
   read_only: true
 skills:
+  - name: design-pipeline
+    path: skills/design-pipeline/SKILL.md
+    description: Orchestrated generate-first design production from brief through asset plan, generation, editable PhotoCraft composition, QA and delivery.
+    triggers: [design_brief, poster, advertisement, banner, packaging, social_post, infographic, key_art, editable_project]
+    required_for: [designing]
+    references: [templates/design-job.yaml]
   - name: design-direction
     path: skills/design-direction/SKILL.md
     description: Visual concept, audience-aware hierarchy, composition, palette, typography and style choice.
