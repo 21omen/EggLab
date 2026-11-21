@@ -533,9 +533,16 @@ check(
     /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),
 );
 check(
+  'the beta brain routes two jobs and teaches the mask taxonomy',
+  /IMAGE EDITING/.test(read('beta-agent/AGENT.md')) &&
+    /DESIGNING/.test(read('beta-agent/AGENT.md')) &&
+    /`native_mask`/.test(read('beta-agent/ROUTER.md')) &&
+    /`visual_mask`/.test(read('beta-agent/ROUTER.md')) &&
+    /never silently drop or reorder input images/i.test(read('beta-agent/AGENT.md')),
+);
+check(
   'the beta skill teaches attached masks and drawn descriptions',
-  /Attached mask image \+ photo/.test(read('beta-agent/AGENT.md')) &&
-    /Chat attachments: mask images and drawn descriptions/.test(read('beta-agent/skills/reference-editing/SKILL.md')) &&
+  /Chat attachments: mask images and drawn descriptions/.test(read('beta-agent/skills/reference-editing/SKILL.md')) &&
     /Drawn descriptions \(annotated photos\)/.test(read('beta-agent/references/engine/qwen-image-2.1-legacy-facts.md')),
 );
 check(

@@ -1,6 +1,6 @@
 package:
   name: egglab-agent
-  version: 2.2.0
+  version: 2.3.0
   default_entrypoint: AGENT.md
   router: ROUTER.md
   schema: egglab-knowledge-manifest-v1
@@ -34,7 +34,7 @@ skills:
   - name: reference-editing
     path: skills/reference-editing/SKILL.md
     description: Instruction edits, marked-photo and separate-mask local edits, sketch guidance, multi-reference roles, identity/product preservation, scoped changes and seam checks.
-    triggers: [image_edit, instruction_edit, annotated_edit, mask_edit, sketch_edit, reference_compositing, multi_reference, identity_preservation, relight, retouch, object_removal, product_placement, virtual_try_on, material_transfer]
+    triggers: [image_edit, instruction_edit, direct_edit, multi_reference, visual_mask, native_mask, circle_annotation, paint_annotation, annotated_edit, mask_edit, sketch_edit, reference_compositing, identity_preservation, relight, retouch, object_removal, product_placement, virtual_try_on, material_transfer]
     required_for: [source_image_edit, reference_composite]
     references: [references/reference-editing/reference-mapping.md, references/reference-editing/local-edit-and-seam-control.md, references/research/local/qwen-image-2.1-features.md, references/research/local/qwen-seamless-local-edit.md]
   - name: transparency
