@@ -129,6 +129,7 @@ are the region selector.
 2. Map each mark to one requested edit, in the user's order. Do not invent a semantic meaning for a colour unless the user assigned one.
 3. **Preferred: whole-layer edit with the marks visible.** Use `egl_photocraft_edit_active` with the photo as the active layer and **omit `region` and `mask_layer`**: the exported layer includes the marks, and the model reads them as region selectors. In the prompt, name each mark (colour/shape → target), describe the intended result inside it, say the annotation must be removed, and protect unmarked areas.
 4. Only use a `region` edit when the marked photo contains something the marks must NOT touch nearby and the model keeps drifting (the crop hides the distractor). Then expand the region box well beyond the object for context, and prefer `mode:"inpaint"` on flat surfaces. A tight surgical crop is the last resort — it strips context the model needs.
+5. **Donors ride along with the marks.** When the user supplies extra reference images (e.g. a hat photo for the circled girl), pass them as `reference_images` on `egl_photocraft_edit_active` (or `<image2>+` on `egl_edit`) and tie each donor to a mark in the prompt. The source is never listed twice; the mask layer is never a donor.
 5. If the annotations are on a **separate layer** rather than the photo layer:
    - Export a marked composite with `egl_photocraft_export_flat` (do not pass the annotation layer alone as the canvas).
    - Run `egl_edit` with the flat marked image as `<image1>`.

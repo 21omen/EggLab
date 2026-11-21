@@ -542,6 +542,15 @@ check(
   /visual_mask needs images\[0\] = source/.test(mcpSource2) && /use native_mask/.test(mcpSource2),
 );
 check(
+  'active-layer edits accept ordered donor references',
+  /reference_images: \{/.test(mcpSource2) && /references: Array\.isArray\(args\.reference_images\)/.test(mcpSource2) &&
+    /images: inpaint \? donorRefs : \[source, \.\.\.donorRefs\]/.test(httpSource2),
+);
+check(
+  'active-layer donors are never the source or the mask',
+  /\.filter\(\(p\) => p !== exported\.path\)/.test(httpSource2),
+);
+check(
   'agents cannot rename or save-as the open document',
   /must not rename or save-as the current document/.test(httpSource2) &&
     /Never rename or Save-As the open document/.test(read('beta-agent/AGENT.md')),

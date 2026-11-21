@@ -613,14 +613,18 @@ async function editActive(body) {
     return { width: Math.round(w * k), height: Math.round(h * k) };
   })();
 
+  // Donor references (circles/paint plus e.g. a hat photo) follow the active
+  // layer in order. The engine path is verified: -i + --mask + -r honours
+  // donors (measured), so they are never dropped. The source itself is the
+  // init image / first reference — never listed twice.
+  const donorRefs = (Array.isArray(body.references) ? body.references : [])
+    .filter(Boolean)
+    .map(String)
+    .filter((p) => p !== exported.path);
   const job = engine.startJob({
     ...body,
     region: undefined,
-    // Inpainting is driven by --init-img + --mask, and that path is verified
-    // WITHOUT a reference image; passing -r as well would condition the model
-    // twice on the same pixels. `transparent` is forced off because this is not
-    // a cut-out request — a global transparent default must not fire here.
-    images: inpaint ? [] : [source],
+    images: inpaint ? donorRefs : [source, ...donorRefs],
     ...(inpaint ? { transparent: false } : {}),
     ...local,
     width: body.width || fitted.width || undefined,

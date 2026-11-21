@@ -552,6 +552,12 @@ const tools = [
           type: 'boolean',
           description: 'Invert the mask convention (use when black marks the editable area).',
         },
+        reference_images: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Ordered donor images that follow the active layer (e.g. the hat photo when the user circles a girl). They are kept and passed to the engine after the source; the source itself is never listed twice. The mask layer is never a donor.',
+        },
         mode: {
           type: 'string',
           enum: ['crop', 'inpaint'],
@@ -992,6 +998,7 @@ async function callTool(name, args = {}) {
         region: args.region,
         maskLayer: args.mask_layer,
         maskInvert: args.mask_invert,
+        references: Array.isArray(args.reference_images) ? args.reference_images : undefined,
         mode: args.mode,
         feather: args.feather,
         strength: args.strength,
