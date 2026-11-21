@@ -329,12 +329,56 @@ function resizeRgba(src, sw, sh, dw, dh) {
 }
 
 /**
- * Composite an edited (already feathered) patch back over the original layer
- * at a region. The result is a full-layer image: original pixels outside the
- * region, blended patch inside. Placing this over the canvas and hiding the
- * original avoids the classic "original shows through the feathered edge"
- * artefact without sacrificing the rest of the layer.
+ * Composite a masked inpaint back onto the original through its mask.
+ *
+ * The engine's --init-img/--mask/--strength path re-noises the whole canvas, so
+ * at useful strengths it repaints outside the mask too. This makes the mask a
+ * guarantee: inside = the new render, outside = the original pixels, with a
+ * soft transition from a small mask blur.
  */
+export function compositeMasked(baseFile, patchFile, maskFile, dstFile) {
+  const base = decodePng(baseFile);
+  const patch = decodePng(patchFile);
+  const mask = decodePng(maskFile);
+  const patchData = resizeRgba(patch.data, patch.width, patch.height, base.width, base.height);
+  const maskData =
+    mask.width === base.width && mask.height === base.height
+      ? mask.data
+      : resizeRgba(mask.data, mask.width, mask.height, base.width, base.height);
+
+  // Soften the mask edge (3x3 box blur) so the blend has no visible step.
+  const m = new Float32Array(base.width * base.height);
+  for (let i = 0, p = 0; i < m.length; i++, p += 4) m[i] = maskData[p] / 255;
+  const soft = new Float32Array(m.length);
+  for (let y = 0; y < base.height; y++) {
+    for (let x = 0; x < base.width; x++) {
+      let sum = 0;
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= base.height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= base.width) continue;
+          sum += m[yy * base.width + xx];
+          n++;
+        }
+      }
+      soft[y * base.width + x] = sum / n;
+    }
+  }
+
+  const out = Buffer.from(base.data);
+  for (let i = 0, p = 0; i < soft.length; i++, p += 4) {
+    const a = Math.max(0, Math.min(1, soft[i]));
+    if (a <= 0.002) continue;
+    out[p] = Math.round(patchData[p] * a + out[p] * (1 - a));
+    out[p + 1] = Math.round(patchData[p + 1] * a + out[p + 1] * (1 - a));
+    out[p + 2] = Math.round(patchData[p + 2] * a + out[p + 2] * (1 - a));
+  }
+  encodePng(dstFile, base.width, base.height, out);
+  return { width: base.width, height: base.height };
+}
 export function compositePng(baseFile, patchFile, dstFile, rect) {
   const base = decodePng(baseFile);
   const patch = decodePng(patchFile);

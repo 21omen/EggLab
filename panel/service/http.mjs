@@ -11,7 +11,7 @@ import * as sessions from './sessions.mjs';
 import * as setup from './setup.mjs';
 import * as updater from './updater.mjs';
 import { alphaStats, describeAlpha } from './imagecheck.mjs';
-import { featherEdges, regionMask, layerMask, compositePng } from './pngfeather.mjs';
+import { featherEdges, regionMask, layerMask, compositePng, compositeMasked } from './pngfeather.mjs';
 import { getSettings, patchSettings } from './settings.mjs';
 import { LOG_DIR, TMP_DIR, stamp, clamp } from './paths.mjs';
 import { emit } from './bus.mjs';
@@ -658,6 +658,23 @@ async function editActive(body) {
   // a ramp that ate the middle would ghost two half-visible versions of the
   // subject instead of blending them.
   let output = done.outPath;
+  // Masked inpaint: make the mask a real guarantee. The engine re-noises the
+  // whole canvas, so composite the render back through the mask over the
+  // original layer — inside changes, outside stays byte-identical.
+  if (inpaint && done.outPath && local.initImg && local.mask) {
+    try {
+      const maskedFile = path.join(
+        TMP_DIR,
+        `pc-masked-${stamp()}-${Math.random().toString(36).slice(2, 7)}.png`,
+      );
+      compositeMasked(exported.path, done.outPath, local.mask, maskedFile);
+      output = maskedFile;
+      pasteBounds = layer.bounds;
+      swapOriginal = true;
+    } catch (err) {
+      emit('log', `masked composite failed (${err.message}); placing the raw inpaint`);
+    }
+  }
   let feathered = 0;
   if (local.feather > 0 && done.outPath) {
     try {
