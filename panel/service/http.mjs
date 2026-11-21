@@ -551,6 +551,19 @@ async function editActive(body) {
     pasteBounds = layer.bounds;
     swapOriginal = true;
     usedMaskLayer = name;
+    // Auto-mask step (user paints a shape; the system makes the canonical
+    // black/white mask and keeps it in the document so the conversion is
+    // visible and reusable). The painted layer is hidden after the edit.
+    try {
+      const maskPlaced = await pc.placeAtBounds(maskFile, [0, 0, size.width, size.height], {
+        name: 'EggLab mask (B/W)',
+      });
+      const mid = maskPlaced?.layer?.id ?? maskPlaced?.id ?? maskPlaced?.result?.layer?.id;
+      if (mid !== undefined) await pc.command('layer.setProps', { layer: mid, visible: false });
+      emit('log', 'auto-mask: made EggLab mask (B/W) layer (hidden)');
+    } catch (err) {
+      emit('log', `auto-mask placement failed (${err.message}); engine mask still applied`);
+    }
 
   } else if (Array.isArray(body.region) && body.region.length === 4) {
     if (!layer?.bounds) throw new Error('A region edit needs a layer with pixel bounds.');
