@@ -135,15 +135,21 @@ When the user makes a selection (lasso/rect/object) and asks to edit that area:
 1. Confirm the selection: `egl_photocraft_command { id: "document.inspect" }` →
    `hasSelection: true` and `selectionBounds`. If `hasSelection` is false, ask
    the user to select the area (do not guess a region).
-2. Create the mask layer with existing tools:
+2. Feather the selection so the mask has soft edges:
+   `egl_photocraft_command { id: "select.modify.feather", params: { feather: 8 } }`.
+3. Create the mask layer with existing tools:
    - `layer.new.layer` (blank layer at document size)
    - `edit.fill { color: "#FFFFFF" }` → fills only inside the selection (white = change)
    - `select.inverse` → `edit.fill { color: "#000000" }` → outside = keep
    - `select.deselect`
    The layer is now a canonical Qwen mask: white = edit, black = keep, document-size.
-3. Select the source layer, then run `egl_photocraft_edit_active` with
+   **Verify before rendering**: if the panel refuses the edit with "mask covers
+   essentially the whole canvas", the fill route failed — rebuild using
+   `layer.layerMask.revealSelection` on a white-filled layer (PhotoCraft turns
+   the selection into the layer mask; exports keep white inside / hidden outside).
+4. Select the source layer, then run `egl_photocraft_edit_active` with
    `mask_layer: "<mask layer name>"` and a prompt describing the RESULT state
-   (never the mask's colour).
+   plus the surrounding scene (never the mask's colour).
 4. The panel composites the render back through the mask, so outside the
    selection stays untouched; the mask layer is hidden afterwards.
 

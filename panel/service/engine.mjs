@@ -5,6 +5,7 @@ import { nativeImage } from 'electron';
 import { emit } from './bus.mjs';
 import { engineConfig, getSettings, resolveModelPath, patchSettings, workflowParams } from './settings.mjs';
 import { alphaStats } from './imagecheck.mjs';
+import { decodePng } from './pngfeather.mjs';
 import { EGGLAB_PS1, LOG_DIR, OUT_DIR, TMP_DIR, clamp, readJson, round32, stamp, stripAnsi, uid } from './paths.mjs';
 
 const jobs = new Map();
@@ -589,6 +590,26 @@ if (Array.isArray(images) && images.length) {
           'A mask must share the image canvas. Export the mask layer full-canvas ' +
           '(photocraft_export_layer now aligns layers automatically) or use the PhotoCraft mask_layer path.',
       );
+    }
+    // Mask sanity: a build failure shows up as an ~all-white mask (the whole
+    // canvas "selected"), which repaints everything. Refuse it — the ComfyUI
+    // troubleshooting guide lists this as the #1 masked-edit failure.
+    try {
+      const mp = decodePng(input.mask);
+      let white = 0;
+      let total = 0;
+      for (let i = 0; i < mp.data.length; i += 16) {
+        total++;
+        if (mp.data[i] > 240) white++;
+      }
+      if (total > 0 && white / total > 0.98) {
+        throw new Error(
+          'The mask covers essentially the whole canvas (all-white). That is a failed mask build, not an edit region — ' +
+            'rebuild it from the user selection (layer.layerMask.revealSelection) or a painted mask layer.',
+        );
+      }
+    } catch (err) {
+      if (String(err.message || '').startsWith('The mask covers')) throw err;
     }
     localEdit.mask = input.mask;
     args.push('-Mask', input.mask);

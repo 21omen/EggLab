@@ -36,7 +36,7 @@ load one skill only if the answer needs its detail.
 | `direct` | one image + text instruction | `egl_edit` (that image as `<image1>`) |
 | `multi_reference` | source + donor/reference images | `egl_edit` with ordered `images`; state each role |
 | `visual_mask` | original + separate mask image (mask as visual guidance) | `egl_edit` with original `<image1>` + mask `<image2>` + donors; state the mask convention in the prompt |
-| `native_mask` | user SELECTION or a painted/attached mask layer | primary: build the mask from the user's selection (`layer.new.layer` → `edit.fill` white inside selection → `select.inverse` → `edit.fill` black → `select.deselect`) then `egl_photocraft_edit_active` with `mask_layer`; or `egl_edit init_image + mask_image + strength` for attached masks |
+| `native_mask` | user SELECTION or a painted/attached mask layer | primary: build the mask from the user's selection (`layer.new.layer` → `edit.fill` white inside selection → `select.inverse` → `edit.fill` black → `select.deselect`) then `egl_photocraft_edit_active` with `mask_layer`; **feather first** (`select.modify.feather {feather:8}`); if the panel reports an all-white mask, rebuild via `layer.layerMask.revealSelection` on a white-filled layer; or `egl_edit init_image + mask_image + strength` for attached masks |
 | `circle_annotation` | photo with coloured circles | annotate preview → `egl_edit`; map each colour to one instruction |
 | `paint_annotation` | photo with painted regions | annotate preview → `egl_edit`; say what the painted region means |
 
@@ -53,7 +53,10 @@ Rules that apply to every method:
   explicit limitation and the supported alternative — never drop inputs.
 - Prompt compiler: operation → exact target → donor roles with `<imageN>` →
   concise invariants → exact text/identity → integration (light, perspective,
-  contact shadow). Do not re-describe untouched parts; do not invent details.
+  contact shadow). **Describe the whole scene plus the exact content of the
+  masked region** — the model still sees the full latent, and vague masked-area
+  prompts are the known cause of collage-like results. Never mention the mask's
+  colour ("red masked area" makes the model paint red).
 - Strength (native mask / mask layer): replace/add/remove 0.75–0.95;
   recolour/retouch 0.4–0.6; subtle retouch 0.25–0.35.
 - Sketch as input: translate the sketch structure into words exhaustively
