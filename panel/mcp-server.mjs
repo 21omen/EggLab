@@ -759,6 +759,24 @@ async function callTool(name, args = {}) {
         'skills/photocraft-production/SKILL.md for canvas work. Production stays locked until the skill body is read.',
     );
   }
+  // Alias normalization: models often send camelCase, and unknown keys are
+  // silently ignored — which is how a mask can vanish from a valid-looking
+  // call. Normalize every documented alias before dispatch.
+  const ALIASES = {
+    maskLayer: 'mask_layer',
+    maskInvert: 'mask_invert',
+    referenceImages: 'reference_images',
+    initImage: 'init_image',
+    maskImage: 'mask_image',
+    editMode: 'edit_mode',
+    imageRoles: 'image_roles',
+    useActiveLayer: 'use_active_layer',
+    maskLayerName: 'mask_layer',
+    refImages: 'reference_images',
+  };
+  for (const [from, to] of Object.entries(ALIASES)) {
+    if (args[from] !== undefined && args[to] === undefined) args[to] = args[from];
+  }
   // Every user-attached reference must be used in the job; reordering is fine,
   // dropping one is not. (Declared in the prompt; the tool echoes what it got.)
   switch (name) {
@@ -1015,7 +1033,21 @@ async function callTool(name, args = {}) {
         overwrite: args.overwrite,
       });
 
-    case 'photocraft_edit_active':
+    case 'photocraft_edit_active': {
+      // Never let a mask-intent prompt run as a whole-layer guess: if the
+      // prompt talks about a mask but no mask_layer/region arrived, the mask
+      // was lost (usually a wrong argument key) — refuse with the exact fix.
+      if (
+        !args.mask_layer &&
+        !args.region &&
+        /mask|masked/i.test(String(args.prompt || ''))
+      ) {
+        throw new Error(
+          'This edit refers to a mask, but no mask_layer or region was provided. ' +
+            'Pass mask_layer:"<exact layer name>" (find it with egl_photocraft_layers) — ' +
+            'a whole-layer edit cannot target a masked area, and running one would change the wrong pixels.',
+        );
+      }
       return await api('POST', '/api/photocraft/edit-active', {
         prompt: args.prompt,
         region: args.region,
@@ -1030,6 +1062,7 @@ async function callTool(name, args = {}) {
         seed: args.seed,
         replace: args.replace,
       });
+    }
 
     case 'photocraft_command':
       return await api('POST', '/api/photocraft/command', { id: args.id, params: args.params || {}, source: 'agent' });
